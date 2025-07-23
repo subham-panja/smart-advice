@@ -1,0 +1,43 @@
+# Roadmap for Super Advice Project
+
+## Immediate Next Tasks
+1. **Technical Analysis Engine**
+   - Implement trading strategies and indicators for effective analysis.
+
+2. **Sentiment Analysis**
+   - Integrate news fetching and sentiment scoring.
+
+3. **Fundamental Analysis**
+   - Include financial metrics evaluation to enhance analysis.
+
+4. **Strategy Integration**
+   - Combine technical, sentiment, and fundamental analysis.
+
+5. **Backtesting Engine**
+   - Develop capabilities to test different strategies efficiently.
+
+## High Priority Items
+- **Install TA-Lib**
+  - Essential for implementing technical indicators.
+
+- **Strategy Implementation**
+  - Create a base strategy class and develop individual strategies.
+
+- **News and Sentiment Analysis**
+  - Fetch and analyze news with GoogleNews and Transformers.
+
+- **Main Analyzer**
+  - Build a comprehensive analyzer incorporating all analysis aspects.
+
+## Known Limitations
+- **TA-Lib Installation**
+  - Required for technical indicators and can be difficult to install.
+
+- **Limited Stock Coverage**
+  - Currently includes only 50 major NSE stocks.
+
+- **Incomplete Analysis Engine**
+  - Core components of the analysis engine are not fully implemented.
+
+- **Lack of Scheduling**
+  - Automation for daily analysis has not been established.

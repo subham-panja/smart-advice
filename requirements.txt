@@ -1,0 +1,16 @@
+flask
+yfinance
+ta-lib
+backtrader
+googlenews
+transformers
+torch
+pandas
+numpy
+scipy
+requests
+beautifulsoup4
+pydantic
+click
+pytest
+textblob

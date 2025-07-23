@@ -1,0 +1,816 @@
+#!/usr/bin/env python3
+"""
+Automated Stock Analysis Script
+File: run_analysis.py
+
+This script automatically analyzes all NSE stocks and saves recommendations to the database.
+Designed to be run via cron job every hour.
+"""
+
+import sys
+import os
+import time
+from datetime import datetime
+from typing import Dict, List, Any
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
+
+# Add the project root to the Python path
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+from app import create_app
+from scripts.data_fetcher import get_all_nse_symbols, get_filtered_nse_symbols
+from scripts.analyzer import StockAnalyzer
+from models.recommendation import RecommendedShare
+from database import query_mongodb, get_mongodb, insert_backtest_result, init_db, close_db
+from utils.logger import setup_logging
+from utils.cache_manager import get_cache_manager
+from config import MAX_WORKER_THREADS, BATCH_SIZE, REQUEST_DELAY
+
+# Initialize logging
+logger = setup_logging()
+
+class AutomatedStockAnalysis:
+    """Main class for automated stock analysis."""
+    
+    def __init__(self):
+        """Initialize the analyzer."""
+        self.app = create_app()
+        self.analyzer = StockAnalyzer()
+        self.start_time = datetime.now()
+        
+    def clear_old_data(self, days_old: int = 7):
+        """Clear old data (recommendations and backtest results) older than specified days.
+        
+        Args:
+            days_old: Number of days to keep. If 0, removes all data.
+        """
+        with self.app.app_context():
+            db = get_mongodb()
+            try:
+                from datetime import datetime, timedelta
+                
+                if days_old == 0:
+                    # Remove all data if days_old is 0
+                    logger.info("Purging ALL data from database (days_old=0)")
+                    
+                    # Delete all recommendations
+                    recommendations_collection = db['recommended_shares']
+                    rec_result = recommendations_collection.delete_many({})
+                    deleted_recommendations = rec_result.deleted_count
+                    
+                    # Delete all backtest results
+                    backtest_collection = db['backtest_results']
+                    backtest_result = backtest_collection.delete_many({})
+                    deleted_backtest_results = backtest_result.deleted_count
+                    
+                    logger.info(f"Complete data purge: {deleted_recommendations} recommendations and {deleted_backtest_results} backtest results deleted (ALL DATA)")
+                    
+                else:
+                    # Delete data older than specified days
+                    logger.info(f"Purging data older than {days_old} days")
+                    
+                    cutoff_date = datetime.utcnow() - timedelta(days=days_old)
+                    
+                    # Delete old recommendations
+                    recommendations_collection = db['recommended_shares']
+                    rec_result = recommendations_collection.delete_many({
+                        'recommendation_date': {'$lt': cutoff_date}
+                    })
+                    deleted_recommendations = rec_result.deleted_count
+                    
+                    # Delete old backtest results
+                    backtest_collection = db['backtest_results']
+                    backtest_result = backtest_collection.delete_many({
+                        'created_at': {'$lt': cutoff_date}
+                    })
+                    deleted_backtest_results = backtest_result.deleted_count
+                    
+                    logger.info(f"Data purge completed: {deleted_recommendations} recommendations and {deleted_backtest_results} backtest results deleted (older than {days_old} days)")
+                
+                logger.debug("Database purge completed successfully")
+                
+            except Exception as e:
+                logger.error(f"Error clearing old data: {e}")
+                raise
+    
+    def save_recommendation(self, analysis_result: Dict[str, Any]) -> bool:
+        """Save a recommendation to the database."""
+        try:
+            if not analysis_result.get('is_recommended', False):
+                return False
+            
+            # Create RecommendedShare object
+            rec = RecommendedShare(
+                symbol=analysis_result['symbol'],
+                company_name=analysis_result['company_name'],
+                technical_score=analysis_result['technical_score'],
+                fundamental_score=analysis_result['fundamental_score'],
+                sentiment_score=analysis_result['sentiment_score'],
+                reason=analysis_result['reason']
+            )
+            
+            # Extract trade plan data with improved handling
+            trade_plan = analysis_result.get('trade_plan', {})
+            
+            # Get trade-level fields from trade_plan with fallback to legacy fields
+            buy_price = None
+            sell_price = None
+            est_time_to_target = "Unknown"
+            
+            if trade_plan and not trade_plan.get('error'):
+                # Primary source: trade_plan data
+                buy_price = trade_plan.get('buy_price')
+                sell_price = trade_plan.get('sell_price')
+                days_to_target = trade_plan.get('days_to_target', 0)
+                
+                # Handle None values and convert to appropriate types
+                if buy_price is not None:
+                    buy_price = float(buy_price)
+                else:
+                    buy_price = 0.0
+                    
+                if sell_price is not None:
+                    sell_price = float(sell_price)
+                else:
+                    sell_price = 0.0
+                    
+                # Format estimated time to target
+                if days_to_target and days_to_target > 0:
+                    est_time_to_target = f"{int(days_to_target)} days"
+                elif days_to_target == 0:
+                    est_time_to_target = "Immediate"
+                else:
+                    est_time_to_target = "Unknown"
+            else:
+                # Fallback to legacy columns or defaults for backward compatibility
+                buy_price = analysis_result.get('buy_price', 0.0)
+                sell_price = analysis_result.get('sell_price', 0.0)
+                est_time_to_target = analysis_result.get('est_time_to_target', "Unknown")
+                
+                # Log when falling back to legacy fields
+                if buy_price != 0.0 or sell_price != 0.0:
+                    logger.info(f"Using legacy trade fields for {rec.symbol}: buy_price={buy_price}, sell_price={sell_price}")
+            
+            # Extract backtest metrics including detailed transaction data
+            backtest_metrics = self._extract_detailed_backtest_metrics(analysis_result)
+            
+            # Log the trade-level values being stored
+            logger.info(f"Storing trade-level data for {rec.symbol}: buy_price={buy_price}, sell_price={sell_price}, est_time_to_target={est_time_to_target}")
+            
+            # Log backtest metrics
+            if backtest_metrics.get('cagr'):
+                logger.info(f"Backtest metrics for {rec.symbol}: CAGR={backtest_metrics['cagr']:.2f}%, "
+                           f"Win Rate={backtest_metrics['win_rate']:.2f}%, "
+                           f"Max Drawdown={backtest_metrics['max_drawdown']:.2f}%, "
+                           f"Total Trades={backtest_metrics.get('total_trades', 0)}")
+            
+            # Use MongoDB upsert to insert or update
+            from database import get_mongodb
+            db = get_mongodb()
+            try:
+                from datetime import datetime
+                
+                # Prepare document for MongoDB
+                doc = {
+                    'symbol': rec.symbol,
+                    'company_name': rec.company_name,
+                    'technical_score': rec.technical_score,
+                    'fundamental_score': rec.fundamental_score,
+                    'sentiment_score': rec.sentiment_score,
+                    'reason': rec.reason,
+                    'buy_price': buy_price,
+                    'sell_price': sell_price,
+                    'est_time_to_target': est_time_to_target,
+                    'backtest_metrics': backtest_metrics,
+                    'recommendation_date': datetime.utcnow()
+                }
+                
+                # Use upsert to insert or update
+                result = db.recommended_shares.update_one(
+                    {'symbol': rec.symbol},
+                    {'$set': doc},
+                    upsert=True
+                )
+                
+                # Get backtest CAGR for logging
+                backtest_cagr = self._extract_backtest_cagr(analysis_result)
+                
+                if result.upserted_id:
+                    logger.info(f"Added new recommendation: {rec.symbol} - buy_price=${buy_price:.2f}, sell_price=${sell_price:.2f}, ETA={est_time_to_target}, backtest_CAGR={backtest_cagr}%")
+                else:
+                    logger.info(f"Updated existing recommendation: {rec.symbol} - buy_price=${buy_price:.2f}, sell_price=${sell_price:.2f}, ETA={est_time_to_target}, backtest_CAGR={backtest_cagr}%")
+                
+                logger.debug(f"Database write successful for {rec.symbol}")
+                
+                # Save backtest results if available
+                self.save_backtest_results(analysis_result)
+                
+                return True
+                
+            except Exception as e:
+                logger.error(f"Database error saving recommendation for {rec.symbol}: {e}")
+                return False
+                
+        except Exception as e:
+            logger.exception(f"Unexpected error saving recommendation for {analysis_result.get('symbol', 'UNKNOWN')}: {e}")
+            return False
+    
+    def _extract_backtest_cagr(self, analysis_result: Dict[str, Any]) -> str:
+        """Extract backtest CAGR from analysis results for logging."""
+        try:
+            # Try to get from backtest results
+            backtest_results = analysis_result.get('backtest_results', {})
+            if backtest_results and 'error' not in backtest_results:
+                overall_metrics = backtest_results.get('overall_metrics', {})
+                if overall_metrics:
+                    avg_cagr = overall_metrics.get('average_cagr', 0)
+                    return f"{avg_cagr:.2f}"
+            
+            # Try to get from backtest field (alternative structure)
+            backtest = analysis_result.get('backtest', {})
+            if backtest and backtest.get('status') == 'completed':
+                combined_metrics = backtest.get('combined_metrics', {})
+                if combined_metrics:
+                    avg_cagr = combined_metrics.get('avg_cagr', 0)
+                    return f"{avg_cagr:.2f}"
+            
+            return "N/A"
+        except Exception as e:
+            logger.error(f"Error extracting backtest CAGR: {e}")
+            return "N/A"
+
+    def _extract_detailed_backtest_metrics(self, analysis_result: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract detailed backtest metrics including buy/sell transactions."""
+        try:
+            # Initialize detailed metrics structure
+            detailed_metrics = {
+                'cagr': 0.0,
+                'win_rate': 0.0,
+                'max_drawdown': 0.0,
+                'total_trades': 0,
+                'winning_trades': 0,
+                'losing_trades': 0,
+                'sharpe_ratio': 0.0,
+                'effectiveness': 'Low',
+                'buy_sell_transactions': [],
+                'strategy_breakdown': {},
+                'date_range': {},
+                'capital_info': {}
+            }
+            
+            # Try to get from backtest results
+            backtest_results = analysis_result.get('backtest_results', {})
+            if not backtest_results:
+                backtest_results = analysis_result.get('backtest', {})
+            
+            if backtest_results and 'error' not in backtest_results and backtest_results.get('status') == 'completed':
+                # Get combined metrics
+                combined_metrics = backtest_results.get('combined_metrics', {})
+                overall_metrics = backtest_results.get('overall_metrics', {})
+                source_metrics = combined_metrics if combined_metrics else overall_metrics
+                
+                if source_metrics:
+                    # Extract basic metrics
+                    detailed_metrics['cagr'] = source_metrics.get('avg_cagr', 0) or source_metrics.get('average_cagr', 0)
+                    detailed_metrics['win_rate'] = source_metrics.get('avg_win_rate', 0) or source_metrics.get('average_win_rate', 0)
+                    detailed_metrics['max_drawdown'] = source_metrics.get('avg_max_drawdown', 0) or source_metrics.get('average_max_drawdown', 0)
+                    detailed_metrics['sharpe_ratio'] = source_metrics.get('avg_sharpe_ratio', 0) or source_metrics.get('average_sharpe_ratio', 0)
+                    detailed_metrics['total_trades'] = source_metrics.get('total_trades', 0)
+                    detailed_metrics['winning_trades'] = source_metrics.get('winning_trades', 0)
+                    detailed_metrics['losing_trades'] = source_metrics.get('losing_trades', 0)
+                    
+                    # Determine effectiveness based on CAGR and win rate
+                    cagr = detailed_metrics['cagr']
+                    win_rate = detailed_metrics['win_rate']
+                    
+                    if cagr >= 15 and win_rate >= 60:
+                        detailed_metrics['effectiveness'] = 'Excellent'
+                    elif cagr >= 10 and win_rate >= 50:
+                        detailed_metrics['effectiveness'] = 'Good'
+                    elif cagr >= 5 and win_rate >= 45:
+                        detailed_metrics['effectiveness'] = 'Moderate'
+                    elif cagr >= 0 and win_rate >= 40:
+                        detailed_metrics['effectiveness'] = 'Fair'
+                    else:
+                        detailed_metrics['effectiveness'] = 'Poor'
+                    
+                    # Extract date range information
+                    detailed_metrics['date_range'] = {
+                        'start_date': source_metrics.get('start_date', ''),
+                        'end_date': source_metrics.get('end_date', ''),
+                        'period_days': source_metrics.get('period_days', 0)
+                    }
+                    
+                    # Extract capital information
+                    detailed_metrics['capital_info'] = {
+                        'initial_capital': source_metrics.get('initial_capital', 100000),
+                        'final_capital': source_metrics.get('final_capital', 100000),
+                        'total_return': source_metrics.get('total_return', 0)
+                    }
+                
+                # Extract individual strategy results
+                strategy_results = backtest_results.get('strategy_results', {})
+                for strategy_name, strategy_result in strategy_results.items():
+                    if strategy_result.get('status') == 'completed':
+                        detailed_metrics['strategy_breakdown'][strategy_name] = {
+                            'cagr': strategy_result.get('cagr', 0),
+                            'win_rate': strategy_result.get('win_rate', 0),
+                            'max_drawdown': strategy_result.get('max_drawdown', 0),
+                            'total_trades': strategy_result.get('total_trades', 0),
+                            'trades': strategy_result.get('trades', [])
+                        }
+                        
+                        # Extract buy/sell transactions from strategy trades
+                        trades = strategy_result.get('trades', [])
+                        for trade in trades[-10:]:  # Keep last 10 trades per strategy
+                            if isinstance(trade, dict):
+                                transaction = {
+                                    'strategy': strategy_name,
+                                    'date': str(trade.get('date', '')),
+                                    'action': trade.get('action', 'UNKNOWN'),
+                                    'price': trade.get('price', 0),
+                                    'shares': trade.get('shares', 0),
+                                    'value': trade.get('value', 0)
+                                }
+                                detailed_metrics['buy_sell_transactions'].append(transaction)
+                
+                # Sort transactions by date (most recent first)
+                detailed_metrics['buy_sell_transactions'] = sorted(
+                    detailed_metrics['buy_sell_transactions'],
+                    key=lambda x: x.get('date', ''),
+                    reverse=True
+                )
+                
+                # Limit total transactions to prevent database bloat
+                detailed_metrics['buy_sell_transactions'] = detailed_metrics['buy_sell_transactions'][:50]
+            
+            return detailed_metrics
+            
+        except Exception as e:
+            logger.error(f"Error extracting detailed backtest metrics: {e}")
+            return {
+                'cagr': 0.0,
+                'win_rate': 0.0,
+                'max_drawdown': 0.0,
+                'total_trades': 0,
+                'effectiveness': 'Unknown',
+                'error': str(e)
+            }
+    
+    def _extract_backtest_metrics(self, analysis_result: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract all backtest metrics from analysis results."""
+        try:
+            # Initialize defaults
+            metrics = {
+                'backtest_cagr': None,
+                'backtest_win_rate': None,
+                'backtest_max_drawdown': None,
+                'backtest_sharpe_ratio': None,
+                'backtest_total_trades': None,
+                'backtest_avg_trade_return': None
+            }
+            
+            # Try to get from backtest results
+            backtest_results = analysis_result.get('backtest_results', {})
+            if not backtest_results:
+                backtest_results = analysis_result.get('backtest', {})
+            
+            if backtest_results and 'error' not in backtest_results:
+                # Get combined metrics (new structure)
+                combined_metrics = backtest_results.get('combined_metrics', {})
+                
+                # Also check for overall_metrics (old structure) for backward compatibility
+                overall_metrics = backtest_results.get('overall_metrics', {})
+                
+                # Use combined_metrics first, fallback to overall_metrics
+                source_metrics = combined_metrics if combined_metrics else overall_metrics
+                
+                if source_metrics:
+                    metrics['backtest_cagr'] = source_metrics.get('avg_cagr') or source_metrics.get('average_cagr')
+                    metrics['backtest_win_rate'] = source_metrics.get('avg_win_rate') or source_metrics.get('average_win_rate')
+                    metrics['backtest_max_drawdown'] = source_metrics.get('avg_max_drawdown') or source_metrics.get('average_max_drawdown')
+                    metrics['backtest_sharpe_ratio'] = source_metrics.get('avg_sharpe_ratio') or source_metrics.get('average_sharpe_ratio')
+                    
+                    # For total trades, try to get from strategies results or use estimated value
+                    strategy_results = backtest_results.get('strategy_results', {})
+                    if strategy_results:
+                        # Sum up total trades from all strategies
+                        total_trades = 0
+                        total_avg_return = 0
+                        valid_strategies = 0
+                        
+                        for strategy_name, strategy_result in strategy_results.items():
+                            if strategy_result.get('status') == 'completed':
+                                strategy_trades = strategy_result.get('total_trades', 0)
+                                strategy_avg_return = strategy_result.get('avg_trade_return', 0)
+                                
+                                if strategy_trades and strategy_trades > 0:
+                                    total_trades += strategy_trades
+                                    total_avg_return += strategy_avg_return
+                                    valid_strategies += 1
+                        
+                        if valid_strategies > 0:
+                            # Use average across strategies
+                            metrics['backtest_total_trades'] = int(total_trades / valid_strategies)
+                            metrics['backtest_avg_trade_return'] = total_avg_return / valid_strategies
+                    
+                    # If still no total trades, try to get from source_metrics
+                    if not metrics['backtest_total_trades']:
+                        metrics['backtest_total_trades'] = source_metrics.get('total_trades') or source_metrics.get('strategies_tested')
+                    
+                    if not metrics['backtest_avg_trade_return']:
+                        # Calculate average trade return from CAGR and total trades if available
+                        if metrics['backtest_cagr'] and metrics['backtest_total_trades']:
+                            metrics['backtest_avg_trade_return'] = metrics['backtest_cagr'] / max(1, metrics['backtest_total_trades'])
+            
+            return metrics
+            
+        except Exception as e:
+            logger.error(f"Error extracting backtest metrics: {e}")
+            return {
+                'backtest_cagr': None,
+                'backtest_win_rate': None,
+                'backtest_max_drawdown': None,
+                'backtest_sharpe_ratio': None,
+                'backtest_total_trades': None,
+                'backtest_avg_trade_return': None
+            }
+    
+    def _check_existing_backtest_result(self, symbol: str, period: str) -> bool:
+        """Check if backtest result for (symbol, period) already exists today."""
+        try:
+            from datetime import datetime, timezone
+            db = get_mongodb()
+            
+            # Get today's date in UTC
+            today = datetime.now(timezone.utc).date()
+            
+            # Query for existing backtest result created today
+            query = {
+                'symbol': symbol,
+                'period': period,
+                '$expr': {
+                    '$eq': [
+                        {'$dateToString': {'format': '%Y-%m-%d', 'date': '$created_at'}},
+                        today.strftime('%Y-%m-%d')
+                    ]
+                }
+            }
+            
+            count = db.backtest_results.count_documents(query)
+            return count > 0
+        except Exception as e:
+            logger.error(f"Error checking existing backtest result for {symbol}-{period}: {e}")
+            return False
+    
+    def save_backtest_results(self, analysis_result: Dict[str, Any]) -> bool:
+        """Save backtest results to the database."""
+        try:
+            # Try both 'backtest_results' and 'backtest' keys for compatibility
+            backtest_results = analysis_result.get('backtest_results', {})
+            if not backtest_results:
+                backtest_results = analysis_result.get('backtest', {})
+            
+            if not backtest_results or 'error' in backtest_results:
+                logger.debug(f"No valid backtest results found for {analysis_result.get('symbol', 'UNKNOWN')}")
+                return False
+            
+            symbol = analysis_result['symbol']
+            
+            # Check if backtest completed successfully
+            if backtest_results.get('status') != 'completed':
+                logger.debug(f"Backtest not completed for {symbol}: {backtest_results.get('status', 'unknown')}")
+                return False
+            
+            # Get combined metrics (new structure)
+            combined_metrics = backtest_results.get('combined_metrics', {})
+            
+            # Also check for overall_metrics (old structure) for backward compatibility
+            overall_metrics = backtest_results.get('overall_metrics', {})
+            
+            if not combined_metrics and not overall_metrics:
+                logger.debug(f"No metrics found in backtest results for {symbol}")
+                return False
+            
+            # Save overall backtest metrics
+            try:
+                if not self._check_existing_backtest_result(symbol, 'Overall'):
+                    # Use combined_metrics first, fallback to overall_metrics
+                    metrics = combined_metrics if combined_metrics else overall_metrics
+                    
+                    cagr = metrics.get('avg_cagr', 0) or metrics.get('average_cagr', 0)
+                    win_rate = metrics.get('avg_win_rate', 0) or metrics.get('average_win_rate', 0)
+                    max_drawdown = metrics.get('avg_max_drawdown', 0) or metrics.get('average_max_drawdown', 0)
+                    
+                insert_backtest_result(
+                    symbol, 'Overall', 
+                    cagr,
+                    win_rate,
+                    max_drawdown,
+                    total_trades=metrics.get('total_trades'),
+                    winning_trades=metrics.get('winning_trades'),
+                    losing_trades=metrics.get('losing_trades'),
+                    avg_trade_duration=metrics.get('avg_trade_duration'),
+                    avg_profit_per_trade=metrics.get('avg_profit_per_trade'),
+                    avg_loss_per_trade=metrics.get('avg_loss_per_trade'),
+                    largest_win=metrics.get('largest_win'),
+                    largest_loss=metrics.get('largest_loss'),
+                    sharpe_ratio=metrics.get('sharpe_ratio'),
+                    sortino_ratio=metrics.get('sortino_ratio'),
+                    calmar_ratio=metrics.get('calmar_ratio'),
+                    volatility=metrics.get('volatility'),
+                    start_date=metrics.get('start_date'),
+                    end_date=metrics.get('end_date'),
+                    initial_capital=metrics.get('initial_capital'),
+                    final_capital=metrics.get('final_capital'),
+                    total_return=metrics.get('total_return')
+                )
+                logger.info(f"Saved overall backtest results for {symbol}: CAGR={cagr:.2f}%, Win Rate={win_rate:.2f}%, Max Drawdown={max_drawdown:.2f}%")
+
+                # Save individual period results if available
+                period_results = backtest_results.get('period_results', {})
+                for period, result in period_results.items():
+                    if 'error' not in result and not self._check_existing_backtest_result(symbol, period):
+                        insert_backtest_result(
+                            symbol, period, 
+                            result.get('cagr', 0),
+                            result.get('win_rate', 0),
+                            result.get('max_drawdown', 0)
+                        )
+                        logger.debug(f"Saved {period} backtest results for {symbol}")
+                
+                logger.info(f"Saved backtest results for {symbol}")
+                return True
+
+            except Exception as e:
+                logger.error(f"Error saving backtest results for {symbol}: {e}")
+                return False
+            
+        except Exception as e:
+            logger.error(f"Error saving backtest results for {analysis_result.get('symbol', 'UNKNOWN')}: {e}")
+            return False
+    
+    def analyze_single_stock(self, symbol: str, total_stocks: int, current_index: int) -> Dict[str, Any]:
+        """
+        Analyze a single stock (thread-safe).
+        
+        Args:
+            symbol: Stock symbol to analyze
+            total_stocks: Total number of stocks being processed
+            current_index: Current stock index for progress tracking
+            
+        Returns:
+            Dictionary containing analysis result and metadata
+        """
+        try:
+            logger.info(f"Analyzing {symbol} ({current_index}/{total_stocks})")
+            
+            # For large-scale analysis, use simplified mode to avoid memory issues
+            simplified_mode = total_stocks > 50
+            
+            # Perform analysis
+            try:
+                if simplified_mode:
+                    # Skip sentiment analysis for large batches to prevent memory issues
+                    config_copy = self.app.config.copy()
+                    config_copy['SKIP_SENTIMENT'] = True
+                    analysis_result = self.analyzer.analyze_stock(symbol, config_copy)
+                else:
+                    analysis_result = self.analyzer.analyze_stock(symbol, self.app.config)
+                    
+                logger.debug(f"Analysis result for {symbol}: {analysis_result}")
+            except Exception as e:
+                logger.exception(f"Error in analyzing stock {symbol}: {e}")
+                raise
+            
+            # Minimal delay to avoid overwhelming APIs (threads handle this naturally)
+            if total_stocks > 100:
+                time.sleep(REQUEST_DELAY / 5)  # Reduce delay for large batches
+            else:
+                time.sleep(REQUEST_DELAY)
+            
+            return {
+                'success': True,
+                'symbol': symbol,
+                'result': analysis_result,
+                'recommended': analysis_result.get('is_recommended', False)
+            }
+            
+        except Exception as e:
+            logger.error(f"Error analyzing {symbol}: {e}")
+            return {
+                'success': False,
+                'symbol': symbol,
+                'error': str(e),
+                'recommended': False
+            }
+    
+    def analyze_all_stocks(self, max_stocks: int = None, batch_size: int = None, use_all_symbols: bool = False):
+        """
+        Analyze all NSE stocks using multithreading and save recommendations.
+        
+        Args:
+            max_stocks: Maximum number of stocks to analyze (for testing)
+            batch_size: Number of stocks to process in each batch (from config if None)
+            use_all_symbols: If True, use all NSE symbols instead of filtered ones
+        """
+        logger.info(f"Starting automated stock analysis with multithreading (max_stocks={max_stocks}, use_all_symbols={use_all_symbols})")
+        
+        if use_all_symbols:
+            # Get all NSE symbols without filtering
+            logger.info(f"Fetching all NSE symbols (max_stocks={max_stocks})...")
+            all_symbols = get_all_nse_symbols()
+            
+            if not all_symbols:
+                logger.error("No NSE symbols found. Exiting analysis.")
+                return
+            
+            # Convert to dictionary format for consistency with filtered_symbols
+            if isinstance(all_symbols, list):
+                filtered_symbols = {symbol: {'company_name': symbol} for symbol in all_symbols}
+            else:
+                filtered_symbols = all_symbols
+            
+            # Apply max_stocks limit if specified
+            if max_stocks and len(filtered_symbols) > max_stocks:
+                symbols_list = list(filtered_symbols.keys())[:max_stocks]
+                filtered_symbols = {k: filtered_symbols[k] for k in symbols_list}
+                logger.info(f"Limited to first {max_stocks} symbols from all NSE stocks")
+        else:
+            # Get filtered NSE symbols (actively traded with historical data)
+            logger.info(f"Fetching actively traded NSE symbols with historical data (max_stocks={max_stocks})...")
+            filtered_symbols = get_filtered_nse_symbols(max_stocks)
+            
+            if not filtered_symbols:
+                logger.error("No filtered NSE symbols found. Exiting analysis.")
+                return
+        
+        symbols_list = list(filtered_symbols.keys())
+        symbol_type = "all NSE" if use_all_symbols else "actively traded"
+        logger.info(f"Found {len(symbols_list)} {symbol_type} stocks to analyze")
+            
+        total_stocks = len(symbols_list)
+        processed_count = 0
+        recommended_count = 0
+        error_count = 0
+        
+        # Use batch size from config if not specified
+        if batch_size is None:
+            batch_size = BATCH_SIZE
+        
+        # Use full thread pool for better performance
+        effective_threads = MAX_WORKER_THREADS
+        logger.info(f"Using {effective_threads} threads for processing {total_stocks} stocks")
+            
+        logger.info(f"Processing {total_stocks} stocks in batches of {batch_size} using {effective_threads} threads")
+        
+        # Process stocks in batches
+        for i in range(0, total_stocks, batch_size):
+            batch = symbols_list[i:i + batch_size]
+            batch_num = i // batch_size + 1
+            
+            logger.info(f"Processing batch {batch_num}: stocks {i+1}-{min(i+batch_size, total_stocks)}")
+            
+            # Process batch using ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=effective_threads) as executor:
+                # Submit all tasks for this batch
+                future_to_symbol = {
+                    executor.submit(self.analyze_single_stock, symbol, total_stocks, i + j + 1): symbol
+                    for j, symbol in enumerate(batch)
+                }
+                
+                # Process completed tasks
+                for future in as_completed(future_to_symbol):
+                    symbol = future_to_symbol[future]
+                    try:
+                        result = future.result()
+                        logger.debug(f"Received result for {symbol}: {result}")
+                        processed_count += 1
+                        
+                        if result['success']:
+                            # Save recommendation if positive
+                            if result['recommended']:
+                                if self.save_recommendation(result['result']):
+                                    recommended_count += 1
+                                else:
+                                    error_count += 1
+                        else:
+                            error_count += 1
+                            
+                    except Exception as e:
+                        logger.exception(f"Error in ThreadPoolExecutor for {symbol}: {e}")
+                        error_count += 1
+                        processed_count += 1
+            
+            # Log progress after each batch
+            elapsed_time = (datetime.now() - self.start_time).total_seconds()
+            avg_time_per_stock = elapsed_time / processed_count if processed_count > 0 else 0
+            estimated_remaining = (total_stocks - processed_count) * avg_time_per_stock
+            
+            logger.info(f"Progress: {processed_count}/{total_stocks} stocks processed, "
+                       f"{recommended_count} recommendations, {error_count} errors, "
+                       f"~{estimated_remaining/60:.1f} minutes remaining")
+        
+        # Final summary
+        total_time = (datetime.now() - self.start_time).total_seconds()
+        
+        logger.info(f"Analysis complete!")
+        logger.info(f"Total stocks processed: {processed_count}")
+        logger.info(f"Recommendations generated: {recommended_count}")
+        logger.info(f"Errors encountered: {error_count}")
+        logger.info(f"Total time: {total_time/60:.1f} minutes")
+        logger.info(f"Average time per stock: {total_time/processed_count:.1f} seconds")
+        
+        # Log current recommendations count
+        try:
+            from database import get_mongodb
+            db = get_mongodb()
+            total_recommendations = db.recommended_shares.count_documents({})
+            logger.info(f"Total recommendations in MongoDB: {total_recommendations}")
+        except Exception as e:
+            logger.error(f"Error getting total recommendations count: {e}")
+    
+    def run_analysis(self, max_stocks: int = None, use_all_symbols: bool = False):
+        """
+        Run the complete analysis process.
+        
+        Args:
+            max_stocks: Maximum number of stocks to analyze (for testing)
+            use_all_symbols: If True, use all NSE symbols instead of filtered ones
+        """
+        with self.app.app_context():
+            try:
+                # Clean corrupted cache files first
+                cache_manager = get_cache_manager()
+                cleaned_files = cache_manager.clean_corrupted_cache_files()
+                if cleaned_files > 0:
+                    logger.info(f"Cleaned {cleaned_files} corrupted cache files")
+                
+                # Get configurable threshold for data purge
+                days_old = self.app.config.get('DATA_PURGE_DAYS', 7)
+                
+                # Clear old data (recommendations and backtest results) at the start
+                self.clear_old_data(days_old=days_old)
+                
+                # Analyze all stocks
+                self.analyze_all_stocks(max_stocks=max_stocks, use_all_symbols=use_all_symbols)
+                
+                logger.info("Automated analysis completed successfully")
+                
+            except Exception as e:
+                logger.error(f"Error in automated analysis: {e}")
+                raise
+
+
+def main():
+    """Main entry point for the script."""
+    import argparse
+    
+    parser = argparse.ArgumentParser(description='Automated NSE Stock Analysis')
+    parser.add_argument('--max-stocks', type=int, help='Maximum number of stocks to analyze (for testing)')
+    parser.add_argument('--test', action='store_true', help='Run in test mode with limited stocks')
+    parser.add_argument('--all', action='store_true', help='Analyze all NSE stocks (not just filtered/actively traded ones)')
+    parser.add_argument('--purge-days', type=int, help='Number of days to keep old data (overrides config). Use 0 to remove ALL data.')
+    
+    args = parser.parse_args()
+    
+    # Set test mode parameters
+    if args.test:
+        max_stocks = 2
+        logger.info("Running in TEST mode with limited stocks")
+    else:
+        max_stocks = args.max_stocks
+        logger.info("Running in PRODUCTION mode with all stocks")
+    
+    # Log symbol selection mode
+    if args.all:
+        logger.info("Using ALL NSE symbols (including inactive/low-volume stocks)")
+    else:
+        logger.info("Using FILTERED NSE symbols (only actively traded stocks)")
+    
+    try:
+        # Create and run analyzer
+        analyzer = AutomatedStockAnalysis()
+        
+        # Override config if CLI argument provided
+        if args.purge_days is not None:
+            analyzer.app.config['DATA_PURGE_DAYS'] = args.purge_days
+            logger.info(f"Data purge days set to {args.purge_days} (from CLI argument)")
+        
+        analyzer.run_analysis(max_stocks=max_stocks, use_all_symbols=args.all)
+        
+        logger.info("Script completed successfully")
+        return 0
+        
+    except KeyboardInterrupt:
+        logger.info("Analysis interrupted by user")
+        return 1
+        
+    except Exception as e:
+        logger.error(f"Script failed: {e}")
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
