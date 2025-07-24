@@ -8,7 +8,7 @@ potential bounce opportunities when price approaches these key levels.
 
 import pandas as pd
 import numpy as np
-from scripts.strategies.base_strategy import BaseStrategy
+from .base_strategy import BaseStrategy
 
 
 class Pivot_Points_Bounce(BaseStrategy):

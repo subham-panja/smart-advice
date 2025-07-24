@@ -9,7 +9,7 @@ trend changes and generate buy/sell signals. Part of the ADX indicator system.
 import pandas as pd
 import numpy as np
 import talib as ta
-from scripts.strategies.base_strategy import BaseStrategy
+from .base_strategy import BaseStrategy
 
 
 class DI_Crossover(BaseStrategy):

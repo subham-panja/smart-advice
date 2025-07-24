@@ -9,7 +9,7 @@ completely engulfs the body of the first (bearish) candle.
 
 import pandas as pd
 import numpy as np
-from scripts.strategies.base_strategy import BaseStrategy
+from .base_strategy import BaseStrategy
 
 
 class Candlestick_Bullish_Engulfing(BaseStrategy):

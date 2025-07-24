@@ -408,35 +408,44 @@ class StockAnalyzer:
             min_backtest_return = 0
             threshold_reason = "Initial analysis - backtest not considered"
         
-        # More flexible recommendation logic
-        # Strong buy: All three positive OR high combined score
-        if ((technical_score > 0 and fundamental_score > 0 and sentiment_score > 0) or combined_score > strong_buy_threshold) and backtest_condition:
+        # Enhanced recommendation logic - more flexible and nuanced
+        technical_minimum = RECOMMENDATION_THRESHOLDS.get('technical_minimum', -0.1)
+        fundamental_minimum = RECOMMENDATION_THRESHOLDS.get('fundamental_minimum', -0.2)
+        
+        # Strong buy: Multiple positive indicators with good backtest
+        if ((technical_score > 0.1 and fundamental_score > 0.1 and sentiment_score > 0) or 
+            (combined_score > strong_buy_threshold) or
+            (technical_score > 0.3 and fundamental_score > -0.1) or
+            (fundamental_score > 0.4 and technical_score > -0.1)) and backtest_condition:
             result['is_recommended'] = True
             result['recommendation_strength'] = 'STRONG_BUY'
-            if technical_score > 0 and fundamental_score > 0 and sentiment_score > 0:
-                result['reason'].append("All three analysis types show positive signals")
+            if technical_score > 0.1 and fundamental_score > 0.1 and sentiment_score > 0:
+                result['reason'].append("All analysis types show positive signals")
             else:
                 result['reason'].append("High combined score indicates strong buy opportunity")
         
-        # Regular buy: Two positive OR decent combined score
-        elif ((technical_score > 0 and fundamental_score > 0) or \
-             (technical_score > 0 and sentiment_score > sentiment_positive_threshold) or \
-             (fundamental_score > 0 and sentiment_score > sentiment_positive_threshold) or \
-             combined_score > buy_threshold) and backtest_condition:
-            if combined_score > buy_threshold:
-                result['is_recommended'] = True
-                result['recommendation_strength'] = 'BUY'
-                result['reason'].append("Majority of analysis types show positive signals")
-            else:
-                result['is_recommended'] = False
-                result['recommendation_strength'] = 'HOLD'
-                result['reason'].append("Mixed signals from analysis types")
+        # Regular buy: More flexible criteria
+        elif ((technical_score > 0 and fundamental_score > fundamental_minimum) or 
+             (fundamental_score > 0 and technical_score > technical_minimum) or 
+             (technical_score > 0.1 and sentiment_score > sentiment_positive_threshold) or 
+             (fundamental_score > 0.1 and sentiment_score > sentiment_positive_threshold) or 
+             (combined_score > buy_threshold)) and backtest_condition:
+            result['is_recommended'] = True
+            result['recommendation_strength'] = 'BUY'
+            result['reason'].append("Majority of analysis types show positive signals")
         
-        # Technical analysis is most important for swing trading
-        elif technical_score > technical_strong_threshold and backtest_condition:
+        # Technical-focused buy: Technical analysis is primary for swing trading
+        elif (technical_score > technical_strong_threshold or 
+              (technical_score > 0.15 and combined_score > -0.05)) and backtest_condition:
             result['is_recommended'] = True
             result['recommendation_strength'] = 'WEAK_BUY'
             result['reason'].append("Strong technical analysis signals despite mixed fundamentals/sentiment")
+        
+        # Opportunistic buy: Good combined score even with mixed individual scores
+        elif combined_score > (buy_threshold * 0.7) and backtest_condition and not consider_backtest:
+            result['is_recommended'] = True
+            result['recommendation_strength'] = 'OPPORTUNISTIC_BUY'
+            result['reason'].append("Moderate combined score suggests potential opportunity")
         
         else:
             result['is_recommended'] = False
@@ -1138,7 +1147,7 @@ class StockAnalyzer:
     
     def _generate_trading_signal(self, price: float, sma_20: float, sma_50: float, rsi: float) -> str:
         """
-        Generate trading signal based on technical indicators.
+        Generate enhanced trading signal based on multiple technical indicators.
         
         Args:
             price: Current price
@@ -1154,15 +1163,53 @@ class StockAnalyzer:
             if pd.isna(sma_20) or pd.isna(sma_50) or pd.isna(rsi):
                 return 'HOLD'
             
-            # Buy signals
-            if (price > sma_20 > sma_50 and rsi < 70):
+            # Enhanced buy signals with multiple confirmations
+            buy_signals = 0
+            sell_signals = 0
+            
+            # Trend signals
+            if price > sma_20 > sma_50:  # Uptrend
+                buy_signals += 2
+            elif price > sma_20:  # Price above short MA
+                buy_signals += 1
+            elif price < sma_20 < sma_50:  # Downtrend
+                sell_signals += 2
+            elif price < sma_20:  # Price below short MA
+                sell_signals += 1
+            
+            # RSI signals - more nuanced approach
+            if 30 < rsi < 50:  # RSI recovering from oversold
+                buy_signals += 1
+            elif 40 < rsi < 60:  # RSI in neutral zone - good for continuation
+                buy_signals += 0.5
+            elif rsi > 70:  # Overbought - sell signal
+                sell_signals += 1.5
+            elif rsi < 30:  # Oversold - potential reversal but wait for confirmation
+                buy_signals += 0.5
+                
+            # Momentum signals
+            sma_slope = (sma_20 - sma_50) / sma_50 * 100  # Slope of MA difference
+            if sma_slope > 2:  # Strong upward momentum
+                buy_signals += 1
+            elif sma_slope < -2:  # Strong downward momentum
+                sell_signals += 1
+                
+            # Price position relative to moving averages
+            price_above_ma20_pct = (price - sma_20) / sma_20 * 100
+            if 1 < price_above_ma20_pct < 5:  # Price moderately above MA20
+                buy_signals += 0.5
+            elif price_above_ma20_pct > 8:  # Price too far above MA20
+                sell_signals += 0.5
+            elif -2 < price_above_ma20_pct < 1:  # Price near or slightly below MA20
+                buy_signals += 0.3
+                
+            # Decision logic with threshold
+            if buy_signals >= 2.5 and sell_signals < 1.5:
                 return 'BUY'
-            
-            # Sell signals
-            if (price < sma_20 or rsi > 75):
+            elif sell_signals >= 2.0 and buy_signals < 1.0:
                 return 'SELL'
-            
-            return 'HOLD'
+            else:
+                return 'HOLD'
             
         except Exception as e:
             logger.error(f"Error generating trading signal: {e}")

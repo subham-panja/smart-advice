@@ -8,7 +8,7 @@ A hammer has a small body near the high of the day with a long lower shadow.
 
 import pandas as pd
 import numpy as np
-from scripts.strategies.base_strategy import BaseStrategy
+from .base_strategy import BaseStrategy
 
 
 class Candlestick_Hammer(BaseStrategy):

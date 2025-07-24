@@ -8,7 +8,7 @@ and potential reversal points. A doji has nearly equal open and close prices.
 
 import pandas as pd
 import numpy as np
-from scripts.strategies.base_strategy import BaseStrategy
+from .base_strategy import BaseStrategy
 
 
 class Candlestick_Doji(BaseStrategy):

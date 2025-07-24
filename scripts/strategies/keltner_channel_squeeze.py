@@ -9,7 +9,7 @@ signals when the squeeze releases, indicating potential breakout moves.
 import pandas as pd
 import numpy as np
 import talib as ta
-from scripts.strategies.base_strategy import BaseStrategy
+from .base_strategy import BaseStrategy
 
 
 class Keltner_Channel_Squeeze(BaseStrategy):

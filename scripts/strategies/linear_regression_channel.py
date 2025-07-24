@@ -8,7 +8,7 @@ and potential reversal points when price touches channel boundaries.
 
 import pandas as pd
 import numpy as np
-from scripts.strategies.base_strategy import BaseStrategy
+from .base_strategy import BaseStrategy
 from sklearn.linear_model import LinearRegression
 import warnings
 warnings.filterwarnings('ignore')

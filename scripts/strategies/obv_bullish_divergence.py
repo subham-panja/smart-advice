@@ -9,7 +9,7 @@ A bullish divergence occurs when price makes lower lows but OBV makes higher low
 import pandas as pd
 import numpy as np
 import talib as ta
-from scripts.strategies.base_strategy import BaseStrategy
+from .base_strategy import BaseStrategy
 
 
 class OBV_Bullish_Divergence(BaseStrategy):

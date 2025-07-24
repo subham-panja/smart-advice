@@ -9,7 +9,7 @@ and potential reversal points. CCI measures the relationship between price and i
 import pandas as pd
 import numpy as np
 import talib as ta
-from scripts.strategies.base_strategy import BaseStrategy
+from .base_strategy import BaseStrategy
 
 
 class Commodity_Channel_Index(BaseStrategy):

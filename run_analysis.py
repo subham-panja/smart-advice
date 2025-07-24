@@ -155,8 +155,13 @@ class AutomatedStockAnalysis:
             # Extract backtest metrics including detailed transaction data
             backtest_metrics = self._extract_detailed_backtest_metrics(analysis_result)
             
+            # Calculate expected return percentage if both buy and sell prices are available
+            expected_return_percent = 0.0
+            if buy_price and sell_price and buy_price > 0:
+                expected_return_percent = ((sell_price - buy_price) / buy_price) * 100
+            
             # Log the trade-level values being stored
-            logger.info(f"Storing trade-level data for {rec.symbol}: buy_price={buy_price}, sell_price={sell_price}, est_time_to_target={est_time_to_target}")
+            logger.info(f"Storing trade-level data for {rec.symbol}: buy_price={buy_price}, sell_price={sell_price}, expected_return_percent={expected_return_percent:.2f}%, est_time_to_target={est_time_to_target}")
             
             # Log backtest metrics
             if backtest_metrics.get('cagr'):
@@ -183,8 +188,9 @@ class AutomatedStockAnalysis:
                     'sell_price': sell_price,
                     'est_time_to_target': est_time_to_target,
                     'backtest_metrics': backtest_metrics,
-                    'recommendation_date': datetime.utcnow()
-                }
+                'recommendation_date': datetime.utcnow(),
+                'expected_return_percent': expected_return_percent
+            }
                 
                 # Use upsert to insert or update
                 result = db.recommended_shares.update_one(

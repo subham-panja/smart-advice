@@ -8,7 +8,7 @@ and generate buy/sell signals based on price breaking above/below the cloud.
 
 import pandas as pd
 import numpy as np
-from scripts.strategies.base_strategy import BaseStrategy
+from .base_strategy import BaseStrategy
 
 
 class Ichimoku_Cloud_Breakout(BaseStrategy):

@@ -167,7 +167,9 @@ class EnhancedVolumeConfirmation:
                 }
             
             # Calculate OBV
-            obv = ta.OBV(data['Close'].values, data['Volume'].values)
+            close_values = data['Close'].values.astype(np.float64)
+            volume_values = data['Volume'].values.astype(np.float64)
+            obv = ta.OBV(close_values, volume_values)
             
             # Calculate OBV moving averages for trend identification
             obv_ma_short = ta.SMA(obv, timeperiod=10)
@@ -402,24 +404,30 @@ class EnhancedVolumeConfirmation:
             if volume_analysis['overall_signal'] == 'error':
                 return 0, "Volume analysis error - signal filtered"
             
+            # Get volume strength info safely
+            volume_strength = volume_analysis.get('volume_strength', {})
+            vol_description = volume_strength.get('description', 'Unknown volume')
+            vol_strength = volume_strength.get('strength', 'unknown')
+            vol_multiplier = volume_strength.get('multiplier', 0.0)
+            
             # For buy signals, require bullish or neutral volume
             if signal == 1:
                 if volume_analysis['overall_signal'] == 'bullish':
                     if volume_analysis['confidence'] >= 0.6:
-                        return 1, f"Strong volume confirmation: {volume_analysis['volume_strength']['description']}"
+                        return 1, f"Strong volume confirmation: {vol_description}"
                     else:
-                        return 1, f"Volume confirmation: {volume_analysis['volume_strength']['description']}"
+                        return 1, f"Volume confirmation: {vol_description}"
                 elif volume_analysis['overall_signal'] == 'neutral':
                     if volume_analysis['confidence'] >= 0.4:
-                        return 1, f"Neutral volume allows signal: {volume_analysis['volume_strength']['description']}"
+                        return 1, f"Neutral volume allows signal: {vol_description}"
                     else:
-                        return 0, f"Signal filtered due to weak volume: {volume_analysis['volume_strength']['strength']} (factor: {volume_analysis['volume_strength']['multiplier']:.2f})"
+                        return 0, f"Signal filtered due to weak volume: {vol_strength} (factor: {vol_multiplier:.2f})"
                 else:  # bearish volume
-                    return 0, f"Signal filtered due to bearish volume: {volume_analysis['volume_strength']['description']}"
+                    return 0, f"Signal filtered due to bearish volume: {vol_description}"
             
             # For sell signals, any volume pattern is acceptable (volume doesn't typically confirm sell signals)
             elif signal == -1:
-                return -1, f"Sell signal maintained: {volume_analysis['volume_strength']['description']}"
+                return -1, f"Sell signal maintained: {vol_description}"
             
             return signal, "Signal maintained after volume analysis"
             
