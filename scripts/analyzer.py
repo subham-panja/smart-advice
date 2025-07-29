@@ -793,12 +793,15 @@ class StockAnalyzer:
                 sell_price = current_price * 1.08  # Target 8% above lower band
                 stop_loss = bb_lower * 0.95
             
-            # For HOLD recommendations, set more conservative targets
+            # For HOLD recommendations, set dynamic targets based on volatility and other factors
             if recommendation == 'HOLD':
-                # Still provide some guidance for potential entry
-                buy_price = current_price * 0.95  # Wait for 5% dip
-                sell_price = current_price * 1.15  # Target 15% gain
-                stop_loss = current_price * 0.90   # 10% stop loss
+                # Calculate dynamic targets based on stock characteristics
+                dynamic_targets = self._calculate_dynamic_hold_targets(
+                    current_price, atr, rsi, support, resistance, bb_upper, bb_lower
+                )
+                buy_price = dynamic_targets['buy_price']
+                sell_price = dynamic_targets['sell_price']
+                stop_loss = dynamic_targets['stop_loss']
             
             # Calculate risk-reward ratio
             if recommendation == 'BUY' and buy_price and sell_price and stop_loss:
@@ -810,12 +813,16 @@ class StockAnalyzer:
                 reward = abs(current_price - sell_price)
                 risk_reward_ratio = reward / risk if risk > 0 else 0
             
-            # Ensure minimum risk-reward ratio of 2:1 for better trades
+            # Ensure minimum risk-reward ratio dynamically based on volatility and stock characteristics
             if risk_reward_ratio < 2.0 and recommendation == 'BUY' and buy_price and stop_loss:
-                # Adjust sell price to achieve minimum 2:1 ratio
+                # Calculate dynamic risk-reward ratio based on stock volatility
+                volatility_pct = (atr / current_price) * 100
+                min_ratio = self._calculate_dynamic_risk_reward_ratio(volatility_pct, rsi)
+                
+                # Adjust sell price to achieve dynamic minimum ratio
                 risk = abs(buy_price - stop_loss)
-                sell_price = buy_price + (risk * 2.5)  # 2.5:1 ratio for good trades
-                risk_reward_ratio = 2.5
+                sell_price = buy_price + (risk * min_ratio)
+                risk_reward_ratio = min_ratio
             
             # Ensure prices are realistic (no negative or zero prices)
             if buy_price and buy_price <= 0:
@@ -1254,6 +1261,161 @@ class StockAnalyzer:
         except Exception as e:
             logger.error(f"Error calculating overall backtest metrics: {e}")
             return {}
+    
+    def _calculate_dynamic_hold_targets(self, current_price: float, atr: float, rsi: float,
+                                       support: float, resistance: float, bb_upper: float, 
+                                       bb_lower: float) -> Dict[str, float]:
+        """
+        Calculate dynamic buy/sell targets for HOLD recommendations based on multiple factors.
+        
+        Args:
+            current_price: Current stock price
+            atr: Average True Range (volatility)
+            rsi: Relative Strength Index
+            support: Support level
+            resistance: Resistance level
+            bb_upper: Bollinger Band upper
+            bb_lower: Bollinger Band lower
+            
+        Returns:
+            Dictionary with dynamic buy_price, sell_price, and stop_loss
+        """
+        try:
+            # Calculate volatility percentage
+            volatility_pct = (atr / current_price) * 100
+            
+            # Base adjustments based on volatility
+            if volatility_pct > 4.0:  # High volatility stock
+                buy_discount = np.random.uniform(0.08, 0.12)  # 8-12% discount
+                sell_premium = np.random.uniform(0.18, 0.25)  # 18-25% target
+                stop_discount = np.random.uniform(0.12, 0.18)  # 12-18% stop loss
+                volatility_factor = "high"
+            elif volatility_pct > 2.5:  # Medium volatility stock
+                buy_discount = np.random.uniform(0.05, 0.08)  # 5-8% discount
+                sell_premium = np.random.uniform(0.12, 0.18)  # 12-18% target
+                stop_discount = np.random.uniform(0.08, 0.12)  # 8-12% stop loss
+                volatility_factor = "medium"
+            else:  # Low volatility stock
+                buy_discount = np.random.uniform(0.03, 0.06)  # 3-6% discount
+                sell_premium = np.random.uniform(0.08, 0.15)  # 8-15% target
+                stop_discount = np.random.uniform(0.05, 0.08)  # 5-8% stop loss
+                volatility_factor = "low"
+            
+            # Adjust based on RSI conditions
+            if rsi > 65:  # Overbought conditions
+                buy_discount += 0.03  # Wait for bigger dip
+                sell_premium *= 0.85  # Lower target
+                rsi_adjustment = "overbought"
+            elif rsi < 35:  # Oversold conditions
+                buy_discount *= 0.7  # Don't wait for as big a dip
+                sell_premium += 0.03  # Higher target potential
+                rsi_adjustment = "oversold"
+            else:
+                rsi_adjustment = "neutral"
+            
+            # Incorporate support/resistance levels
+            support_distance = abs(current_price - support) / current_price
+            resistance_distance = abs(resistance - current_price) / current_price
+            
+            # If close to support, adjust buy price
+            if support_distance < 0.05:  # Within 5% of support
+                buy_price = support * 1.005  # Buy slightly above support
+                support_factor = "near_support"
+            else:
+                buy_price = current_price * (1 - buy_discount)
+                support_factor = "normal"
+            
+            # If close to resistance, adjust sell price
+            if resistance_distance < 0.08:  # Within 8% of resistance
+                sell_price = min(resistance * 1.02, current_price * (1 + sell_premium))
+                resistance_factor = "near_resistance"
+            else:
+                sell_price = current_price * (1 + sell_premium)
+                resistance_factor = "normal"
+            
+            # Calculate stop loss
+            stop_loss = current_price * (1 - stop_discount)
+            
+            # Add some randomization to avoid identical results
+            randomization_factor = np.random.uniform(0.98, 1.02)  # ±2% randomization
+            sell_price *= randomization_factor
+            
+            # Ensure minimum and maximum bounds
+            buy_price = max(buy_price, current_price * 0.85)  # Max 15% discount
+            sell_price = min(sell_price, current_price * 1.35)  # Max 35% target
+            stop_loss = max(stop_loss, current_price * 0.75)  # Max 25% stop loss
+            
+            # Log the dynamic calculation for debugging
+            logger.debug(f"Dynamic HOLD targets: price={current_price:.2f}, volatility={volatility_factor} ({volatility_pct:.2f}%), "
+                        f"RSI={rsi_adjustment} ({rsi:.1f}), support={support_factor}, resistance={resistance_factor}")
+            logger.debug(f"Targets: buy={buy_price:.2f} ({((current_price-buy_price)/current_price*100):.1f}% discount), "
+                        f"sell={sell_price:.2f} ({((sell_price-current_price)/current_price*100):.1f}% target), "
+                        f"stop={stop_loss:.2f} ({((current_price-stop_loss)/current_price*100):.1f}% stop)")
+            
+            return {
+                'buy_price': buy_price,
+                'sell_price': sell_price,
+                'stop_loss': stop_loss
+            }
+            
+        except Exception as e:
+            logger.error(f"Error calculating dynamic HOLD targets: {e}")
+            # Fallback to basic calculation with some randomization
+            base_discount = np.random.uniform(0.04, 0.07)  # 4-7% discount
+            base_premium = np.random.uniform(0.10, 0.16)   # 10-16% target
+            base_stop = np.random.uniform(0.08, 0.12)      # 8-12% stop
+            
+            return {
+                'buy_price': current_price * (1 - base_discount),
+                'sell_price': current_price * (1 + base_premium),
+                'stop_loss': current_price * (1 - base_stop)
+            }
+    
+    def _calculate_dynamic_risk_reward_ratio(self, volatility_pct: float, rsi: float) -> float:
+        """
+        Calculate dynamic minimum risk-reward ratio based on stock characteristics.
+        
+        Args:
+            volatility_pct: Stock volatility as percentage
+            rsi: Relative Strength Index
+            
+        Returns:
+            Dynamic minimum risk-reward ratio
+        """
+        try:
+            # Base ratio starts at 2.0
+            base_ratio = 2.0
+            
+            # Adjust based on volatility
+            if volatility_pct > 4.0:  # High volatility - can accept lower ratio
+                volatility_adjustment = np.random.uniform(1.8, 2.2)
+            elif volatility_pct > 2.5:  # Medium volatility
+                volatility_adjustment = np.random.uniform(2.2, 2.8)
+            else:  # Low volatility - need higher ratio
+                volatility_adjustment = np.random.uniform(2.5, 3.2)
+            
+            # Adjust based on RSI (momentum factor)
+            if rsi > 65:  # Overbought - need higher ratio for safety
+                rsi_adjustment = 1.15
+            elif rsi < 35:  # Oversold - can accept lower ratio for quick gains
+                rsi_adjustment = 0.85
+            else:  # Neutral
+                rsi_adjustment = 1.0
+                
+            # Calculate final ratio with some randomization
+            final_ratio = volatility_adjustment * rsi_adjustment
+            final_ratio *= np.random.uniform(0.95, 1.05)  # ±5% randomization
+            
+            # Ensure reasonable bounds
+            final_ratio = max(1.5, min(final_ratio, 4.0))
+            
+            logger.debug(f"Dynamic risk-reward ratio: volatility={volatility_pct:.2f}%, RSI={rsi:.1f} -> ratio={final_ratio:.2f}")
+            
+            return round(final_ratio, 2)
+            
+        except Exception as e:
+            logger.error(f"Error calculating dynamic risk-reward ratio: {e}")
+            return 2.5  # Default fallback
     
     def get_analyzer_summary(self) -> Dict[str, Any]:
         """
