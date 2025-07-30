@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from typing import Dict, Optional, Any
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from utils.logger import setup_logging
+from utils.memory_utils import optimize_dataframe_memory
 import yfinance as yf
 from nsetools import Nse
 from config import NSE_CACHE_FILE, STOCK_FILTERING, MAX_WORKER_THREADS, MAX_RETRIES, REQUEST_DELAY, TIMEOUT_SECONDS, RATE_LIMIT_DELAY, BACKOFF_MULTIPLIER, HISTORICAL_DATA_PERIOD
@@ -203,6 +204,8 @@ def get_historical_data(symbol: str, period: str = '1y', interval: str = '1d') -
     try:
         # Get data with retry mechanism
         yf_symbol = f"{symbol}.NS"
+        
+        # Let yfinance handle sessions automatically to avoid curl_cffi errors
         data = yf.download(tickers=yf_symbol, period=period, interval=interval, progress=False, auto_adjust=True)
 
         if data.empty:
@@ -225,6 +228,9 @@ def get_historical_data(symbol: str, period: str = '1y', interval: str = '1d') -
             logger.error(f"Data missing required columns for {symbol} ({interval}).")
             return pd.DataFrame()
 
+        # Optimize memory usage
+        data = optimize_dataframe_memory(data)
+
         # Save to cache with better error handling
         try:
             os.makedirs(os.path.dirname(cache_file), exist_ok=True)
@@ -243,6 +249,8 @@ def get_current_price(symbol: str) -> Optional[float]:
     """Get current price for a stock symbol."""
     try:
         yf_symbol = f"{symbol}.NS"
+        
+        # Let yfinance handle sessions automatically to avoid curl_cffi errors
         ticker = yf.Ticker(yf_symbol)
         info = ticker.info
         return info.get('currentPrice') or info.get('regularMarketPrice')
@@ -304,6 +312,8 @@ def get_stock_info_with_retry(symbol: str, max_retries: int = MAX_RETRIES) -> Di
     for attempt in range(max_retries):
         try:
             yf_symbol = f"{symbol}.NS"
+            
+            # Let yfinance handle sessions automatically to avoid curl_cffi errors
             ticker = yf.Ticker(yf_symbol)
             
             # Add delay between attempts
@@ -315,14 +325,14 @@ def get_stock_info_with_retry(symbol: str, max_retries: int = MAX_RETRIES) -> Di
             info = ticker.info
             
             # Check if we got valid info (not None or empty)
-            if info is None or not info:
+            if info is None or not info or info.get('regularMarketPrice') is None:
                 if attempt == max_retries - 1:
-                    logger.warning(f"No ticker info available for {symbol} after {max_retries} attempts")
-                    return {'symbol': symbol, 'valid': False, 'reason': 'No ticker info available'}
+                    logger.warning(f"No valid ticker info for {symbol} after {max_retries} attempts. Response: {info}")
+                    return {'symbol': symbol, 'valid': False, 'reason': 'No valid ticker info'}
                 continue
-            
+
             # Get historical data for volume calculation
-            hist_data = get_historical_data(symbol, '3mo')  # 3 months for volume analysis
+            hist_data = get_historical_data(symbol, '3mo')
             
             if hist_data.empty:
                 return {'symbol': symbol, 'valid': False, 'reason': 'No historical data'}
@@ -332,7 +342,7 @@ def get_stock_info_with_retry(symbol: str, max_retries: int = MAX_RETRIES) -> Di
             current_price = hist_data['Close'].iloc[-1]
             
             # Get market cap (if available)
-            market_cap = info.get('marketCap', 0) if info else 0
+            market_cap = info.get('marketCap', 0)
             
             return {
                 'symbol': symbol,
@@ -341,30 +351,28 @@ def get_stock_info_with_retry(symbol: str, max_retries: int = MAX_RETRIES) -> Di
                 'avg_volume': avg_volume,
                 'market_cap': market_cap,
                 'historical_days': len(hist_data),
-                'company_name': info.get('longName', symbol) if info else symbol,
-                'sector': info.get('sector', 'Unknown') if info else 'Unknown',
-                'industry': info.get('industry', 'Unknown') if info else 'Unknown'
+                'company_name': info.get('longName', symbol),
+                'sector': info.get('sector', 'Unknown'),
+                'industry': info.get('industry', 'Unknown')
             }
             
         except Exception as e:
             error_msg = str(e).lower()
             
-            # Check for rate limiting errors
-            if ('rate limit' in error_msg or 'too many requests' in error_msg or 
-                '429' in error_msg or '401' in error_msg or 'unauthorized' in error_msg):
-                
+            # Check for HTTP or network-related errors
+            if any(keyword in error_msg for keyword in ['http', '401', '429', '502', 'failed to fetch']):
                 if attempt == max_retries - 1:
-                    logger.error(f"Rate limited for {symbol} after {max_retries} attempts: {e}")
-                    return {'symbol': symbol, 'valid': False, 'reason': 'Rate limited'}
+                    logger.error(f"HTTP/network error for {symbol} after {max_retries} attempts: {e}")
+                    return {'symbol': symbol, 'valid': False, 'reason': 'HTTP/network error'}
                 
-                # Exponential backoff for rate limiting
+                # Exponential backoff for these errors
                 delay = RATE_LIMIT_DELAY * (BACKOFF_MULTIPLIER ** attempt)
-                logger.warning(f"Rate limited for {symbol}, retrying in {delay:.1f}s (attempt {attempt + 1}/{max_retries})")
+                logger.warning(f"HTTP/network error for {symbol}, retrying in {delay:.1f}s (attempt {attempt + 1}/{max_retries})")
                 time.sleep(delay)
                 continue
             
-            # For other errors, don't retry
-            logger.error(f"Error getting stock info for {symbol}: {e}")
+            # For other exceptions, do not retry
+            logger.error(f"Unhandled error getting stock info for {symbol}: {e}")
             return {'symbol': symbol, 'valid': False, 'reason': str(e)}
     
     # If we get here, all retries failed

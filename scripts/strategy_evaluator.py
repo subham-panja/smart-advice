@@ -48,6 +48,7 @@ class StrategyEvaluator:
             'Volume_Breakout': 'scripts.strategies.volume_breakout',
             'Support_Resistance_Breakout': 'scripts.strategies.support_resistance_breakout',
             'Fibonacci_Retracement': 'scripts.strategies.fibonacci_retracement',
+            'Multi_Timeframe_RSI': 'scripts.strategies.multi_timeframe_rsi',
             
             # Advanced strategies (newly enabled)
             'DEMA_Crossover': 'scripts.strategies.dema_crossover',
@@ -116,6 +117,8 @@ class StrategyEvaluator:
                         strategy_class = getattr(module, 'ChartPatterns')
                     elif strategy_name == 'Volume_Profile':
                         strategy_class = getattr(module, 'VolumeProfile')
+                    elif strategy_name == 'Multi_Timeframe_RSI':
+                        strategy_class = getattr(module, 'MultiTimeframeRSI')
                     else:
                         strategy_class = getattr(module, strategy_name)
                     

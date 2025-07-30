@@ -86,6 +86,24 @@ class ChartPatterns(BaseStrategy):
                 patterns_detected.append(supply_demand_signal)
                 pattern_strength += supply_demand_signal['strength']
             
+            # 7. Check for Bull Flag patterns
+            flag_signal = self._detect_bull_flag_pattern(data)
+            if flag_signal:
+                patterns_detected.append(flag_signal)
+                pattern_strength += flag_signal['strength']
+            
+            # 8. Check for Triangle patterns
+            triangle_signal = self._detect_triangle_patterns(data)
+            if triangle_signal:
+                patterns_detected.append(triangle_signal)
+                pattern_strength += triangle_signal['strength']
+            
+            # 9. Check for Head and Shoulders patterns
+            hs_signal = self._detect_head_shoulders_patterns(data)
+            if hs_signal:
+                patterns_detected.append(hs_signal)
+                pattern_strength += hs_signal['strength']
+            
             # Enhanced volume confirmation using new system
             if self.volume_confirmation and patterns_detected:
                 volume_factor = self._get_volume_confirmation(data)
@@ -431,3 +449,301 @@ class ChartPatterns(BaseStrategy):
                 
         except Exception as e:
             return 1.0
+    
+    def _detect_bull_flag_pattern(self, data: pd.DataFrame) -> Optional[Dict]:
+        """
+        Detect Bull Flag patterns - strong uptrend followed by consolidation.
+        
+        A bull flag consists of:
+        1. Strong uptrend (flagpole)
+        2. Brief consolidation with declining volume (flag)
+        3. Breakout above consolidation with increased volume
+        """
+        try:
+            if len(data) < 15:  # Need at least 15 bars for pattern analysis
+                return None
+            
+            # Get recent data for analysis
+            recent_data = data.tail(15)
+            closes = recent_data['Close'].values
+            highs = recent_data['High'].values
+            lows = recent_data['Low'].values
+            volumes = recent_data['Volume'].values
+            
+            # 1. Check for strong uptrend (flagpole) in first part
+            flagpole_start = 0
+            flagpole_end = 7  # First 8 bars for flagpole
+            
+            flagpole_gain = (closes[flagpole_end] - closes[flagpole_start]) / closes[flagpole_start]
+            
+            # Require at least 5% gain for flagpole
+            if flagpole_gain < 0.05:
+                return None
+            
+            # 2. Check for consolidation (flag) in recent bars
+            flag_start = flagpole_end + 1
+            flag_data = recent_data.iloc[flag_start:]
+            
+            if len(flag_data) < 5:  # Need at least 5 bars for flag
+                return None
+            
+            flag_highs = flag_data['High'].values
+            flag_lows = flag_data['Low'].values
+            flag_volumes = flag_data['Volume'].values
+            
+            # Calculate consolidation range
+            flag_high = np.max(flag_highs)
+            flag_low = np.min(flag_lows)
+            flag_range = (flag_high - flag_low) / flag_low
+            
+            # Flag should be a tight consolidation (< 5% range)
+            if flag_range > 0.05:
+                return None
+            
+            # 3. Check volume pattern - should decline during consolidation
+            avg_flagpole_volume = np.mean(volumes[flagpole_start:flagpole_end+1])
+            avg_flag_volume = np.mean(flag_volumes[:-1])  # Exclude current bar
+            current_volume = volumes[-1]
+            
+            # Volume should decline during flag formation
+            volume_decline = avg_flag_volume < avg_flagpole_volume * 0.8
+            
+            # 4. Check for potential breakout
+            current_price = closes[-1]
+            breakout_level = flag_high
+            
+            # Check if price is near or above breakout level
+            near_breakout = current_price >= breakout_level * 0.98
+            
+            if not (volume_decline and near_breakout):
+                return None
+            
+            # Calculate pattern strength
+            flagpole_strength = min(flagpole_gain * 10, 1.0)  # Scale gain to 0-1
+            consolidation_strength = max(0, 1 - flag_range * 20)  # Tighter = stronger
+            volume_strength = min(avg_flagpole_volume / avg_flag_volume, 2.0) / 2.0
+            
+            # Check for volume confirmation on current bar
+            volume_breakout = current_volume > avg_flag_volume * 1.2
+            volume_multiplier = 1.2 if volume_breakout else 1.0
+            
+            strength = (flagpole_strength + consolidation_strength + volume_strength) / 3 * 0.85 * volume_multiplier
+            
+            return {
+                'name': 'Bull Flag',
+                'type': 'continuation_bullish',
+                'strength': min(strength, 1.0),
+                'flagpole_gain': flagpole_gain,
+                'flag_range': flag_range,
+                'volume_decline': volume_decline,
+                'breakout_level': breakout_level
+            }
+            
+        except Exception as e:
+            return None
+    
+    def _detect_triangle_patterns(self, data: pd.DataFrame) -> Optional[Dict]:
+        """
+        Detect Triangle patterns - converging trendlines indicating consolidation.
+        
+        Types: Ascending, Descending, Symmetrical triangles
+        """
+        try:
+            if len(data) < 20:  # Need sufficient data for triangle analysis
+                return None
+            
+            # Get recent data for analysis
+            recent_data = data.tail(20)
+            highs = recent_data['High'].values
+            lows = recent_data['Low'].values
+            closes = recent_data['Close'].values
+            volumes = recent_data['Volume'].values
+            
+            # Find significant peaks and troughs
+            high_peaks, _ = find_peaks(highs, prominence=np.std(highs) * 0.3, distance=3)
+            low_troughs, _ = find_peaks(-lows, prominence=np.std(lows) * 0.3, distance=3)
+            
+            # Need at least 2 peaks and 2 troughs
+            if len(high_peaks) < 2 or len(low_troughs) < 2:
+                return None
+            
+            # Get the most recent peaks and troughs
+            recent_peaks = high_peaks[-2:] if len(high_peaks) >= 2 else high_peaks
+            recent_troughs = low_troughs[-2:] if len(low_troughs) >= 2 else low_troughs
+            
+            # Calculate trendline slopes
+            if len(recent_peaks) >= 2:
+                peak_slope = (highs[recent_peaks[-1]] - highs[recent_peaks[-2]]) / (recent_peaks[-1] - recent_peaks[-2])
+            else:
+                peak_slope = 0
+            
+            if len(recent_troughs) >= 2:
+                trough_slope = (lows[recent_troughs[-1]] - lows[recent_troughs[-2]]) / (recent_troughs[-1] - recent_troughs[-2])
+            else:
+                trough_slope = 0
+            
+            # Determine triangle type
+            triangle_type = None
+            strength_base = 0.6
+            
+            # Ascending Triangle: Horizontal resistance, rising support
+            if abs(peak_slope) < 0.001 and trough_slope > 0.001:  # Flat top, rising bottom
+                triangle_type = 'Ascending Triangle'
+                strength_base = 0.8  # Bullish pattern
+                
+            # Descending Triangle: Falling resistance, horizontal support
+            elif peak_slope < -0.001 and abs(trough_slope) < 0.001:  # Falling top, flat bottom
+                triangle_type = 'Descending Triangle'
+                strength_base = 0.3  # Bearish pattern - lower strength for our bullish strategy
+                
+            # Symmetrical Triangle: Converging trendlines
+            elif peak_slope < -0.001 and trough_slope > 0.001:  # Falling top, rising bottom
+                triangle_type = 'Symmetrical Triangle'
+                strength_base = 0.6  # Neutral pattern
+            
+            if not triangle_type:
+                return None
+            
+            # Check for breakout potential
+            current_price = closes[-1]
+            resistance_level = highs[recent_peaks[-1]] if len(recent_peaks) > 0 else np.max(highs[-5:])
+            support_level = lows[recent_troughs[-1]] if len(recent_troughs) > 0 else np.min(lows[-5:])
+            
+            triangle_range = (resistance_level - support_level) / support_level
+            
+            # Triangle should show convergence (narrowing range)
+            if triangle_range < 0.02 or triangle_range > 0.08:  # Too narrow or too wide
+                return None
+            
+            # Check volume pattern - should decline during formation
+            early_volume = np.mean(volumes[:10])
+            recent_volume = np.mean(volumes[-5:])
+            volume_decline = recent_volume < early_volume * 0.8
+            
+            # Check proximity to breakout
+            distance_to_resistance = (resistance_level - current_price) / current_price
+            distance_to_support = (current_price - support_level) / current_price
+            
+            # Bullish patterns get higher strength when near resistance
+            if triangle_type in ['Ascending Triangle', 'Symmetrical Triangle']:
+                if distance_to_resistance < 0.02:  # Near resistance breakout
+                    proximity_bonus = 0.2
+                else:
+                    proximity_bonus = 0
+            else:
+                proximity_bonus = 0
+            
+            # Calculate final strength
+            convergence_strength = max(0, 1 - triangle_range * 10)  # Tighter = stronger
+            volume_strength = 0.1 if volume_decline else 0
+            
+            final_strength = min(strength_base + convergence_strength * 0.2 + volume_strength + proximity_bonus, 1.0)
+            
+            # Only return bullish or neutral patterns
+            if triangle_type == 'Descending Triangle':
+                return None  # Skip bearish patterns
+            
+            return {
+                'name': triangle_type,
+                'type': 'consolidation',
+                'strength': final_strength,
+                'resistance_level': resistance_level,
+                'support_level': support_level,
+                'triangle_range': triangle_range,
+                'volume_decline': volume_decline
+            }
+            
+        except Exception as e:
+            return None
+    
+    def _detect_head_shoulders_patterns(self, data: pd.DataFrame) -> Optional[Dict]:
+        """
+        Detect Inverse Head and Shoulders patterns - a bullish reversal pattern.
+        
+        The pattern consists of:
+        1. Left shoulder (a trough)
+        2. Head (a lower trough)
+        3. Right shoulder (a trough higher than the head)
+        4. Neckline (resistance connecting the peaks between the troughs)
+        """
+        try:
+            if len(data) < 25:  # Need enough data for H&S analysis
+                return None
+            
+            # Get recent data for analysis
+            recent_data = data.tail(25)
+            highs = recent_data['High'].values
+            lows = recent_data['Low'].values
+            closes = recent_data['Close'].values
+            
+            # Find significant peaks and troughs
+            high_peaks, _ = find_peaks(highs, prominence=np.std(highs) * 0.4, distance=4)
+            low_troughs, _ = find_peaks(-lows, prominence=np.std(lows) * 0.4, distance=4)
+            
+            # Need at least 3 troughs and 2 peaks for an inverse H&S
+            if len(low_troughs) < 3 or len(high_peaks) < 2:
+                return None
+            
+            # Identify potential shoulders and head
+            left_shoulder_idx = low_troughs[-3]
+            head_idx = low_troughs[-2]
+            right_shoulder_idx = low_troughs[-1]
+            
+            left_shoulder = lows[left_shoulder_idx]
+            head = lows[head_idx]
+            right_shoulder = lows[right_shoulder_idx]
+            
+            # Basic H&S structure checks
+            if not (head < left_shoulder and head < right_shoulder):
+                return None
+            
+            # Shoulders should be roughly at the same level
+            if abs(left_shoulder - right_shoulder) / right_shoulder > 0.05:  # Less than 5% difference
+                return None
+            
+            # Identify peaks for the neckline
+            peak1_idx = high_peaks[np.where(high_peaks > left_shoulder_idx)[0][0]]
+            peak2_idx = high_peaks[np.where(high_peaks > head_idx)[0][0]]
+            
+            if peak1_idx >= peak2_idx:
+                return None
+            
+            # Calculate neckline
+            neckline_p1 = (peak1_idx, highs[peak1_idx])
+            neckline_p2 = (peak2_idx, highs[peak2_idx])
+            neckline_slope = (neckline_p2[1] - neckline_p1[1]) / (neckline_p2[0] - neckline_p1[0])
+            neckline_intercept = neckline_p1[1] - neckline_slope * neckline_p1[0]
+            
+            # Check if current price is breaking the neckline
+            current_price = closes[-1]
+            current_neckline_level = neckline_slope * (len(recent_data) - 1) + neckline_intercept
+            
+            if current_price < current_neckline_level * 0.98:  # Price must be close to or above neckline
+                return None
+            
+            # Volume confirmation: should increase on neckline breakout
+            avg_volume_shoulders = np.mean(data['Volume'].iloc[left_shoulder_idx:right_shoulder_idx])
+            breakout_volume = data['Volume'].iloc[-1]
+            volume_confirmation = breakout_volume > avg_volume_shoulders * 1.3
+            
+            # Calculate pattern strength
+            depth_strength = (left_shoulder - head) / head * 10  # Deeper head is stronger
+            symmetry_strength = 1 - abs(left_shoulder - right_shoulder) / right_shoulder * 20
+            volume_strength = 0.2 if volume_confirmation else 0
+            
+            final_strength = min(0.7 * (depth_strength + symmetry_strength) / 2 + volume_strength, 1.0)
+            
+            if final_strength < 0.6:  # Minimum strength threshold
+                return None
+                
+            return {
+                'name': 'Inverse Head & Shoulders',
+                'type': 'reversal_bullish',
+                'strength': final_strength,
+                'neckline_level': current_neckline_level,
+                'head_price': head,
+                'volume_confirmed': volume_confirmation
+            }
+
+        except Exception as e:
+            return None

@@ -17,7 +17,6 @@ from typing import Dict, Any, Optional, Tuple
 from utils.logger import setup_logging
 
 logger = setup_logging()
-
 class PositionSizer:
     """
     Advanced position sizing system for professional trading.
@@ -26,16 +25,18 @@ class PositionSizer:
     while maintaining proper capital preservation.
     """
     
-    def __init__(self, account_balance: float = 100000.0, base_risk_per_trade: float = 0.02):
+    def __init__(self, account_balance: float = 100000.0, base_risk_per_trade: float = 0.02, volatility_factor_enabled: bool = False):
         """
         Initialize the position sizer.
         
         Args:
             account_balance: Total account balance
             base_risk_per_trade: Base risk percentage per trade (default 2%)
+            volatility_factor_enabled: Whether to enable volatility-based risk adjustments
         """
         self.account_balance = account_balance
         self.base_risk_per_trade = base_risk_per_trade
+        self.volatility_factor_enabled = volatility_factor_enabled
         
     def volatility_adjusted_sizing(self, data: pd.DataFrame, entry_price: float, 
                                  stop_loss: float, target_volatility: float = 0.15) -> Dict[str, Any]:
@@ -529,6 +530,11 @@ class PositionSizer:
         """Update account balance for position sizing calculations."""
         self.account_balance = new_balance
         logger.info(f"Account balance updated to ${new_balance:,.2f}")
+    
+    def update_risk_per_trade(self, new_risk: float):
+        """Update base risk per trade for position sizing calculations."""
+        self.base_risk_per_trade = new_risk
+        logger.info(f"Base risk per trade updated to {new_risk*100:.2f}%")
     
     def get_sizing_summary(self) -> Dict[str, Any]:
         """

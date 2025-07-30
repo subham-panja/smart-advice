@@ -1,3 +1,5 @@
+import gc
+
 #!/usr/bin/env python3
 """
 Automated Stock Analysis Script
@@ -634,19 +636,10 @@ class AutomatedStockAnalysis:
         try:
             logger.info(f"Analyzing {symbol} ({current_index}/{total_stocks})")
             
-            # For large-scale analysis, use simplified mode to avoid memory issues
-            simplified_mode = total_stocks > 50
-            
             # Perform analysis
             try:
-                if simplified_mode:
-                    # Skip sentiment analysis for large batches to prevent memory issues
-                    config_copy = self.app.config.copy()
-                    config_copy['SKIP_SENTIMENT'] = True
-                    analysis_result = self.analyzer.analyze_stock(symbol, config_copy)
-                else:
-                    analysis_result = self.analyzer.analyze_stock(symbol, self.app.config)
-                    
+                analysis_result = self.analyzer.analyze_stock(symbol, self.app.config)
+                
                 logger.debug(f"Analysis result for {symbol}: {analysis_result}")
             except Exception as e:
                 logger.exception(f"Error in analyzing stock {symbol}: {e}")
@@ -657,6 +650,9 @@ class AutomatedStockAnalysis:
                 time.sleep(REQUEST_DELAY / 5)  # Reduce delay for large batches
             else:
                 time.sleep(REQUEST_DELAY)
+            
+            # Force garbage collection after each stock analysis to prevent memory buildup
+            gc.collect()
             
             return {
                 'success': True,
@@ -674,7 +670,7 @@ class AutomatedStockAnalysis:
                 'recommended': False
             }
     
-    def analyze_all_stocks(self, max_stocks: int = None, batch_size: int = None, use_all_symbols: bool = False):
+    def analyze_all_stocks(self, max_stocks: int = None, batch_size: int = None, use_all_symbols: bool = False, single_threaded: bool = False):
         """
         Analyze all NSE stocks using multithreading and save recommendations.
         
@@ -682,8 +678,10 @@ class AutomatedStockAnalysis:
             max_stocks: Maximum number of stocks to analyze (for testing)
             batch_size: Number of stocks to process in each batch (from config if None)
             use_all_symbols: If True, use all NSE symbols instead of filtered ones
+            single_threaded: If True, process stocks one by one without threading (for debugging)
         """
-        logger.info(f"Starting automated stock analysis with multithreading (max_stocks={max_stocks}, use_all_symbols={use_all_symbols})")
+        mode_str = "single-threaded" if single_threaded else "multithreading"
+        logger.info(f"Starting automated stock analysis with {mode_str} (max_stocks={max_stocks}, use_all_symbols={use_all_symbols})")
         
         if use_all_symbols:
             # Get all NSE symbols without filtering
@@ -771,11 +769,14 @@ class AutomatedStockAnalysis:
                         error_count += 1
                         processed_count += 1
             
-            # Log progress after each batch
+            # Log progress and trigger garbage collection after each batch
             elapsed_time = (datetime.now() - self.start_time).total_seconds()
             avg_time_per_stock = elapsed_time / processed_count if processed_count > 0 else 0
             estimated_remaining = (total_stocks - processed_count) * avg_time_per_stock
-            
+
+            # Manually trigger garbage collection
+            gc.collect()
+
             logger.info(f"Progress: {processed_count}/{total_stocks} stocks processed, "
                        f"{recommended_count} recommendations, {error_count} errors, "
                        f"~{estimated_remaining/60:.1f} minutes remaining")

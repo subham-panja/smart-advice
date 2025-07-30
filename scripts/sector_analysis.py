@@ -118,15 +118,95 @@ class SectorAnalyzer:
         Returns:
             Momentum score
         """
-        # Normalize components
-        return_score = max(0, min(1, (avg_return + 20) / 40))  # Normalize to 0-1
+        # Normalize components with improved scaling
+        return_score = max(0, min(1, (avg_return + 30) / 60))  # Wider range for better differentiation
         consistency_score = positive_ratio  # Already 0-1
-        volatility_penalty = max(0, 1 - (volatility / 50))  # Penalize high volatility
+        volatility_penalty = max(0, 1 - (volatility / 40))  # More sensitive to volatility
         
-        # Weighted combination
-        momentum_score = (return_score * 0.5 + consistency_score * 0.3 + volatility_penalty * 0.2)
+        # Enhanced weighted combination with momentum bias
+        momentum_score = (return_score * 0.6 + consistency_score * 0.25 + volatility_penalty * 0.15)
         
         return momentum_score
+    
+    def calculate_sector_relative_strength(self, sector_returns: Dict[str, float], 
+                                         benchmark_return: float = None) -> Dict[str, float]:
+        """
+        Calculate relative strength of sectors against a benchmark.
+        
+        Args:
+            sector_returns: Dictionary of sector returns
+            benchmark_return: Benchmark return (market average if None)
+            
+        Returns:
+            Dictionary of relative strength scores
+        """
+        if benchmark_return is None:
+            # Use average of all sectors as benchmark
+            benchmark_return = np.mean(list(sector_returns.values()))
+        
+        relative_strength = {}
+        for sector, return_pct in sector_returns.items():
+            # Calculate relative strength ratio
+            if benchmark_return != 0:
+                rs_ratio = return_pct / benchmark_return if benchmark_return > 0 else (return_pct - benchmark_return)
+            else:
+                rs_ratio = 1.0 if return_pct >= 0 else -1.0
+            
+            # Normalize to 0-1 scale with 0.5 as neutral
+            if rs_ratio >= 1:
+                relative_strength[sector] = 0.5 + min(0.5, (rs_ratio - 1) * 0.5)
+            else:
+                relative_strength[sector] = 0.5 * rs_ratio
+            
+        return relative_strength
+    
+    def detect_sector_rotation_signals(self, rotation_analysis: Dict[str, Any]) -> Dict[str, str]:
+        """
+        Detect sector rotation signals based on momentum changes.
+        
+        Args:
+            rotation_analysis: Historical rotation analysis data
+            
+        Returns:
+            Dictionary of sector rotation signals
+        """
+        signals = {}
+        
+        if len(rotation_analysis) < 2:
+            return signals
+        
+        # Get the two most recent periods for comparison
+        periods = sorted(rotation_analysis.keys())
+        if len(periods) >= 2:
+            recent_period = periods[-1]
+            previous_period = periods[-2]
+            
+            recent_tops = [sector for sector, score in rotation_analysis[recent_period]['top_sectors']]
+            previous_tops = [sector for sector, score in rotation_analysis[previous_period]['top_sectors']]
+            
+            recent_bottoms = [sector for sector, score in rotation_analysis[recent_period]['bottom_sectors']]
+            previous_bottoms = [sector for sector, score in rotation_analysis[previous_period]['bottom_sectors']]
+            
+            # Detect emerging leaders
+            emerging_leaders = [sector for sector in recent_tops if sector not in previous_tops]
+            
+            # Detect declining sectors
+            declining_sectors = [sector for sector in recent_bottoms if sector not in previous_bottoms]
+            
+            # Detect sector rotation (from bottom to top)
+            rotating_up = [sector for sector in recent_tops if sector in previous_bottoms]
+            
+            # Assign signals
+            for sector in emerging_leaders:
+                signals[sector] = 'EMERGING_LEADER'
+            
+            for sector in declining_sectors:
+                signals[sector] = 'DECLINING'
+            
+            for sector in rotating_up:
+                signals[sector] = 'ROTATING_UP'
+        
+        return signals
     
     def get_sector_for_symbol(self, symbol: str) -> Optional[str]:
         """
@@ -283,6 +363,89 @@ class SectorAnalyzer:
             if sector_name == sector:
                 return i
         return len(ranked_sectors)  # Return last rank if not found
+    
+    def get_comprehensive_sector_analysis(self, symbol: str) -> Dict[str, Any]:
+        """
+        Get comprehensive sector analysis for a symbol, including momentum,
+        relative strength, and rotation signals.
+
+        Args:
+            symbol: Stock symbol
+
+        Returns:
+            Dictionary with comprehensive sector analysis
+        """
+        try:
+            sector = self.get_sector_for_symbol(symbol)
+
+            if not sector:
+                return {
+                    'sector': 'Unknown',
+                    'sector_score': 0.0,
+                    'recommendation': 'Neutral - Sector not identified',
+                    'error': 'Sector not found for symbol'
+                }
+
+            # 1. Momentum Analysis
+            momentum_data = self.analyze_sector_momentum()
+            if 'error' in momentum_data:
+                raise Exception(f"Momentum analysis failed: {momentum_data['error']}")
+            
+            sector_performance = momentum_data.get('sector_performance', {}).get(sector, {})
+            momentum_score = sector_performance.get('momentum_score', 0.5)
+
+            # 2. Relative Strength Analysis
+            all_sector_returns = {s: p.get('average_return', 0) for s, p in momentum_data.get('sector_performance', {}).items()}
+            relative_strength_scores = self.calculate_sector_relative_strength(all_sector_returns)
+            relative_strength = relative_strength_scores.get(sector, 0.5)
+
+            # 3. Rotation Signal Analysis
+            rotation_analysis = self.analyze_sector_rotation()
+            rotation_signals = self.detect_sector_rotation_signals(rotation_analysis.get('rotation_analysis', {}))
+            rotation_signal = rotation_signals.get(sector, 'NEUTRAL')
+
+            # 4. Combine into a final sector score (-1 to 1)
+            # Higher weight for momentum, then relative strength, then rotation
+            sector_score = (momentum_score * 0.6) + (relative_strength * 0.3) + \
+                           {'EMERGING_LEADER': 0.2, 'ROTATING_UP': 0.1, 'DECLINING': -0.2, 'NEUTRAL': 0.0}.get(rotation_signal, 0.0)
+            
+            # Normalize to -1 to 1
+            sector_score = (sector_score * 2) - 1
+
+            # 5. Generate a descriptive recommendation
+            if sector_score > 0.4:
+                recommendation = f"Very Strong Sector ({sector}): Favorable momentum, relative strength, and rotation."
+            elif sector_score > 0.1:
+                recommendation = f"Strong Sector ({sector}): Positive momentum and relative strength."
+            elif sector_score < -0.4:
+                recommendation = f"Weak Sector ({sector}): Significant underperformance and negative momentum."
+            elif sector_score < -0.1:
+                recommendation = f"Weakening Sector ({sector}): Caution advised due to lagging performance."
+            else:
+                recommendation = f"Neutral Sector ({sector}): No strong tailwinds or headwinds."
+
+
+            return {
+                'sector': sector,
+                'sector_score': round(sector_score, 3),
+                'recommendation': recommendation,
+                'momentum_analysis': {
+                    'momentum_score': round(momentum_score, 3),
+                    'rank': self._get_sector_rank(sector, momentum_data.get('ranked_sectors', [])),
+                    'total_sectors': len(momentum_data.get('ranked_sectors', [])),
+                },
+                'relative_strength': round(relative_strength, 3),
+                'rotation_signal': rotation_signal
+            }
+
+        except Exception as e:
+            logger.error(f"Error in comprehensive sector analysis for {symbol}: {e}")
+            return {
+                'sector': 'Unknown',
+                'sector_score': 0.0,
+                'recommendation': 'Neutral - Analysis error',
+                'error': str(e)
+            }
     
     def get_sector_summary(self) -> Dict[str, Any]:
         """

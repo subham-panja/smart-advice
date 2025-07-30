@@ -31,6 +31,7 @@ STRATEGY_CONFIG = {
     'Volume_Breakout': True,               # Volume-confirmed breakouts - GOOD FOR SWING
     'Support_Resistance_Breakout': True,   # Support/Resistance breakouts - GOOD FOR SWING
     'ADX_Trend_Strength': True,            # Trend strength confirmation - GOOD FOR SWING
+    'Multi_Timeframe_RSI': True,           # Multi-timeframe RSI confluence - CRITICAL FOR SWING
     
     # MOMENTUM & OSCILLATOR STRATEGIES (selective)
     'Stochastic_Overbought_Oversold': True, # Stochastic - PROVEN
@@ -45,7 +46,7 @@ STRATEGY_CONFIG = {
     'Chart_Patterns': True,                # CRITICAL: High-probability setups (triangles, H&S, etc.)
     'Volume_Profile': True,                # CRITICAL: Precise entry/exit using POC and value areas
     'Volume_Price_Trend': True,            # Enhanced volume-price relationship analysis
-    'Momentum_Oscillator': False,          # Keep disabled to reduce noise
+    'Momentum_Oscillator': True,          # Keep disabled to reduce noise
     'ROC_Rate_of_Change': True,            # Rate of change momentum for swing timing
     'ATR_Volatility': True,                # Volatility context for position sizing and stops
     'Keltner_Channels_Breakout': True,     # Alternative breakout confirmation to Bollinger
@@ -55,7 +56,7 @@ STRATEGY_CONFIG = {
     'MACD_Zero_Line_Crossover': True,      # Additional MACD confirmation signals
     'Bollinger_Band_Squeeze': True,        # Low volatility preceding high-volatility breakouts
     'Stochastic_K_D_Crossover': True,      # Enhanced stochastic entry/exit signals
-    'DI_Crossover': False,                 # Keep disabled - less reliable
+    'DI_Crossover': True,                 # Keep disabled - less reliable
     'Ichimoku_Cloud_Breakout': True,       # CRITICAL: Comprehensive trend/momentum system
     'Ichimoku_Kijun_Tenkan_Crossover': True, # CRITICAL: Ichimoku entry/exit signals
     'OBV_Bullish_Divergence': True,        # Advanced volume divergence for reversal signals
@@ -99,9 +100,10 @@ HISTORICAL_DATA_PERIOD = '2y'
 NSE_CACHE_FILE = 'data/nse_symbols.json'
 
 # Threading and batch processing configuration
-MAX_WORKER_THREADS = min(32, os.cpu_count() * 4) if hasattr(os, 'cpu_count') else 16  # Optimized thread count
-BATCH_SIZE = 200  # Increased batch size for better throughput
-REQUEST_DELAY = 0.1  # Reduced delay for faster processing
+# Ultra-conservative settings for ML analysis to prevent segmentation faults
+MAX_WORKER_THREADS = 1  # Single thread to avoid threading issues with ML modules
+BATCH_SIZE = 1  # Process one stock at a time for ML analysis
+REQUEST_DELAY = 0.5  # Increased delay to reduce API pressure
 MAX_RETRIES = 5  # Maximum retries for failed requests
 TIMEOUT_SECONDS = 30  # Request timeout in seconds
 RATE_LIMIT_DELAY = 2.0  # Additional delay when rate limited (seconds)
@@ -110,11 +112,14 @@ BACKOFF_MULTIPLIER = 2.0  # Exponential backoff multiplier for retries
 # Data purge configuration
 DATA_PURGE_DAYS = 0  # Number of days to keep old data (recommendations and backtest results)
 
-# Analysis weightage configuration
+# Analysis weightage configuration - Enhanced with ML components
 ANALYSIS_WEIGHTS = {
-    'technical': 0.7,     # Technical analysis weight (50%)
-    'fundamental': 0.2,   # Fundamental analysis weight (30%)
-    'sentiment': 0.1      # Sentiment analysis weight (20%)
+    'technical': 0.4,     # Technical analysis weight (40%)
+    'fundamental': 0.2,   # Fundamental analysis weight (20%)
+    'sentiment': 0.15,    # Sentiment analysis weight (15%) - ML-based
+    'sector': 0.1,        # Sector analysis weight (10%) - ML insights
+    'predictive': 0.1,    # Predictive analysis weight (10%) - LSTM predictions
+    'rl_agent': 0.05      # RL agent weight (5%) - Reinforcement learning
 }
 
 # Recommendation thresholds - Enhanced for better signal detection
@@ -130,6 +135,23 @@ RECOMMENDATION_THRESHOLDS = {
     'fundamental_minimum': 0.3,     # Minimum fundamental score to consider
     'volume_confirmation_required': True,  # Don't require volume confirmation for all signals
     'market_trend_weight': 0.4       # Weight for overall market trend consideration
+}
+
+# Analysis Modules Configuration - Enable/disable high-level analysis types
+# Optimized ML config for memory-constrained systems
+ANALYSIS_CONFIG = {
+    'technical_analysis': True,
+    'fundamental_analysis': True,
+    'sentiment_analysis': True,  # ML-based sentiment analysis
+    'sector_analysis': True,  # Disabled - causes memory issues with threading
+    'market_regime_detection': True,  # Disabled - very memory intensive
+    'market_microstructure': True,  # Keep disabled
+    'alternative_data': True,  # Keep disabled
+    'backtesting': True,  # Disabled - memory intensive with ML modules
+    'risk_management': True,
+    'predictive_analysis': True,  # LSTM price prediction - lighter ML module
+    'rl_trading_agent': True,  # RL trading agent - lighter ML module
+    'tca_analysis': True  # Keep disabled
 }
 
 # Stock filtering configuration

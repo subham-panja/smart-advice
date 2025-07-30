@@ -41,15 +41,16 @@ class RiskManager:
         self.max_drawdown = max_drawdown
         self.open_positions = {}  # Track open positions for portfolio risk
         
-        # Initialize advanced position sizer
+        # Initialize advanced position sizer with volatility awareness
         self.position_sizer = PositionSizer(
             account_balance=account_balance,
-            base_risk_per_trade=max_risk_per_trade
+            base_risk_per_trade=max_risk_per_trade,
+            volatility_factor_enabled=True  # Enable volatility-based risk adjustments
         )
         
     def calculate_position_size(self, entry_price: float, stop_loss: float, 
                               risk_per_trade: Optional[float] = None, 
-                              method: str = 'fixed_risk', 
+                              method: str = 'volatility_adjusted',  # Changed default to volatility_adjusted
                               data: Optional[pd.DataFrame] = None,
                               **kwargs) -> Dict[str, Any]:
         """
@@ -59,7 +60,7 @@ class RiskManager:
             entry_price: Entry price for the trade
             stop_loss: Stop loss price
             risk_per_trade: Risk per trade (uses default if None)
-            method: Position sizing method ('fixed_risk', 'atr', 'kelly', 'percent_volatility', 'market_condition')
+            method: Position sizing method ('fixed_risk', 'atr', 'kelly', 'percent_volatility', 'market_condition', 'volatility_adjusted')
             data: Historical price data (required for advanced methods)
             **kwargs: Additional parameters for specific methods
             
@@ -70,7 +71,7 @@ class RiskManager:
             risk_pct = risk_per_trade or self.max_risk_per_trade
             
             # For backward compatibility, default to original method
-            if method == 'fixed_risk' or data is None:
+            if method == 'fixed_risk':
                 return self._calculate_basic_position_size(entry_price, stop_loss, risk_pct)
             
             # Use advanced position sizer for sophisticated methods
@@ -106,6 +107,13 @@ class RiskManager:
                     stop_loss=stop_loss,
                     data=data,
                     market_condition=market_condition
+                )
+            elif method == 'volatility_adjusted':
+                result = self.position_sizer.volatility_adjusted_sizing(
+                    entry_price=entry_price,
+                    stop_loss=stop_loss,
+                    data=data,
+                    risk_adjustment_factor=kwargs.get('risk_adjustment_factor', 1.0)
                 )
             else:
                 # Fall back to basic method for unknown methods
@@ -169,7 +177,7 @@ class RiskManager:
             }
     
     def calculate_stop_loss(self, data: pd.DataFrame, entry_price: float, 
-                          method: str = 'atr') -> Dict[str, Any]:
+                          method: str = 'atr', atr_multiplier: float = 2.0) -> Dict[str, Any]:
         """
         Calculate stop loss based on different methods.
         
@@ -193,11 +201,16 @@ class RiskManager:
             # Calculate support level
             support_level = self.find_support_level(data)
             
+            # DYNAMIC ATR MULTIPLIER
+            volatility_pct = (current_atr / entry_price) * 100 if entry_price > 0 else 0
+            # Use the atr_multiplier passed in, but log the volatility context
+            logger.debug(f"Volatility is {volatility_pct:.2f}%, using ATR multiplier: {atr_multiplier}")
+
             stop_losses = {}
             
             if method == 'atr' or method == 'combined':
-                # ATR-based stop loss (2 ATR below entry)
-                atr_stop = entry_price - (current_atr * 2)
+                # ATR-based stop loss (dynamic ATR multiplier)
+                atr_stop = entry_price - (current_atr * atr_multiplier)
                 stop_losses['atr'] = atr_stop
                 
             if method == 'support' or method == 'combined':
@@ -228,6 +241,7 @@ class RiskManager:
                 'stop_loss': stop_loss,
                 'method': chosen_method,
                 'atr_value': current_atr,
+                'atr_multiplier': atr_multiplier,
                 'support_level': support_level,
                 'stop_distance_pct': ((entry_price - stop_loss) / entry_price) * 100,
                 'all_stops': stop_losses
@@ -810,5 +824,5 @@ class RiskManager:
             'max_drawdown': self.max_drawdown * 100,
             'open_positions': len(self.open_positions),
             'risk_management_active': True,
-            'position_sizer_methods': ['fixed_risk', 'atr', 'kelly', 'percent_volatility', 'market_condition']
+            'position_sizer_methods': ['fixed_risk', 'atr', 'kelly', 'percent_volatility', 'market_condition', 'volatility_adjusted']
         }
