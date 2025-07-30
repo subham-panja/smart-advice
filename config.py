@@ -83,7 +83,7 @@ STRATEGY_CONFIG = {
 
 # Minimum combined score for recommendation - realistic threshold
 # Lowered to account for market conditions and data limitations
-MIN_RECOMMENDATION_SCORE = 0.30
+MIN_RECOMMENDATION_SCORE = 0.70
 
 # Sentiment analysis configuration
 SENTIMENT_MODEL = 'distilbert-base-uncased-finetuned-sst-2-english'
@@ -112,24 +112,24 @@ DATA_PURGE_DAYS = 0  # Number of days to keep old data (recommendations and back
 
 # Analysis weightage configuration
 ANALYSIS_WEIGHTS = {
-    'technical': 0.5,     # Technical analysis weight (50%)
-    'fundamental': 0.3,   # Fundamental analysis weight (30%)
-    'sentiment': 0.2      # Sentiment analysis weight (20%)
+    'technical': 0.7,     # Technical analysis weight (50%)
+    'fundamental': 0.2,   # Fundamental analysis weight (30%)
+    'sentiment': 0.1      # Sentiment analysis weight (20%)
 }
 
 # Recommendation thresholds - Enhanced for better signal detection
 RECOMMENDATION_THRESHOLDS = {
-    'strong_buy_combined': 0.15,     # Combined score threshold for strong buy (optimized)
-    'buy_combined': 0.03,            # Combined score threshold for buy (more sensitive)
+    'strong_buy_combined': 0.55,     # Combined score threshold for strong buy (optimized)
+    'buy_combined': 0.30,            # Combined score threshold for buy (more sensitive)
     'technical_strong_buy': 0.25,    # Technical score threshold for strong technical buy (optimized)
     'sell_combined': -0.3,           # Combined score threshold for sell
-    'sentiment_positive': 0.01,      # Sentiment score threshold for positive (more sensitive)
+    'sentiment_positive': 0.40,      # Sentiment score threshold for positive (more sensitive)
     'sentiment_negative': -0.02,     # Sentiment score threshold for negative
-    'min_backtest_return': -2.0,     # Allow negative CAGR but not too bad (-2%)
-    'technical_minimum': -0.1,       # Minimum technical score to consider
-    'fundamental_minimum': -0.2,     # Minimum fundamental score to consider
-    'volume_confirmation_required': False,  # Don't require volume confirmation for all signals
-    'market_trend_weight': 0.1       # Weight for overall market trend consideration
+    'min_backtest_return': 2.0,      # Allow negative CAGR but not too bad (-2%)
+    'technical_minimum': 0.5,       # Minimum technical score to consider
+    'fundamental_minimum': 0.3,     # Minimum fundamental score to consider
+    'volume_confirmation_required': True,  # Don't require volume confirmation for all signals
+    'market_trend_weight': 0.4       # Weight for overall market trend consideration
 }
 
 # Stock filtering configuration
@@ -139,7 +139,7 @@ STOCK_FILTERING = {
     'max_price': 50000.0,           # Maximum stock price
     'min_market_cap': 100000000,    # Minimum market cap (10 crores)
     'min_historical_days': 200,     # Minimum days of historical data required
-    'volume_lookback_days': 30,     # Days to look back for volume calculation
+    'volume_lookback_days': 100,     # Days to look back for volume calculation
     'exclude_delisted': True,       # Exclude delisted stocks
     'exclude_suspended': True       # Exclude suspended stocks
 }

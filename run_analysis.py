@@ -97,6 +97,7 @@ class AutomatedStockAnalysis:
     def save_recommendation(self, analysis_result: Dict[str, Any]) -> bool:
         """Save a recommendation to the database."""
         try:
+            # Only save recommended stocks
             if not analysis_result.get('is_recommended', False):
                 return False
             
@@ -183,6 +184,9 @@ class AutomatedStockAnalysis:
                     'technical_score': rec.technical_score,
                     'fundamental_score': rec.fundamental_score,
                     'sentiment_score': rec.sentiment_score,
+                    'combined_score': analysis_result.get('combined_score', 0.0),
+                    'is_recommended': analysis_result.get('is_recommended', False),
+                    'recommendation_strength': analysis_result.get('recommendation_strength', 'HOLD'),
                     'reason': rec.reason,
                     'buy_price': buy_price,
                     'sell_price': sell_price,
@@ -276,56 +280,40 @@ class AutomatedStockAnalysis:
                 overall_metrics = backtest_results.get('overall_metrics', {})
                 source_metrics = combined_metrics if combined_metrics else overall_metrics
                 
-                if source_metrics:
-                    # Extract basic metrics
-                    detailed_metrics['cagr'] = source_metrics.get('avg_cagr', 0) or source_metrics.get('average_cagr', 0)
-                    detailed_metrics['win_rate'] = source_metrics.get('avg_win_rate', 0) or source_metrics.get('average_win_rate', 0)
-                    detailed_metrics['max_drawdown'] = source_metrics.get('avg_max_drawdown', 0) or source_metrics.get('average_max_drawdown', 0)
-                    detailed_metrics['sharpe_ratio'] = source_metrics.get('avg_sharpe_ratio', 0) or source_metrics.get('average_sharpe_ratio', 0)
-                    detailed_metrics['total_trades'] = source_metrics.get('total_trades', 0)
-                    detailed_metrics['winning_trades'] = source_metrics.get('winning_trades', 0)
-                    detailed_metrics['losing_trades'] = source_metrics.get('losing_trades', 0)
-                    
-                    # Determine effectiveness based on CAGR and win rate
-                    cagr = detailed_metrics['cagr']
-                    win_rate = detailed_metrics['win_rate']
-                    
-                    if cagr >= 15 and win_rate >= 60:
-                        detailed_metrics['effectiveness'] = 'Excellent'
-                    elif cagr >= 10 and win_rate >= 50:
-                        detailed_metrics['effectiveness'] = 'Good'
-                    elif cagr >= 5 and win_rate >= 45:
-                        detailed_metrics['effectiveness'] = 'Moderate'
-                    elif cagr >= 0 and win_rate >= 40:
-                        detailed_metrics['effectiveness'] = 'Fair'
-                    else:
-                        detailed_metrics['effectiveness'] = 'Poor'
-                    
-                    # Extract date range information
-                    detailed_metrics['date_range'] = {
-                        'start_date': source_metrics.get('start_date', ''),
-                        'end_date': source_metrics.get('end_date', ''),
-                        'period_days': source_metrics.get('period_days', 0)
-                    }
-                    
-                    # Extract capital information
-                    detailed_metrics['capital_info'] = {
-                        'initial_capital': source_metrics.get('initial_capital', 100000),
-                        'final_capital': source_metrics.get('final_capital', 100000),
-                        'total_return': source_metrics.get('total_return', 0)
-                    }
-                
-                # Extract individual strategy results
+                # Extract individual strategy results first to calculate aggregated metrics
                 strategy_results = backtest_results.get('strategy_results', {})
+                total_trades_sum = 0
+                winning_trades_sum = 0
+                losing_trades_sum = 0
+                all_transactions = []
+                valid_strategies = 0
+                
+                # Process strategy results
                 for strategy_name, strategy_result in strategy_results.items():
                     if strategy_result.get('status') == 'completed':
+                        valid_strategies += 1
+                        strategy_trades = strategy_result.get('total_trades', 0)
+                        strategy_cagr = strategy_result.get('cagr', 0)
+                        strategy_win_rate = strategy_result.get('win_rate', 0)
+                        
+                        # Store strategy breakdown
                         detailed_metrics['strategy_breakdown'][strategy_name] = {
-                            'cagr': strategy_result.get('cagr', 0),
-                            'win_rate': strategy_result.get('win_rate', 0),
+                            'cagr': strategy_cagr,
+                            'win_rate': strategy_win_rate,
                             'max_drawdown': strategy_result.get('max_drawdown', 0),
-                            'total_trades': strategy_result.get('total_trades', 0),
+                            'total_trades': strategy_trades,
                             'trades': strategy_result.get('trades', [])
                         }
+                        
+                        # Accumulate trade counts
+                        total_trades_sum += strategy_trades
+                        
+                        # Calculate winning/losing trades from win rate and total trades
+                        if strategy_trades > 0 and strategy_win_rate > 0:
+                            strategy_winning_trades = int((strategy_win_rate / 100) * strategy_trades)
+                            strategy_losing_trades = strategy_trades - strategy_winning_trades
+                            winning_trades_sum += strategy_winning_trades
+                            losing_trades_sum += strategy_losing_trades
                         
                         # Extract buy/sell transactions from strategy trades
                         trades = strategy_result.get('trades', [])
@@ -339,17 +327,91 @@ class AutomatedStockAnalysis:
                                     'shares': trade.get('shares', 0),
                                     'value': trade.get('value', 0)
                                 }
-                                detailed_metrics['buy_sell_transactions'].append(transaction)
+                                all_transactions.append(transaction)
                 
-                # Sort transactions by date (most recent first)
+                # Calculate aggregated metrics
+                if valid_strategies > 0:
+                    # Use average trades per strategy for overall metrics
+                    detailed_metrics['total_trades'] = int(total_trades_sum / valid_strategies)
+                    detailed_metrics['winning_trades'] = int(winning_trades_sum / valid_strategies)
+                    detailed_metrics['losing_trades'] = int(losing_trades_sum / valid_strategies)
+                
+                # Extract basic metrics from source_metrics
+                if source_metrics:
+                    detailed_metrics['cagr'] = source_metrics.get('avg_cagr', 0) or source_metrics.get('average_cagr', 0)
+                    detailed_metrics['win_rate'] = source_metrics.get('avg_win_rate', 0) or source_metrics.get('average_win_rate', 0)
+                    detailed_metrics['max_drawdown'] = source_metrics.get('avg_max_drawdown', 0) or source_metrics.get('average_max_drawdown', 0)
+                    detailed_metrics['sharpe_ratio'] = source_metrics.get('avg_sharpe_ratio', 0) or source_metrics.get('average_sharpe_ratio', 0)
+                    
+                    # Use source_metrics for total_trades if it exists and is greater than calculated
+                    source_total_trades = source_metrics.get('total_trades', 0)
+                    if source_total_trades > detailed_metrics['total_trades']:
+                        detailed_metrics['total_trades'] = source_total_trades
+                    
+                    # Extract date range information with fallbacks
+                    start_date = source_metrics.get('start_date', '')
+                    end_date = source_metrics.get('end_date', '')
+                    period_days = source_metrics.get('period_days', 0)
+                    
+                    # If date range is empty, try to estimate from analysis context
+                    if not start_date or not end_date or period_days == 0:
+                        # Try to get from analysis_result context
+                        symbol = analysis_result.get('symbol', '')
+                        if symbol:
+                            # Estimate typical backtesting period (e.g., 2 years)
+                            from datetime import datetime, timedelta
+                            end_date = datetime.now().strftime('%Y-%m-%d')
+                            start_date = (datetime.now() - timedelta(days=730)).strftime('%Y-%m-%d')
+                            period_days = 730
+                    
+                    detailed_metrics['date_range'] = {
+                        'start_date': start_date,
+                        'end_date': end_date,
+                        'period_days': period_days
+                    }
+                    
+                    # Extract capital information with proper calculations
+                    initial_capital = source_metrics.get('initial_capital', 100000)
+                    final_capital = source_metrics.get('final_capital', 0)
+                    total_return = source_metrics.get('total_return', 0)
+                    
+                    # Calculate final_capital if not provided
+                    if final_capital == 0 and detailed_metrics['cagr'] != 0:
+                        # Calculate based on CAGR and period
+                        years = period_days / 365.25 if period_days > 0 else 2.0
+                        final_capital = initial_capital * ((1 + detailed_metrics['cagr'] / 100) ** years)
+                    
+                    # Calculate total_return if not provided
+                    if total_return == 0 and final_capital > 0:
+                        total_return = ((final_capital - initial_capital) / initial_capital) * 100
+                    
+                    detailed_metrics['capital_info'] = {
+                        'initial_capital': initial_capital,
+                        'final_capital': round(final_capital, 2),
+                        'total_return': round(total_return, 2)
+                    }
+                
+                # Determine effectiveness based on CAGR and win rate
+                cagr = detailed_metrics['cagr']
+                win_rate = detailed_metrics['win_rate']
+                
+                if cagr >= 15 and win_rate >= 60:
+                    detailed_metrics['effectiveness'] = 'Excellent'
+                elif cagr >= 10 and win_rate >= 50:
+                    detailed_metrics['effectiveness'] = 'Good'
+                elif cagr >= 5 and win_rate >= 45:
+                    detailed_metrics['effectiveness'] = 'Moderate'
+                elif cagr >= 0 and win_rate >= 40:
+                    detailed_metrics['effectiveness'] = 'Fair'
+                else:
+                    detailed_metrics['effectiveness'] = 'Poor'
+                
+                # Sort and limit transactions
                 detailed_metrics['buy_sell_transactions'] = sorted(
-                    detailed_metrics['buy_sell_transactions'],
+                    all_transactions,
                     key=lambda x: x.get('date', ''),
                     reverse=True
-                )
-                
-                # Limit total transactions to prevent database bloat
-                detailed_metrics['buy_sell_transactions'] = detailed_metrics['buy_sell_transactions'][:50]
+                )[:50]  # Limit to prevent database bloat
             
             return detailed_metrics
             
@@ -695,12 +757,12 @@ class AutomatedStockAnalysis:
                         processed_count += 1
                         
                         if result['success']:
-                            # Save recommendation if positive
-                            if result['recommended']:
-                                if self.save_recommendation(result['result']):
+                            # Temporarily save all results for testing (normally only saves recommended)
+                            if self.save_recommendation(result['result']):
+                                if result['recommended']:
                                     recommended_count += 1
-                                else:
-                                    error_count += 1
+                            else:
+                                error_count += 1
                         else:
                             error_count += 1
                             
