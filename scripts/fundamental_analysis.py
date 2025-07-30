@@ -10,7 +10,10 @@ import pandas as pd
 import yfinance as yf
 from typing import Dict, Any, Optional
 from utils.logger import setup_logging
+from config import MAX_RETRIES, REQUEST_DELAY, BACKOFF_MULTIPLIER
 import numpy as np
+import time
+import random
 
 logger = setup_logging()
 
@@ -22,7 +25,7 @@ class FundamentalAnalysis:
     @staticmethod
     def get_financial_data_from_yfinance(symbol: str) -> Optional[Dict[str, Any]]:
         """
-        Get financial data from yfinance API.
+        Get financial data from yfinance API with retry mechanism.
         
         Args:
             symbol: Stock symbol (NSE format)
@@ -30,39 +33,63 @@ class FundamentalAnalysis:
         Returns:
             Dictionary containing financial metrics or None if error
         """
-        try:
-            # Add .NS suffix for NSE stocks if not present
-            if '.NS' not in symbol and '.BO' not in symbol:
-                symbol = f"{symbol}.NS"
+        # Add .NS suffix for NSE stocks if not present
+        if '.NS' not in symbol and '.BO' not in symbol:
+            symbol = f"{symbol}.NS"
+        
+        for attempt in range(MAX_RETRIES):
+            try:
+                # Add progressive delay with jitter to avoid overwhelming the API
+                if attempt > 0:
+                    base_delay = REQUEST_DELAY * (BACKOFF_MULTIPLIER ** attempt)
+                    jitter = random.uniform(0, base_delay * 0.3)  # Add up to 30% jitter
+                    total_delay = base_delay + jitter
+                    time.sleep(total_delay)
+                    logger.info(f"Retry attempt {attempt + 1} for fundamental data of {symbol} after {total_delay:.2f}s delay")
                 
-            ticker = yf.Ticker(symbol)
-            info = ticker.info
-            
-            if not info or 'regularMarketPrice' not in info:
-                logger.warning(f"No financial info available for {symbol}")
-                return None
-            
-            # Extract key financial metrics with safe defaults
-            financial_data = {
-                'pe_ratio': info.get('forwardPE') or info.get('trailingPE'),
-                'pb_ratio': info.get('priceToBook'),
-                'de_ratio': info.get('debtToEquity'),
-                'eps_growth': info.get('earningsGrowth'),
-                'revenue_growth': info.get('revenueGrowth'),
-                'dividend_yield': info.get('dividendYield'),
-                'market_cap': info.get('marketCap'),
-                'current_ratio': info.get('currentRatio'),
-                'roe': info.get('returnOnEquity'),
-                'profit_margins': info.get('profitMargins'),
-                'beta': info.get('beta'),
-                'price_to_sales': info.get('priceToSalesTrailing12Months')
-            }
-            
-            return financial_data
-            
-        except Exception as e:
-            logger.warning(f"Error fetching financial data for {symbol}: {e}")
-            return None
+                ticker = yf.Ticker(symbol)
+                info = ticker.info
+                
+                if not info or 'regularMarketPrice' not in info:
+                    if attempt == MAX_RETRIES - 1:
+                        logger.warning(f"No financial info available for {symbol} after {MAX_RETRIES} attempts")
+                        return None
+                    continue
+                
+                # Extract key financial metrics with safe defaults
+                financial_data = {
+                    'pe_ratio': info.get('forwardPE') or info.get('trailingPE'),
+                    'pb_ratio': info.get('priceToBook'),
+                    'de_ratio': info.get('debtToEquity'),
+                    'eps_growth': info.get('earningsGrowth'),
+                    'revenue_growth': info.get('revenueGrowth'),
+                    'dividend_yield': info.get('dividendYield'),
+                    'market_cap': info.get('marketCap'),
+                    'current_ratio': info.get('currentRatio'),
+                    'roe': info.get('returnOnEquity'),
+                    'profit_margins': info.get('profitMargins'),
+                    'beta': info.get('beta'),
+                    'price_to_sales': info.get('priceToSalesTrailing12Months')
+                }
+                
+                logger.debug(f"Successfully fetched fundamental data for {symbol}")
+                return financial_data
+                
+            except Exception as e:
+                error_msg = str(e).lower()
+                
+                # Categorize errors for better handling
+                if any(keyword in error_msg for keyword in ['http', 'curl', 'connection', '401', 'unauthorized', 'timeout', 'timed out']):
+                    logger.warning(f"Network/timeout error for fundamental data of {symbol} (attempt {attempt + 1}/{MAX_RETRIES}): {e}")
+                    if attempt == MAX_RETRIES - 1:
+                        logger.error(f"Failed to fetch fundamental data for {symbol} after {MAX_RETRIES} attempts")
+                        return None
+                    continue
+                else:
+                    logger.error(f"Non-retryable error fetching fundamental data for {symbol}: {e}")
+                    return None
+        
+        return None
     
     @staticmethod
     def calculate_fundamental_score(financial_data: Dict[str, Any]) -> float:

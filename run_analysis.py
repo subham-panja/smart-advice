@@ -1,5 +1,3 @@
-import gc
-
 #!/usr/bin/env python3
 """
 Automated Stock Analysis Script
@@ -9,8 +7,16 @@ This script automatically analyzes all NSE stocks and saves recommendations to t
 Designed to be run via cron job every hour.
 """
 
-import sys
+# Fix OpenMP/threading issues on macOS - MUST be set before importing numpy/scipy/sklearn
 import os
+os.environ['OMP_NUM_THREADS'] = '1'
+os.environ['OPENBLAS_NUM_THREADS'] = '1'
+os.environ['MKL_NUM_THREADS'] = '1'
+os.environ['VECLIB_MAXIMUM_THREADS'] = '1'
+os.environ['NUMEXPR_NUM_THREADS'] = '1'
+
+import gc
+import sys
 import time
 from datetime import datetime
 from typing import Dict, List, Any
@@ -97,11 +103,13 @@ class AutomatedStockAnalysis:
                 raise
     
     def save_recommendation(self, analysis_result: Dict[str, Any]) -> bool:
-        """Save a recommendation to the database."""
+        """Save analysis result to the database (both recommended and not recommended stocks)."""
         try:
-            # Only save recommended stocks
-            if not analysis_result.get('is_recommended', False):
-                return False
+            # Check if this is a not-recommended stock
+            is_recommended = analysis_result.get('is_recommended', False)
+            if not is_recommended:
+                logger.info(f"Stock {analysis_result.get('symbol', 'UNKNOWN')} was analyzed successfully but not recommended")
+                return True  # Return True to indicate success, even though it's not recommended
             
             # Create RecommendedShare object
             rec = RecommendedShare(
@@ -719,7 +727,8 @@ class AutomatedStockAnalysis:
         total_stocks = len(symbols_list)
         processed_count = 0
         recommended_count = 0
-        error_count = 0
+        not_recommended_count = 0
+        failed_count = 0
         
         # Use batch size from config if not specified
         if batch_size is None:
@@ -755,18 +764,19 @@ class AutomatedStockAnalysis:
                         processed_count += 1
                         
                         if result['success']:
-                            # Temporarily save all results for testing (normally only saves recommended)
                             if self.save_recommendation(result['result']):
                                 if result['recommended']:
                                     recommended_count += 1
+                                else:
+                                    not_recommended_count += 1
                             else:
-                                error_count += 1
+                                failed_count += 1
                         else:
-                            error_count += 1
+                            failed_count += 1
                             
                     except Exception as e:
                         logger.exception(f"Error in ThreadPoolExecutor for {symbol}: {e}")
-                        error_count += 1
+                        failed_count += 1
                         processed_count += 1
             
             # Log progress and trigger garbage collection after each batch
@@ -778,7 +788,7 @@ class AutomatedStockAnalysis:
             gc.collect()
 
             logger.info(f"Progress: {processed_count}/{total_stocks} stocks processed, "
-                       f"{recommended_count} recommendations, {error_count} errors, "
+                       f"{recommended_count} recommendations, {not_recommended_count} not recommended, {failed_count} failed, "
                        f"~{estimated_remaining/60:.1f} minutes remaining")
         
         # Final summary
@@ -787,7 +797,8 @@ class AutomatedStockAnalysis:
         logger.info(f"Analysis complete!")
         logger.info(f"Total stocks processed: {processed_count}")
         logger.info(f"Recommendations generated: {recommended_count}")
-        logger.info(f"Errors encountered: {error_count}")
+        logger.info(f"Stocks not recommended: {not_recommended_count}")
+        logger.info(f"Analysis failures: {failed_count}")
         logger.info(f"Total time: {total_time/60:.1f} minutes")
         logger.info(f"Average time per stock: {total_time/processed_count:.1f} seconds")
         

@@ -6,6 +6,14 @@ This module combines technical, fundamental, and sentiment analysis to generate
 comprehensive stock recommendations.
 """
 
+# Fix OpenMP/threading issues on macOS - MUST be set before importing numpy/scipy/sklearn
+import os
+os.environ['OMP_NUM_THREADS'] = '1'
+os.environ['OPENBLAS_NUM_THREADS'] = '1'
+os.environ['MKL_NUM_THREADS'] = '1'
+os.environ['VECLIB_MAXIMUM_THREADS'] = '1'
+os.environ['NUMEXPR_NUM_THREADS'] = '1'
+
 import pandas as pd
 import numpy as np
 import talib as ta
@@ -20,6 +28,12 @@ from config import HISTORICAL_DATA_PERIOD, ANALYSIS_WEIGHTS, RECOMMENDATION_THRE
 from scripts.risk_management import RiskManager
 from scripts.sector_analysis import SectorAnalyzer
 from scripts.backtesting_runner import BacktestingRunner
+from scripts.market_regime_detection import MarketRegimeDetection
+from scripts.market_microstructure import MarketMicrostructureAnalyzer
+from scripts.alternative_data_analyzer import AlternativeDataAnalyzer
+from scripts.predictor import PricePredictor
+from scripts.rl_trading_agent import RLTradingAgent
+from scripts.tca_analysis import TransactionCostAnalyzer
 
 logger = setup_logging()
 
@@ -37,6 +51,12 @@ class StockAnalyzer:
         self.sentiment_analyzer = SentimentAnalysis()
         self.risk_manager = RiskManager()
         self.sector_analyzer = SectorAnalyzer()
+        self.market_regime_detector = MarketRegimeDetection(symbol='DEFAULT', n_regimes=3, lookback_period='2y')
+        self.market_microstructure_analyzer = MarketMicrostructureAnalyzer()
+        self.alternative_data_analyzer = AlternativeDataAnalyzer()
+        self.predictor = PricePredictor(symbol='DEFAULT')
+        self.rl_trading_agent = RLTradingAgent(symbol='DEFAULT')
+        self.tca_analyzer = TransactionCostAnalyzer()
         
     def analyze_stock(self, symbol: str, app_config: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -163,8 +183,85 @@ class StockAnalyzer:
             except Exception as e:
                 logger.exception(f"Error in sector analysis for {symbol}: {e}")
                 result['sector_analysis'] = {'error': str(e)}
+
+            # 5. Advanced Analysis Modules
+            analysis_config = app_config.get('ANALYSIS_CONFIG', {})
+
+            if analysis_config.get('market_regime_detection'):
+                logger.info(f"Performing market regime detection for {symbol}")
+                try:
+                    # Re-instantiate for specific symbol
+                    self.market_regime_detector.symbol = symbol
+                    self.market_regime_detector.fit_all_models()
+                    regime = self.market_regime_detector.get_comprehensive_regime_analysis()
+                    result['market_regime'] = regime
+                    result['reason'].append(f"Market Regime: {regime.get('consensus_regime')}")
+                except Exception as e:
+                    logger.exception(f"Error in market regime detection for {symbol}: {e}")
+                    result['market_regime'] = {'error': str(e)}
+
+            if analysis_config.get('market_microstructure'):
+                logger.info(f"Performing market microstructure analysis for {symbol}")
+                try:
+                    microstructure = self.market_microstructure_analyzer.analyze(symbol)
+                    result['market_microstructure'] = microstructure
+                except Exception as e:
+                    logger.exception(f"Error in market microstructure analysis for {symbol}: {e}")
+                    result['market_microstructure'] = {'error': str(e)}
+
+            if analysis_config.get('alternative_data'):
+                logger.info(f"Performing alternative data analysis for {symbol}")
+                try:
+                    # Use available info for company_id and sector
+                    company_id = company_name.lower().replace(' ', '_')
+                    sector = result.get('sector_analysis', {}).get('sector', 'Unknown')
+                    alt_data = self.alternative_data_analyzer.analyze(symbol, company_id, sector)
+                    result['alternative_data'] = alt_data
+                except Exception as e:
+                    logger.exception(f"Error in alternative data analysis for {symbol}: {e}")
+                    result['alternative_data'] = {'error': str(e)}
+
+            if analysis_config.get('predictive_analysis'):
+                logger.info(f"Performing predictive analysis for {symbol}")
+                try:
+                    # Re-instantiate for this symbol
+                    predictor = PricePredictor(symbol)
+                    train_data, test_data = predictor.prepare_data()
+                    if train_data and test_data is not None:
+                        predictor.train(train_data, epochs=20)
+                        predicted_price = predictor.predict_next_day_price(test_data)
+                        result['prediction'] = {'predicted_price': predicted_price}
+                    else:
+                        result['prediction'] = {'error': 'Not enough data'}
+                except Exception as e:
+                    logger.exception(f"Error in predictive analysis for {symbol}: {e}")
+                    result['prediction'] = {'error': str(e)}
+
+            if analysis_config.get('rl_trading_agent'):
+                logger.info(f"Performing RL trading agent analysis for {symbol}")
+                try:
+                    agent = RLTradingAgent(symbol)
+                    rl_action = agent.run_analysis(historical_data)
+                    result['rl_action'] = rl_action
+                except Exception as e:
+                    logger.exception(f"Error in RL trading agent analysis for {symbol}: {e}")
+                    result['rl_action'] = {'error': str(e)}
+
+            if analysis_config.get('tca_analysis'):
+                logger.info(f"Performing TCA analysis for {symbol}")
+                try:
+                    # Example cost estimation for 100 shares at latest close price
+                    if not historical_data.empty:
+                        trade_value = historical_data['Close'].iloc[-1] * 100
+                        tca = self.tca_analyzer.estimate_trade_costs(trade_value)
+                        result['tca_analysis'] = tca
+                    else:
+                        result['tca_analysis'] = {'error': 'No historical data'}
+                except Exception as e:
+                    logger.exception(f"Error in TCA analysis for {symbol}: {e}")
+                    result['tca_analysis'] = {'error': str(e)}
             
-            # 5. Initial Combined Analysis (without backtest consideration)
+            # 6. Initial Combined Analysis (without backtest consideration)
             logger.info(f"Combining analysis results for {symbol}")
             logger.debug(f"Starting combined analysis for {symbol}")
             
@@ -176,7 +273,7 @@ class StockAnalyzer:
                 result['is_recommended'] = False
                 result['reason'].append(f"Combined analysis failed: {str(e)}")
             
-            # 6. Trade-level Analysis - Get detailed trade recommendations
+            # 7. Trade-level Analysis - Get detailed trade recommendations
             if not historical_data.empty:
                 logger.info(f"Performing trade-level analysis for {symbol}")
                 logger.debug(f"Starting trade-level analysis for {symbol}")
@@ -231,7 +328,7 @@ class StockAnalyzer:
                         'error': str(e)
                     }
             
-            # 7. Backtesting Analysis
+            # 8. Backtesting Analysis
             if not historical_data.empty:
                 logger.info(f"Performing backtesting analysis for {symbol}")
                 logger.debug(f"Starting backtesting for {symbol}")
@@ -264,7 +361,7 @@ class StockAnalyzer:
                     'message': 'No historical data available for backtesting'
                 }
             
-            # 8. Final Recommendation Check (considering backtest results)
+            # 9. Final Recommendation Check (considering backtest results)
             if result.get('is_recommended', False):
                 logger.info(f"Final recommendation check for {symbol} with backtest results")
                 try:
@@ -274,7 +371,7 @@ class StockAnalyzer:
                 except Exception as e:
                     logger.exception(f"Error in final recommendation check for {symbol}: {e}")
             
-            # 9. Risk Management Analysis (only for recommended stocks after final check)
+            # 10. Risk Management Analysis (only for recommended stocks after final check)
             if not historical_data.empty and result.get('is_recommended', False):
                 logger.info(f"Performing risk management analysis for {symbol}")
                 current_price = historical_data['Close'].iloc[-1]

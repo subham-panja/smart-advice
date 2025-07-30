@@ -71,7 +71,7 @@ class PricePredictor:
     def train(self, train_inout_seq, epochs=150):
         """
         Trains the LSTM model.
-        
+
         Args:
             train_inout_seq: The training data sequences.
             epochs (int): The number of training epochs.
@@ -80,32 +80,46 @@ class PricePredictor:
             logger.warning(f"No training data for {self.symbol}, skipping training.")
             return
 
-        self.model = LSTMModel(input_size=1, hidden_layer_size=100)
-        loss_function = nn.MSELoss()
-        optimizer = torch.optim.Adam(self.model.parameters(), lr=0.001)
+        try:
+            self.model = LSTMModel(input_size=1, hidden_layer_size=50)  # Reduced size to prevent memory issues
+            loss_function = nn.MSELoss()
+            optimizer = torch.optim.Adam(self.model.parameters(), lr=0.001)
 
-        logger.info(f"Starting model training for {self.symbol} for {epochs} epochs...")
-        for i in range(epochs):
-            for seq, labels in train_inout_seq:
-                optimizer.zero_grad()
-                self.model.hidden_cell = (torch.zeros(1, 1, self.model.hidden_layer_size),
-                                        torch.zeros(1, 1, self.model.hidden_layer_size))
+            logger.info(f"Starting model training for {self.symbol} for {epochs} epochs...")
+            for i in range(epochs):
+                epoch_loss = 0
+                for seq, labels in train_inout_seq:
+                    try:
+                        optimizer.zero_grad()
+                        
+                        # Ensure seq and labels are properly shaped
+                        seq = seq.view(1, -1)  # Shape: (1, seq_len)
+                        labels = labels.view(1, -1)  # Shape: (1, 1)
+                        
+                        y_pred = self.model(seq)
+                        
+                        single_loss = loss_function(y_pred, labels)
+                        single_loss.backward()
+                        optimizer.step()
+                        
+                        epoch_loss += single_loss.item()
+                    except Exception as e:
+                        logger.warning(f"Error in training step: {e}")
+                        continue
 
-                y_pred = self.model(seq)
-
-                single_loss = loss_function(y_pred, labels)
-                single_loss.backward()
-                optimizer.step()
-
-            if (i + 1) % 25 == 0:
-                logger.debug(f'Epoch {i+1}/{epochs} loss: {single_loss.item()}')
-        
-        logger.info(f"Model training for {self.symbol} complete.")
+                if (i + 1) % 25 == 0:
+                    avg_loss = epoch_loss / len(train_inout_seq) if train_inout_seq else 0
+                    logger.debug(f'Epoch {i+1}/{epochs} avg loss: {avg_loss:.6f}')
+            
+            logger.info(f"Model training for {self.symbol} complete.")
+        except Exception as e:
+            logger.error(f"Error during model training for {self.symbol}: {e}")
+            self.model = None
 
     def predict_next_day_price(self, test_data, time_window=12):
         """
         Predicts the next day's closing price.
-        
+
         Args:
             test_data: The recent historical data to use for prediction.
             time_window (int): The number of past periods to use for prediction.
@@ -117,22 +131,27 @@ class PricePredictor:
             logger.warning(f"Model for {self.symbol} is not trained. Cannot predict.")
             return None
 
-        fut_pred = time_window
-        test_inputs = list(test_data[-time_window:]) # Ensure it's a list
-        
-        self.model.eval()
-        
-        for i in range(fut_pred):
-            seq = torch.FloatTensor(test_inputs[-time_window:])
+        if len(test_data) < time_window:
+            logger.warning(f"Not enough test data to make a prediction for {self.symbol}.")
+            return None
+
+        try:
+            self.model.eval()
+
+            # Normalize the test data
+            normalized_test_data = self.scaler.transform(test_data.reshape(-1, 1))
+            test_inputs = torch.FloatTensor(normalized_test_data[-time_window:]).view(1, -1)
+
             with torch.no_grad():
-                self.model.hidden = (torch.zeros(1, 1, self.model.hidden_layer_size),
-                                   torch.zeros(1, 1, self.model.hidden_layer_size))
-                test_inputs.append(self.model(seq).item())
-        
-        # Inverse transform the prediction to get the actual price
-        actual_predictions = self.scaler.inverse_transform(np.array(test_inputs[time_window:]).reshape(-1, 1))
-        
-        return actual_predictions[0][0]
+                prediction = self.model(test_inputs)
+            
+            # Inverse transform the prediction
+            predicted_price = self.scaler.inverse_transform(prediction.numpy())
+
+            return predicted_price[0][0]
+        except Exception as e:
+            logger.error(f"Error during prediction for {self.symbol}: {e}")
+            return None
 
 if __name__ == '__main__':
     predictor = PricePredictor('RELIANCE.NS')

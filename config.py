@@ -101,7 +101,7 @@ NSE_CACHE_FILE = 'data/nse_symbols.json'
 
 # Threading and batch processing configuration
 # Ultra-conservative settings for ML analysis to prevent segmentation faults
-MAX_WORKER_THREADS = 1  # Single thread to avoid threading issues with ML modules
+MAX_WORKER_THREADS = 4  # Increased threads after OpenMP fix
 BATCH_SIZE = 1  # Process one stock at a time for ML analysis
 REQUEST_DELAY = 0.5  # Increased delay to reduce API pressure
 MAX_RETRIES = 5  # Maximum retries for failed requests
@@ -143,15 +143,15 @@ ANALYSIS_CONFIG = {
     'technical_analysis': True,
     'fundamental_analysis': True,
     'sentiment_analysis': True,  # ML-based sentiment analysis
-    'sector_analysis': True,  # Disabled - causes memory issues with threading
-    'market_regime_detection': True,  # Disabled - very memory intensive
-    'market_microstructure': True,  # Keep disabled
-    'alternative_data': True,  # Keep disabled
-    'backtesting': True,  # Disabled - memory intensive with ML modules
+    'sector_analysis': True,  # Sector analysis enabled
+    'market_regime_detection': True,  # RE-ENABLED after OpenMP fix
+    'market_microstructure': False,  # DISABLED - causes memory issues
+    'alternative_data': False,  # DISABLED - causes compatibility issues
+    'backtesting': True,  # Enabled - memory usage is acceptable
     'risk_management': True,
-    'predictive_analysis': True,  # LSTM price prediction - lighter ML module
-    'rl_trading_agent': True,  # RL trading agent - lighter ML module
-    'tca_analysis': True  # Keep disabled
+    'predictive_analysis': True,  # RE-ENABLED after OpenMP fix
+    'rl_trading_agent': True,  # RE-ENABLED after OpenMP fix
+    'tca_analysis': False  # DISABLED - not essential for basic analysis
 }
 
 # Stock filtering configuration

@@ -72,7 +72,7 @@ def get_all_nse_symbols() -> Dict[str, str]:
         logger.info(f"Using fallback stocks: {len(fallback_stocks)} symbols")
         return fallback_stocks
 
-def get_historical_data_with_retry(symbol: str, period: str = '1y') -> pd.DataFrame:
+def get_historical_data_with_retry(symbol: str, period: str = '1y', interval: str = '1d') -> pd.DataFrame:
     """
     Fetch historical data with enhanced retry mechanism and monitoring.
     """
@@ -92,7 +92,7 @@ def get_historical_data_with_retry(symbol: str, period: str = '1y') -> pd.DataFr
                 logger.info(f"Retry attempt {attempt + 1} for {symbol} after {total_delay:.2f}s delay")
             
             # Download data using yfinance with enhanced error handling
-            data = yf.download(yf_symbol, period=period, progress=False, 
+            data = yf.download(yf_symbol, period=period, interval=interval, progress=False, 
                              auto_adjust=True, timeout=TIMEOUT_SECONDS,
                              threads=False, group_by='ticker')  # Disable threading for stability
             
@@ -203,10 +203,7 @@ def get_historical_data(symbol: str, period: str = '1y', interval: str = '1d') -
 
     try:
         # Get data with retry mechanism
-        yf_symbol = f"{symbol}.NS"
-        
-        # Let yfinance handle sessions automatically to avoid curl_cffi errors
-        data = yf.download(tickers=yf_symbol, period=period, interval=interval, progress=False, auto_adjust=True)
+        data = get_historical_data_with_retry(symbol, period=period, interval=interval)
 
         if data.empty:
             logger.warning(f"No data found for {symbol} ({interval}).")

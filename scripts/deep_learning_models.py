@@ -35,27 +35,30 @@ class LSTMModel(nn.Module):
     def forward(self, input_seq):
         """
         Forward pass through the LSTM model.
-        
+
         Args:
             input_seq: The input sequence of data.
-            
+
         Returns:
             The prediction from the model.
         """
         # Reshape input to (batch_size, seq_len, input_size)
-        batch_size = len(input_seq)
-        input_reshaped = input_seq.view(batch_size, 1, -1)
-        
-        # Initialize hidden state with correct batch size
+        batch_size, seq_len = input_seq.shape
+        input_reshaped = input_seq.view(batch_size, seq_len, 1)
+
+        # Initialize hidden and cell states
         h0 = torch.zeros(1, batch_size, self.hidden_layer_size)
         c0 = torch.zeros(1, batch_size, self.hidden_layer_size)
-        
+
         # Forward pass through LSTM
-        lstm_out, (hn, cn) = self.lstm(input_reshaped, (h0, c0))
-        
-        # Apply linear layer to get predictions
-        predictions = self.linear(lstm_out.view(batch_size, -1))
-        return predictions[-1]
+        lstm_out, _ = self.lstm(input_reshaped, (h0, c0))
+
+        # Get the last time step's output
+        last_time_step_out = lstm_out[:, -1, :]
+
+        # Apply linear layer to get the prediction
+        prediction = self.linear(last_time_step_out)
+        return prediction
 
 # Placeholder for a more advanced hybrid model (e.g., CNN-LSTM)
 class CNNLSTMModel(nn.Module):
