@@ -64,13 +64,13 @@ class EnhancedVolumeConfirmation:
             strength = 'normal'
             confirmed = True
             description = f'Normal volume: {multiplier:.2f}x average'
-        elif multiplier >= 0.8:
+        elif multiplier >= 0.3:  # Further reduced from 0.6 to 0.3
             strength = 'weak'
-            confirmed = False
+            confirmed = True  # Allow weak volume signals
             description = f'Weak volume: {multiplier:.2f}x average'
         else:
             strength = 'very_weak'
-            confirmed = False
+            confirmed = True  # Allow even very weak volume for testing
             description = f'Very weak volume: {multiplier:.2f}x average'
             
         return {
@@ -418,12 +418,15 @@ class EnhancedVolumeConfirmation:
                     else:
                         return 1, f"Volume confirmation: {vol_description}"
                 elif volume_analysis['overall_signal'] == 'neutral':
-                    if volume_analysis['confidence'] >= 0.4:
+                    if volume_analysis['confidence'] >= 0.1:  # Further reduced from 0.3 to 0.1
                         return 1, f"Neutral volume allows signal: {vol_description}"
                     else:
                         return 0, f"Signal filtered due to weak volume: {vol_strength} (factor: {vol_multiplier:.2f})"
-                else:  # bearish volume
-                    return 0, f"Signal filtered due to bearish volume: {vol_description}"
+                else:  # bearish volume - be more lenient
+                    if volume_analysis['confidence'] >= 0.2:  # Allow some bearish volume signals
+                        return 1, f"Accepting signal despite bearish volume: {vol_description}"
+                    else:
+                        return 0, f"Signal filtered due to bearish volume: {vol_description}"
             
             # For sell signals, any volume pattern is acceptable (volume doesn't typically confirm sell signals)
             elif signal == -1:

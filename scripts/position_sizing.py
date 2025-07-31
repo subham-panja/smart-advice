@@ -39,7 +39,8 @@ class PositionSizer:
         self.volatility_factor_enabled = volatility_factor_enabled
         
     def volatility_adjusted_sizing(self, data: pd.DataFrame, entry_price: float, 
-                                 stop_loss: float, target_volatility: float = 0.15) -> Dict[str, Any]:
+                                 stop_loss: float, target_volatility: float = 0.15,
+                                 risk_adjustment_factor: float = 1.0) -> Dict[str, Any]:
         """
         Calculate position size based on volatility targeting.
         

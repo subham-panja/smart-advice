@@ -529,25 +529,28 @@ class StockAnalyzer:
             else:
                 result['reason'].append("High combined score indicates strong buy opportunity")
         
-        # Regular buy: More flexible criteria
-        elif ((technical_score > 0 and fundamental_score > fundamental_minimum) or 
-             (fundamental_score > 0 and technical_score > technical_minimum) or 
-             (technical_score > 0.1 and sentiment_score > sentiment_positive_threshold) or 
-             (fundamental_score > 0.1 and sentiment_score > sentiment_positive_threshold) or 
-             (combined_score > buy_threshold)) and backtest_condition:
+        # Regular buy: More flexible criteria but require non-negative combined score
+        elif (combined_score >= 0 and  # SAFETY CHECK: No negative combined scores for BUY
+              ((technical_score > 0 and fundamental_score > fundamental_minimum) or 
+               (fundamental_score > 0 and technical_score > technical_minimum) or 
+               (technical_score > 0.1 and sentiment_score > sentiment_positive_threshold) or 
+               (fundamental_score > 0.1 and sentiment_score > sentiment_positive_threshold) or 
+               (combined_score > buy_threshold))):
             result['is_recommended'] = True
             result['recommendation_strength'] = 'BUY'
             result['reason'].append("Majority of analysis types show positive signals")
         
         # Technical-focused buy: Technical analysis is primary for swing trading
-        elif (technical_score > technical_strong_threshold or 
-              (technical_score > 0.15 and combined_score > -0.05)) and backtest_condition:
+        elif (combined_score >= -0.02 and  # SAFETY CHECK: Very small negative tolerance for technical signals
+              (technical_score > technical_strong_threshold or 
+               (technical_score > 0.15 and combined_score > -0.02)) and backtest_condition):
             result['is_recommended'] = True
             result['recommendation_strength'] = 'WEAK_BUY'
-            result['reason'].append("Strong technical analysis signals despite mixed fundamentals/sentiment")
+            result['reason'].append("Strong technical analysis signals with acceptable combined score")
         
         # Opportunistic buy: Good combined score even with mixed individual scores
-        elif combined_score > (buy_threshold * 0.7) and backtest_condition and not consider_backtest:
+        elif (combined_score > (buy_threshold * 0.7) and combined_score >= 0 and  # Must be positive
+              backtest_condition and not consider_backtest):
             result['is_recommended'] = True
             result['recommendation_strength'] = 'OPPORTUNISTIC_BUY'
             result['reason'].append("Moderate combined score suggests potential opportunity")

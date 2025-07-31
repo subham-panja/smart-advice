@@ -30,7 +30,7 @@ class SentimentAnalysis:
         """
         self.model_name = model_name
         self.sentiment_pipeline = None
-        self.google_news = GoogleNews(lang='en', region='IN')
+        self.google_news = GoogleNews(lang='en', region='US')  # Use US region for English content
         self.google_news.set_period(NEWS_DATE_RANGE)
         
     def get_sentiment_pipeline(self):
@@ -152,6 +152,39 @@ class SentimentAnalysis:
             logger.warning("TextBlob not available, falling back to dummy pipeline")
             return self._create_dummy_pipeline()
     
+    def _is_likely_english(self, text: str) -> bool:
+        """
+        Check if text is likely in English using simple heuristics.
+        
+        Args:
+            text: Text to check
+            
+        Returns:
+            True if text appears to be English, False otherwise
+        """
+        if not text or len(text.strip()) < 10:
+            return False
+        
+        # Check for non-Latin scripts (simple heuristic)
+        latin_chars = sum(1 for char in text if ord(char) < 256)
+        total_chars = len(text)
+        
+        if total_chars == 0:
+            return False
+        
+        # If more than 80% of characters are Latin-based, likely English
+        latin_ratio = latin_chars / total_chars
+        
+        # Also check for common English words
+        english_words = ['the', 'and', 'is', 'in', 'to', 'of', 'a', 'for', 'with', 'on', 'stock', 'company', 'market', 'price', 'shares']
+        text_lower = text.lower()
+        english_word_count = sum(1 for word in english_words if word in text_lower)
+        
+        # Consider it English if:
+        # - High Latin character ratio AND some English words found
+        # - OR very high Latin ratio (for short texts)
+        return (latin_ratio > 0.8 and english_word_count > 0) or latin_ratio > 0.95
+    
     def fetch_news(self, company_name: str, num_news: int = NEWS_COUNT) -> List[str]:
         """
         Fetch news articles about a company.
@@ -178,6 +211,12 @@ class SentimentAnalysis:
                     # Get the title and description
                     title = entry.get('title', '')
                     desc = entry.get('desc', '')
+                    
+                    # Filter out non-English content (basic check)
+                    combined_text = f"{title} {desc}"
+                    if not self._is_likely_english(combined_text):
+                        logger.debug(f"Skipping non-English content: {combined_text[:50]}...")
+                        continue
                     
                     # Try to get the full article content with rate limiting
                     link = entry.get('link')

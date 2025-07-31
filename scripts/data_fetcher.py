@@ -13,6 +13,7 @@ from config import NSE_CACHE_FILE, STOCK_FILTERING, MAX_WORKER_THREADS, MAX_RETR
 import requests
 from requests.exceptions import RequestException
 import random
+from contextlib import contextmanager
 
 logger = setup_logging()
 nse_api = None  # NSE API for stock operations - initialize when needed
@@ -366,6 +367,8 @@ def get_stock_info_with_retry(symbol: str, max_retries: int = MAX_RETRIES) -> Di
                 delay = RATE_LIMIT_DELAY * (BACKOFF_MULTIPLIER ** attempt)
                 logger.warning(f"HTTP/network error for {symbol}, retrying in {delay:.1f}s (attempt {attempt + 1}/{max_retries})")
                 time.sleep(delay)
+                # Add extra random delay to prevent API overload
+                time.sleep(random.uniform(0, 0.5))
                 continue
             
             # For other exceptions, do not retry
@@ -507,11 +510,12 @@ def filter_active_stocks(symbols: Dict[str, str], max_stocks: int = None) -> Dic
     # Convert symbols dict to list of tuples for threading
     symbol_list = list(symbols.items())
     
-    # Use ThreadPoolExecutor for parallel processing
-    max_workers = min(MAX_WORKER_THREADS, len(symbol_list))
-    logger.info(f"Using {max_workers} worker threads for parallel processing")
+    # Use ThreadPoolExecutor for parallel processing with adaptive concurrency
+    # Reduce workers significantly to avoid rate limiting
+    adaptive_workers = max(1, min(2, len(symbol_list)))  # Use only 1-2 workers
+    logger.info(f"Using {adaptive_workers} worker threads for rate-limited parallel processing")
     
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+    with ThreadPoolExecutor(max_workers=adaptive_workers) as executor:
         # Submit all tasks
         future_to_symbol = {
             executor.submit(process_stock_for_filtering, symbol_data, filtering_criteria): symbol_data[0]
@@ -541,6 +545,77 @@ def filter_active_stocks(symbols: Dict[str, str], max_stocks: int = None) -> Dic
     
     logger.info(f"Filtered to {len(filtered_stocks)} active stocks from {len(symbols)} total symbols")
     return filtered_stocks
+
+def get_offline_symbols_from_cache(max_stocks: int = None) -> Dict[str, str]:
+    """
+    Get symbols purely from existing cache without making any API calls.
+    This is a fallback mode to avoid rate limiting issues.
+    
+    Args:
+        max_stocks: Maximum number of stocks to return
+        
+    Returns:
+        Dictionary of cached stock symbols
+    """
+    logger.info(f"Using offline mode: getting symbols from existing cache files with max_stocks={max_stocks}")
+    
+    # Check if we have any cached CSV files that indicate stock symbols
+    cached_symbols = {}
+    
+    try:
+        if os.path.exists('cache'):
+            # Get all CSV files in cache directory
+            csv_files = [f for f in os.listdir('cache') if f.endswith('.csv')]
+            
+            # Extract stock symbols from CSV filenames
+            # Format: SYMBOL_period_interval.csv (e.g., RELIANCE_1y_1d.csv)
+            for csv_file in csv_files:
+                try:
+                    # Extract symbol from filename
+                    symbol = csv_file.split('_')[0]
+                    if symbol and len(symbol) <= 20:  # Valid stock symbol length
+                        cached_symbols[symbol] = symbol
+                        
+                        # Stop if we have enough symbols
+                        if max_stocks and len(cached_symbols) >= max_stocks:
+                            break
+                except:
+                    continue
+            
+            logger.info(f"Found {len(cached_symbols)} cached stock symbols")
+            
+            # If we found cached symbols, use them
+            if cached_symbols:
+                if max_stocks:
+                    # Return only the requested number
+                    limited_symbols = dict(list(cached_symbols.items())[:max_stocks])
+                    logger.info(f"Using {len(limited_symbols)} cached symbols for offline mode")
+                    return limited_symbols
+                else:
+                    return cached_symbols
+    
+    except Exception as e:
+        logger.error(f"Error reading cached symbols: {e}")
+    
+    # Fallback to known major stocks if no cache found
+    fallback_stocks = {
+        'RELIANCE': 'Reliance Industries Limited',
+        'TCS': 'Tata Consultancy Services Limited', 
+        'HDFCBANK': 'HDFC Bank Limited',
+        'INFY': 'Infosys Limited',
+        'HINDUNILVR': 'Hindustan Unilever Limited',
+        'ICICIBANK': 'ICICI Bank Limited',
+        'SBIN': 'State Bank of India',
+        'BHARTIARTL': 'Bharti Airtel Limited',
+        'ITC': 'ITC Limited',
+        'KOTAKBANK': 'Kotak Mahindra Bank Limited'
+    }
+    
+    if max_stocks:
+        fallback_stocks = dict(list(fallback_stocks.items())[:max_stocks])
+    
+    logger.info(f"Using {len(fallback_stocks)} fallback symbols for offline mode")
+    return fallback_stocks
 
 def get_filtered_nse_symbols(max_stocks: int = None) -> Dict[str, str]:
     """

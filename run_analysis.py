@@ -27,7 +27,7 @@ import threading
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from app import create_app
-from scripts.data_fetcher import get_all_nse_symbols, get_filtered_nse_symbols
+from scripts.data_fetcher import get_all_nse_symbols, get_filtered_nse_symbols, get_offline_symbols_from_cache
 from scripts.analyzer import StockAnalyzer
 from models.recommendation import RecommendedShare
 from database import query_mongodb, get_mongodb, insert_backtest_result, init_db, close_db
@@ -35,17 +35,19 @@ from utils.logger import setup_logging
 from utils.cache_manager import get_cache_manager
 from config import MAX_WORKER_THREADS, BATCH_SIZE, REQUEST_DELAY
 
-# Initialize logging
+# Initialize logging (will be reconfigured based on verbose flag)
 logger = setup_logging()
 
 class AutomatedStockAnalysis:
     """Main class for automated stock analysis."""
     
-    def __init__(self):
+    def __init__(self, verbose=False):
         """Initialize the analyzer."""
         self.app = create_app()
         self.analyzer = StockAnalyzer()
         self.start_time = datetime.now()
+        self.verbose = verbose
+        self.progress_callback = None
         
     def clear_old_data(self, days_old: int = 7):
         """Clear old data (recommendations and backtest results) older than specified days.
@@ -109,6 +111,12 @@ class AutomatedStockAnalysis:
             # Multiple checks to ensure no HOLD recommendations get through
             recommendation_strength = analysis_result.get('recommendation_strength', 'HOLD')
             is_recommended = analysis_result.get('is_recommended', False)
+            
+            # CRITICAL SAFETY CHECK: Never save BUY recommendations with negative combined scores
+            combined_score = analysis_result.get('combined_score', 0.0)
+            if combined_score < 0 and recommendation_strength in ['STRONG_BUY', 'BUY', 'WEAK_BUY', 'OPPORTUNISTIC_BUY']:
+                logger.warning(f"SAFETY CHECK: Blocking BUY recommendation for {analysis_result.get('symbol', 'UNKNOWN')} with negative combined score ({combined_score:.4f})")
+                return True  # Block this recommendation
             
             # Skip if recommendation strength is HOLD
             if recommendation_strength == 'HOLD':
@@ -693,7 +701,7 @@ class AutomatedStockAnalysis:
                 'recommended': False
             }
     
-    def analyze_all_stocks(self, max_stocks: int = None, batch_size: int = None, use_all_symbols: bool = False, single_threaded: bool = False):
+    def analyze_all_stocks(self, max_stocks: int = None, batch_size: int = None, use_all_symbols: bool = False, single_threaded: bool = False, offline_mode: bool = False):
         """
         Analyze all NSE stocks using multithreading and save recommendations.
         
@@ -706,7 +714,15 @@ class AutomatedStockAnalysis:
         mode_str = "single-threaded" if single_threaded else "multithreading"
         logger.info(f"Starting automated stock analysis with {mode_str} (max_stocks={max_stocks}, use_all_symbols={use_all_symbols})")
         
-        if use_all_symbols:
+        if offline_mode:
+            # Use offline mode - get symbols from cached data only
+            logger.info(f"Using OFFLINE mode: Getting symbols from cached data (max_stocks={max_stocks})...")
+            filtered_symbols = get_offline_symbols_from_cache(max_stocks)
+            
+            if not filtered_symbols:
+                logger.error("No cached symbols found in offline mode. Try running without --offline first to build cache.")
+                return
+        elif use_all_symbols:
             # Get all NSE symbols without filtering
             logger.info(f"Fetching all NSE symbols (max_stocks={max_stocks})...")
             all_symbols = get_all_nse_symbols()
@@ -737,9 +753,14 @@ class AutomatedStockAnalysis:
         
         symbols_list = list(filtered_symbols.keys())
         symbol_type = "all NSE" if use_all_symbols else "actively traded"
-        logger.info(f"Found {len(symbols_list)} {symbol_type} stocks to analyze")
-            
         total_stocks = len(symbols_list)
+        
+        # Always show stock count regardless of verbose mode
+        if self.verbose:
+            logger.info(f"Found {total_stocks} {symbol_type} stocks to analyze")
+        else:
+            print(f"\rAnalyzing {total_stocks} {symbol_type} stocks...", flush=True)
+            
         processed_count = 0
         recommended_count = 0
         not_recommended_count = 0
@@ -751,9 +772,10 @@ class AutomatedStockAnalysis:
         
         # Use full thread pool for better performance
         effective_threads = MAX_WORKER_THREADS
-        logger.info(f"Using {effective_threads} threads for processing {total_stocks} stocks")
-            
-        logger.info(f"Processing {total_stocks} stocks in batches of {batch_size} using {effective_threads} threads")
+        
+        if self.verbose:
+            logger.info(f"Using {effective_threads} threads for processing {total_stocks} stocks")
+            logger.info(f"Processing {total_stocks} stocks in batches of {batch_size} using {effective_threads} threads")
         
         # Process stocks in batches
         for i in range(0, total_stocks, batch_size):
@@ -802,9 +824,17 @@ class AutomatedStockAnalysis:
             # Manually trigger garbage collection
             gc.collect()
 
-            logger.info(f"Progress: {processed_count}/{total_stocks} stocks processed, "
-                       f"{recommended_count} recommendations, {not_recommended_count} not recommended, {failed_count} failed, "
-                       f"~{estimated_remaining/60:.1f} minutes remaining")
+            if self.verbose:
+                logger.info(f"Progress: {processed_count}/{total_stocks} stocks processed, "
+                           f"{recommended_count} recommendations, {not_recommended_count} not recommended, {failed_count} failed, "
+                           f"~{estimated_remaining/60:.1f} minutes remaining")
+            elif self.progress_callback:
+                # Call progress callback for non-verbose mode
+                self.progress_callback(processed_count, total_stocks, recommended_count)
+            else:
+                # Fallback progress display if no callback is set
+                progress_percent = (processed_count / total_stocks) * 100
+                print(f"\rProgress: {progress_percent:.1f}% ({processed_count}/{total_stocks}) - {recommended_count} recommendations", end='', flush=True)
         
         # Final summary
         total_time = (datetime.now() - self.start_time).total_seconds()
@@ -826,7 +856,7 @@ class AutomatedStockAnalysis:
         except Exception as e:
             logger.error(f"Error getting total recommendations count: {e}")
     
-    def run_analysis(self, max_stocks: int = None, use_all_symbols: bool = False):
+    def run_analysis(self, max_stocks: int = None, use_all_symbols: bool = False, offline_mode: bool = False):
         """
         Run the complete analysis process.
         
@@ -849,7 +879,7 @@ class AutomatedStockAnalysis:
                 self.clear_old_data(days_old=days_old)
                 
                 # Analyze all stocks
-                self.analyze_all_stocks(max_stocks=max_stocks, use_all_symbols=use_all_symbols)
+                self.analyze_all_stocks(max_stocks=max_stocks, use_all_symbols=use_all_symbols, offline_mode=offline_mode)
                 
                 logger.info("Automated analysis completed successfully")
                 
@@ -861,28 +891,42 @@ class AutomatedStockAnalysis:
 def main():
     """Main entry point for the script."""
     import argparse
+    import logging
     
     parser = argparse.ArgumentParser(description='Automated NSE Stock Analysis')
     parser.add_argument('--max-stocks', type=int, help='Maximum number of stocks to analyze (for testing)')
     parser.add_argument('--test', action='store_true', help='Run in test mode with limited stocks')
     parser.add_argument('--all', action='store_true', help='Analyze all NSE stocks (not just filtered/actively traded ones)')
+    parser.add_argument('--offline', action='store_true', help='Use offline mode (cached data only, no API calls)')
     parser.add_argument('--purge-days', type=int, help='Number of days to keep old data (overrides config). Use 0 to remove ALL data.')
+    parser.add_argument('--verbose', action='store_true', help='Enable verbose logging with detailed output')
+    parser.add_argument('--disable-volume-filter', action='store_true', help='Disable volume-based filtering for analysis')
     
     args = parser.parse_args()
+    
+    # Set logging level early based on verbose flag to prevent strategy loading messages
+    if args.verbose:
+        logging.getLogger().setLevel(logging.INFO)
+    else:
+        logging.getLogger().setLevel(logging.ERROR)
     
     # Set test mode parameters
     if args.test:
         max_stocks = 2
-        logger.info("Running in TEST mode with limited stocks")
+        if args.verbose:
+            logger.info("Running in TEST mode with limited stocks")
     else:
         max_stocks = args.max_stocks
-        logger.info("Running in PRODUCTION mode with all stocks")
+        if args.verbose:
+            logger.info("Running in PRODUCTION mode with all stocks")
     
     # Log symbol selection mode
     if args.all:
-        logger.info("Using ALL NSE symbols (including inactive/low-volume stocks)")
+        if args.verbose:
+            logger.info("Using ALL NSE symbols (including inactive/low-volume stocks)")
     else:
-        logger.info("Using FILTERED NSE symbols (only actively traded stocks)")
+        if args.verbose:
+            logger.info("Using FILTERED NSE symbols (only actively traded stocks)")
     
     try:
         # Create and run analyzer
@@ -891,11 +935,46 @@ def main():
         # Override config if CLI argument provided
         if args.purge_days is not None:
             analyzer.app.config['DATA_PURGE_DAYS'] = args.purge_days
-            logger.info(f"Data purge days set to {args.purge_days} (from CLI argument)")
+            if args.verbose:
+                logger.info(f"Data purge days set to {args.purge_days} (from CLI argument)")
         
-        analyzer.run_analysis(max_stocks=max_stocks, use_all_symbols=args.all)
-        
-        logger.info("Script completed successfully")
+        if args.verbose:
+            # Verbose mode - logging level already set above
+            analyzer = AutomatedStockAnalysis(verbose=True)
+            analyzer.run_analysis(max_stocks=max_stocks, use_all_symbols=args.all, offline_mode=args.offline)
+            logger.info("Script completed successfully")
+        else:
+            # Non-verbose mode - logging level already set above
+            analyzer = AutomatedStockAnalysis(verbose=False)
+            
+            # Setup progress callback for non-verbose mode
+            last_progress_update = [0]  # Use list to allow modification in nested function
+            
+            def progress_callback(processed, total, recommendations):
+                progress_percent = (processed / total) * 100
+                # Only update every 2% or when complete to show more frequent updates
+                if progress_percent - last_progress_update[0] >= 2 or processed == total:
+                    bar_length = 30
+                    filled_length = int(bar_length * processed // total)
+                    bar = '█' * filled_length + '-' * (bar_length - filled_length)
+                    print(f"\rProgress: |{bar}| {progress_percent:.1f}% ({processed}/{total}) - {recommendations} recommendations", end='', flush=True)
+                    last_progress_update[0] = progress_percent
+            
+            analyzer.progress_callback = progress_callback
+            
+            # Show initial message (we'll update this after getting the actual stock count)
+            print(f"Initializing analysis...")
+            analyzer.run_analysis(max_stocks=max_stocks, use_all_symbols=args.all, offline_mode=args.offline)
+            print("\n")
+            
+            # Show final summary in non-verbose mode
+            try:
+                from database import get_mongodb
+                db = get_mongodb()
+                total_recommendations = db.recommended_shares.count_documents({})
+                print(f"Analysis completed. Total recommendations in database: {total_recommendations}")
+            except Exception:
+                print("Analysis completed.")
         return 0
         
     except KeyboardInterrupt:

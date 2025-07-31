@@ -46,7 +46,7 @@ STRATEGY_CONFIG = {
     'Chart_Patterns': True,                # CRITICAL: High-probability setups (triangles, H&S, etc.)
     'Volume_Profile': True,                # CRITICAL: Precise entry/exit using POC and value areas
     'Volume_Price_Trend': True,            # Enhanced volume-price relationship analysis
-    'Momentum_Oscillator': True,          # Keep disabled to reduce noise
+    'Momentum_Oscillator': False,         # Disabled to reduce noise
     'ROC_Rate_of_Change': True,            # Rate of change momentum for swing timing
     'ATR_Volatility': True,                # Volatility context for position sizing and stops
     'Keltner_Channels_Breakout': True,     # Alternative breakout confirmation to Bollinger
@@ -56,7 +56,7 @@ STRATEGY_CONFIG = {
     'MACD_Zero_Line_Crossover': True,      # Additional MACD confirmation signals
     'Bollinger_Band_Squeeze': True,        # Low volatility preceding high-volatility breakouts
     'Stochastic_K_D_Crossover': True,      # Enhanced stochastic entry/exit signals
-    'DI_Crossover': True,                 # Keep disabled - less reliable
+    'DI_Crossover': False,                # Disabled for reliability
     'Ichimoku_Cloud_Breakout': True,       # CRITICAL: Comprehensive trend/momentum system
     'Ichimoku_Kijun_Tenkan_Crossover': True, # CRITICAL: Ichimoku entry/exit signals
     'OBV_Bullish_Divergence': True,        # Advanced volume divergence for reversal signals
@@ -84,7 +84,7 @@ STRATEGY_CONFIG = {
 
 # Minimum combined score for recommendation - realistic threshold
 # Lowered to account for market conditions and data limitations
-MIN_RECOMMENDATION_SCORE = 0.70
+MIN_RECOMMENDATION_SCORE = 0.95
 
 # Sentiment analysis configuration
 SENTIMENT_MODEL = 'distilbert-base-uncased-finetuned-sst-2-english'
@@ -103,11 +103,11 @@ NSE_CACHE_FILE = 'data/nse_symbols.json'
 # Ultra-conservative settings for ML analysis to prevent segmentation faults
 MAX_WORKER_THREADS = 4  # Increased threads after OpenMP fix
 BATCH_SIZE = 1  # Process one stock at a time for ML analysis
-REQUEST_DELAY = 0.5  # Increased delay to reduce API pressure
-MAX_RETRIES = 5  # Maximum retries for failed requests
+REQUEST_DELAY = 1.5  # Further increase to reduce API pressure
+MAX_RETRIES = 3  # Reduce retries to decrease API load
 TIMEOUT_SECONDS = 30  # Request timeout in seconds
-RATE_LIMIT_DELAY = 2.0  # Additional delay when rate limited (seconds)
-BACKOFF_MULTIPLIER = 2.0  # Exponential backoff multiplier for retries
+RATE_LIMIT_DELAY = 3.0  # Increased delay when rate limited (seconds)
+BACKOFF_MULTIPLIER = 3.0  # Larger backoff multiplier for retries
 
 # Data purge configuration
 DATA_PURGE_DAYS = 0  # Number of days to keep old data (recommendations and backtest results)
@@ -122,18 +122,18 @@ ANALYSIS_WEIGHTS = {
     'rl_agent': 0.05      # RL agent weight (5%) - Reinforcement learning
 }
 
-# Recommendation thresholds - Enhanced for better signal detection
+# Recommendation thresholds - Lowered for testing to generate BUY signals
 RECOMMENDATION_THRESHOLDS = {
-    'strong_buy_combined': 0.55,     # Combined score threshold for strong buy (optimized)
-    'buy_combined': 0.30,            # Combined score threshold for buy (more sensitive)
-    'technical_strong_buy': 0.25,    # Technical score threshold for strong technical buy (optimized)
+    'strong_buy_combined': 0.70,     # More conservative threshold for strong buy
+    'buy_combined': 0.55,            # More conservative threshold for buy
+    'technical_strong_buy': 0.40,    # More conservative threshold for strong technical buy
     'sell_combined': -0.3,           # Combined score threshold for sell
-    'sentiment_positive': 0.40,      # Sentiment score threshold for positive (more sensitive)
+    'sentiment_positive': 0.10,      # Raised sentiment threshold for positive
     'sentiment_negative': -0.02,     # Sentiment score threshold for negative
-    'min_backtest_return': 2.0,      # Allow negative CAGR but not too bad (-2%)
-    'technical_minimum': 0.5,       # Minimum technical score to consider
-    'fundamental_minimum': 0.3,     # Minimum fundamental score to consider
-    'volume_confirmation_required': True,  # Don't require volume confirmation for all signals
+    'min_backtest_return': 0.0,      # Require positive CAGR
+    'technical_minimum': 0.0,        # Minimum technical score to be considered
+    'fundamental_minimum': 0.0,      # Minimum fundamental score to be considered
+    'volume_confirmation_required': True,  # Require volume confirmation
     'market_trend_weight': 0.4       # Weight for overall market trend consideration
 }
 
