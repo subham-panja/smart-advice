@@ -103,8 +103,14 @@ class AutomatedStockAnalysis:
                 raise
     
     def save_recommendation(self, analysis_result: Dict[str, Any]) -> bool:
-        """Save analysis result to the database (both recommended and not recommended stocks)."""
+        """Save analysis result to the database (only BUY recommendations, not HOLD)."""
         try:
+            # Filter out HOLD recommendations - we only want BUY recommendations
+            recommendation_strength = analysis_result.get('recommendation_strength', 'HOLD')
+            if recommendation_strength == 'HOLD':
+                logger.debug(f"Skipping HOLD recommendation for {analysis_result.get('symbol', 'UNKNOWN')}")
+                return True  # Return True as this is expected behavior, not an error
+            
             # Create RecommendedShare object
             rec = RecommendedShare(
                 symbol=analysis_result['symbol'],
