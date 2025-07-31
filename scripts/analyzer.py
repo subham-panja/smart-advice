@@ -212,11 +212,19 @@ class StockAnalyzer:
             if analysis_config.get('alternative_data'):
                 logger.info(f"Performing alternative data analysis for {symbol}")
                 try:
-                    # Use available info for company_id and sector
-                    company_id = company_name.lower().replace(' ', '_')
-                    sector = result.get('sector_analysis', {}).get('sector', 'Unknown')
-                    alt_data = self.alternative_data_analyzer.analyze(symbol, company_id, sector)
+                    # Pass historical data to the enhanced alternative data analyzer
+                    alt_data = self.alternative_data_analyzer.analyze(symbol, historical_data)
                     result['alternative_data'] = alt_data
+                    
+                    # Add to reasoning based on alternative data score
+                    alt_score = alt_data.get('final_alternative_score', 0)
+                    if alt_score > 0.1:
+                        result['reason'].append(f"Alternative data signals positive (score: {alt_score:.3f})")
+                    elif alt_score < -0.1:
+                        result['reason'].append(f"Alternative data signals negative (score: {alt_score:.3f})")
+                    else:
+                        result['reason'].append("Alternative data signals neutral")
+                        
                 except Exception as e:
                     logger.exception(f"Error in alternative data analysis for {symbol}: {e}")
                     result['alternative_data'] = {'error': str(e)}

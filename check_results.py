@@ -60,7 +60,6 @@ def show_latest_recommendations(db, limit=5):
     
     try:
         recommendations = db.recommended_shares.find(
-            {'is_recommended': True}
         ).sort('recommendation_date', -1).limit(limit)
         
         count = 0

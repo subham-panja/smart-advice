@@ -145,13 +145,13 @@ ANALYSIS_CONFIG = {
     'sentiment_analysis': True,  # ML-based sentiment analysis
     'sector_analysis': True,  # Sector analysis enabled
     'market_regime_detection': True,  # RE-ENABLED after OpenMP fix
-    'market_microstructure': False,  # DISABLED - causes memory issues
-    'alternative_data': False,  # DISABLED - causes compatibility issues
+    'market_microstructure': True,  # RE-ENABLED - lightweight simulation mode
+    'alternative_data': True,  # ENABLED - Enhanced with real data capabilities
     'backtesting': True,  # Enabled - memory usage is acceptable
     'risk_management': True,
     'predictive_analysis': True,  # RE-ENABLED after OpenMP fix
     'rl_trading_agent': True,  # RE-ENABLED after OpenMP fix
-    'tca_analysis': False  # DISABLED - not essential for basic analysis
+    'tca_analysis': True  # ENABLED - Enhanced transaction cost analysis
 }
 
 # Stock filtering configuration

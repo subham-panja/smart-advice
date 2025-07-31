@@ -105,12 +105,6 @@ class AutomatedStockAnalysis:
     def save_recommendation(self, analysis_result: Dict[str, Any]) -> bool:
         """Save analysis result to the database (both recommended and not recommended stocks)."""
         try:
-            # Check if this is a not-recommended stock
-            is_recommended = analysis_result.get('is_recommended', False)
-            if not is_recommended:
-                logger.info(f"Stock {analysis_result.get('symbol', 'UNKNOWN')} was analyzed successfully but not recommended")
-                return True  # Return True to indicate success, even though it's not recommended
-            
             # Create RecommendedShare object
             rec = RecommendedShare(
                 symbol=analysis_result['symbol'],
