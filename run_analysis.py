@@ -106,10 +106,25 @@ class AutomatedStockAnalysis:
         """Save analysis result to the database (only BUY recommendations, not HOLD)."""
         try:
             # Filter out HOLD recommendations - we only want BUY recommendations
+            # Multiple checks to ensure no HOLD recommendations get through
             recommendation_strength = analysis_result.get('recommendation_strength', 'HOLD')
+            is_recommended = analysis_result.get('is_recommended', False)
+            
+            # Skip if recommendation strength is HOLD
             if recommendation_strength == 'HOLD':
-                logger.debug(f"Skipping HOLD recommendation for {analysis_result.get('symbol', 'UNKNOWN')}")
+                logger.info(f"Skipping HOLD recommendation for {analysis_result.get('symbol', 'UNKNOWN')}")
                 return True  # Return True as this is expected behavior, not an error
+            
+            # Skip if is_recommended is False (additional safety check)
+            if not is_recommended:
+                logger.info(f"Skipping non-recommended stock {analysis_result.get('symbol', 'UNKNOWN')} (is_recommended=False)")
+                return True
+            
+            # Only proceed with valid BUY recommendations
+            valid_buy_recommendations = ['STRONG_BUY', 'BUY', 'WEAK_BUY', 'OPPORTUNISTIC_BUY']
+            if recommendation_strength not in valid_buy_recommendations:
+                logger.info(f"Skipping invalid recommendation strength '{recommendation_strength}' for {analysis_result.get('symbol', 'UNKNOWN')}")
+                return True
             
             # Create RecommendedShare object
             rec = RecommendedShare(
