@@ -1,1 +1,4 @@
+strictly follow this : always read readme.md before doing anything
 
+1. check dashboard the show top dropdown is not working at all, it not adding more data to dropeown, also it should have 1-20 all text not more thatn that.
+2. fix the horizontal scroll issue on view recommendation page. 
