@@ -44,17 +44,16 @@ class AutomatedStockAnalysis:
     def __init__(self, verbose=False):
         """Initialize the analyzer."""
         self.app = create_app()
+        
+        # Reconfigure logging based on verbose flag BEFORE creating analyzer
+        # This ensures all module loggers respect the verbose setting
+        from utils.logger import setup_logging
+        setup_logging(verbose=verbose)
+        
         self.analyzer = StockAnalyzer()
         self.start_time = datetime.now()
         self.verbose = verbose
         self.progress_callback = None
-        
-        # Configure logging level based on verbose flag
-        import logging
-        if verbose:
-            logging.getLogger().setLevel(logging.INFO)
-        else:
-            logging.getLogger().setLevel(logging.ERROR)
         
     def clear_old_data(self, days_old: int = 7):
         """Clear old data (recommendations and backtest results) older than specified days.
