@@ -7,86 +7,6 @@
 ehthumbs.db
 Thumbs.db
 
-# IDE and Editor files
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-.sublime-workspace
-.sublime-project
-
-# Logs
-logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-lerna-debug.log*
-.pnpm-debug.log*
-
-# Runtime data
-pids
-*.pid
-*.seed
-*.pid.lock
-
-# Coverage directory used by tools like istanbul
-coverage/
-*.lcov
-
-# nyc test coverage
-.nyc_output
-
-# Dependency directories
-node_modules/
-
-# Optional npm cache directory
-.npm
-
-# Optional eslint cache
-.eslintcache
-
-# Optional REPL history
-.node_repl_history
-
-# Output of 'npm pack'
-*.tgz
-
-# Yarn Integrity file
-.yarn-integrity
-
-# dotenv environment variables file
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-.env.test
-
-# Parcel-bundler cache (https://parceljs.org/)
-.cache
-.parcel-cache
-
-# Next.js build output
-.next/
-out/
-build/
-dist/
-
-# Nuxt.js build / generate output
-.nuxt
-dist
-
-# Storybook build outputs
-.out
-.storybook-out
-storybook-static
-
-# Temporary folders
-tmp/
-temp/
-
 # Python
 __pycache__/
 *.py[cod]
@@ -134,6 +54,9 @@ coverage.xml
 .hypothesis/
 .pytest_cache/
 junit.xml
+coverage/
+*.lcov
+.nyc_output
 
 # Translations
 *.mo
@@ -169,7 +92,7 @@ ipython_config.py
 .python-version
 
 # pipenv
-Pipfile.lock
+#Pipfile.lock
 
 # PEP 582
 __pypackages__/
@@ -183,6 +106,11 @@ celerybeat.pid
 
 # Environments
 .env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env.test
 .venv
 env/
 venv/
@@ -208,6 +136,65 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+.npm
+.eslintcache
+.node_repl_history
+*.tgz
+.yarn-integrity
+
+# Next.js
+.next/
+out/
+
+# Build outputs
+build/
+dist/
+.nuxt
+.out
+.storybook-out
+storybook-static
+
+# Cache
+.cache
+.parcel-cache
+.turbo
+
+# IDE and Editor files
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+*~
+.sublime-workspace
+.sublime-project
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Logs
+logs
+*.log
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Temporary folders
+tmp/
+temp/
+
 # Database
 *.db
 *.sqlite
@@ -224,26 +211,13 @@ test-results.xml
 *.rar
 *.7z
 
-# Cache directories
-.cache/
-__pycache__/
-
-# Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-.idea
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
-
-# Local environment variables
-.env.local
-.env.*.local
-
 # Vercel
 .vercel
 
-# Turbo
-.turbo
+# Super Advice specific
+data/
+logs/
+cache/
+backtest_results/
+historical_data/
+news_cache/
