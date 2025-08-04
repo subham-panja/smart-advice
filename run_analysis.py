@@ -49,6 +49,13 @@ class AutomatedStockAnalysis:
         self.verbose = verbose
         self.progress_callback = None
         
+        # Configure logging level based on verbose flag
+        import logging
+        if verbose:
+            logging.getLogger().setLevel(logging.INFO)
+        else:
+            logging.getLogger().setLevel(logging.ERROR)
+        
     def clear_old_data(self, days_old: int = 7):
         """Clear old data (recommendations and backtest results) older than specified days.
         
