@@ -1,4 +1,5 @@
 from flask import Flask, jsonify, request
+from flask_cors import CORS
 from database import init_app, get_db, query_mongodb
 from scripts.analyzer import analyze_stock
 from models.recommendation import RecommendedShare
@@ -39,6 +40,15 @@ def get_backtest_cagr_for_symbol(symbol: str) -> Optional[float]:
         return None
 
 app = create_app()
+
+# Enable CORS for all routes (allow all origins for development)
+CORS(app, resources={
+    r"/*": {
+        "origins": "*",
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization"]
+    }
+})
 
 @app.route('/')
 def index():
@@ -160,6 +170,79 @@ def test_data(symbol):
         
     except Exception as e:
         app.logger.error(f"Error testing data for {symbol}: {e}")
+        return jsonify({
+            "status": "error",
+            "error": str(e)
+        }), 500
+
+@app.route('/trigger-analysis', methods=['POST'])
+def trigger_analysis():
+    """Trigger stock analysis with configurable parameters."""
+    try:
+        # Get parameters from request body
+        config = request.get_json() or {}
+        
+        # Extract analysis configuration
+        max_stocks = config.get('max_stocks')
+        test_mode = config.get('test', False)
+        use_all_symbols = config.get('all', False)
+        offline_mode = config.get('offline', False)
+        verbose = config.get('verbose', False)
+        purge_days = config.get('purge_days')
+        disable_volume_filter = config.get('disable_volume_filter', False)
+        
+        # Import the AutomatedStockAnalysis class
+        from run_analysis import AutomatedStockAnalysis
+        
+        # Create analyzer instance
+        analyzer = AutomatedStockAnalysis(verbose=verbose)
+        
+        # Override config if purge_days is provided
+        if purge_days is not None:
+            analyzer.app.config['DATA_PURGE_DAYS'] = purge_days
+        
+        # Set max_stocks for test mode
+        if test_mode and max_stocks is None:
+            max_stocks = 2
+        
+        app.logger.info(f"Starting analysis with config: max_stocks={max_stocks}, test={test_mode}, all={use_all_symbols}, offline={offline_mode}, verbose={verbose}")
+        
+        # Run analysis in a separate thread to avoid blocking
+        import threading
+        
+        def run_analysis_thread():
+            try:
+                with app.app_context():
+                    analyzer.run_analysis(
+                        max_stocks=max_stocks,
+                        use_all_symbols=use_all_symbols,
+                        offline_mode=offline_mode
+                    )
+                    app.logger.info("Analysis completed successfully")
+            except Exception as e:
+                app.logger.error(f"Analysis failed: {e}")
+        
+        # Start analysis in background thread
+        analysis_thread = threading.Thread(target=run_analysis_thread)
+        analysis_thread.daemon = True
+        analysis_thread.start()
+        
+        return jsonify({
+            "status": "success",
+            "message": "Stock analysis started successfully",
+            "config": {
+                "max_stocks": max_stocks,
+                "test_mode": test_mode,
+                "use_all_symbols": use_all_symbols,
+                "offline_mode": offline_mode,
+                "verbose": verbose,
+                "purge_days": purge_days,
+                "disable_volume_filter": disable_volume_filter
+            }
+        })
+        
+    except Exception as e:
+        app.logger.error(f"Error triggering analysis: {e}")
         return jsonify({
             "status": "error",
             "error": str(e)

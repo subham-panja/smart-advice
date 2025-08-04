@@ -93,9 +93,9 @@ class BaseStrategy(ABC):
         Returns:
             Dictionary with volume filtering parameters
         """
-        # Default parameters
+        # VERY STRICT: Default parameters - Require strong volume confirmation
         params = {
-            'min_volume_factor': 0.8,
+            'min_volume_factor': 1.5,  # High volume requirement
             'breakout': False,
             'level': None
         }
@@ -103,49 +103,49 @@ class BaseStrategy(ABC):
         # Strategy-specific volume filtering parameters
         strategy_params = {
             # Breakout strategies need higher volume confirmation
-            'Volume_Breakout': {'min_volume_factor': 1.5, 'breakout': True},
-            'Bollinger_Band_Breakout': {'min_volume_factor': 1.3, 'breakout': True},
-            'Support_Resistance_Breakout': {'min_volume_factor': 1.2, 'breakout': True},
-            'Keltner_Channels_Breakout': {'min_volume_factor': 1.2, 'breakout': True},
+            'Volume_Breakout': {'min_volume_factor': 2.0, 'breakout': True},
+            'Bollinger_Band_Breakout': {'min_volume_factor': 1.8, 'breakout': True},
+            'Support_Resistance_Breakout': {'min_volume_factor': 1.7, 'breakout': True},
+            'Keltner_Channels_Breakout': {'min_volume_factor': 1.7, 'breakout': True},
             
             # Gap and channel strategies
-            'Gap_Trading': {'min_volume_factor': 1.5, 'breakout': True},
-            'Channel_Trading': {'min_volume_factor': 1.1},
+            'Gap_Trading': {'min_volume_factor': 2.0, 'breakout': True},
+            'Channel_Trading': {'min_volume_factor': 1.5},
             
-            # Moving average crossovers (reduced volume requirements for MA strategies)
-            'MA_Crossover_50_200': {'min_volume_factor': 0.6},
-            'SMA_Crossover_20_50': {'min_volume_factor': 0.6},
-            'EMA_Crossover_12_26': {'min_volume_factor': 1.1},
-            'DEMA_Crossover': {'min_volume_factor': 1.1},
-            'TEMA_Crossover': {'min_volume_factor': 1.1},
+            # Moving average crossovers - STRICT requirements
+            'MA_Crossover_50_200': {'min_volume_factor': 1.2},
+            'SMA_Crossover_20_50': {'min_volume_factor': 1.2},
+            'EMA_Crossover_12_26': {'min_volume_factor': 1.4},
+            'DEMA_Crossover': {'min_volume_factor': 1.4},
+            'TEMA_Crossover': {'min_volume_factor': 1.4},
             
             # MACD strategies
-            'MACD_Signal_Crossover': {'min_volume_factor': 1.1},
-            'MACD_Zero_Line_Crossover': {'min_volume_factor': 1.0},
+            'MACD_Signal_Crossover': {'min_volume_factor': 1.5},
+            'MACD_Zero_Line_Crossover': {'min_volume_factor': 1.4},
             
-            # Oscillator strategies (more lenient volume requirements)
-            'RSI_Overbought_Oversold': {'min_volume_factor': 0.8},
-            'Stochastic_Overbought_Oversold': {'min_volume_factor': 0.8},
-            'Williams_Percent_R_Overbought_Oversold': {'min_volume_factor': 0.8},
-            'CCI_Crossover': {'min_volume_factor': 0.8},
+            # VERY STRICT: Oscillator strategies (need strong volume confirmation)
+            'RSI_Overbought_Oversold': {'min_volume_factor': 1.3},
+            'Stochastic_Overbought_Oversold': {'min_volume_factor': 1.3},
+            'Williams_Percent_R_Overbought_Oversold': {'min_volume_factor': 1.3},
+            'CCI_Crossover': {'min_volume_factor': 1.3},
             
             # Pattern recognition strategies
-            'Chart_Patterns': {'min_volume_factor': 0.9},
-            'Fibonacci_Retracement': {'min_volume_factor': 1.0},
+            'Chart_Patterns': {'min_volume_factor': 1.4},
+            'Fibonacci_Retracement': {'min_volume_factor': 1.3},
             
             # Volume-based strategies (already volume-focused)
-            'Volume_Profile': {'min_volume_factor': 0.7},
-            'On_Balance_Volume': {'min_volume_factor': 0.7},
-            'Volume_Price_Trend': {'min_volume_factor': 0.7},
+            'Volume_Profile': {'min_volume_factor': 1.2},
+            'On_Balance_Volume': {'min_volume_factor': 1.2},
+            'Volume_Price_Trend': {'min_volume_factor': 1.2},
             
             # Candlestick patterns
-            'Candlestick_Hammer': {'min_volume_factor': 1.0},
-            'Candlestick_Bullish_Engulfing': {'min_volume_factor': 1.1},
-            'Candlestick_Doji': {'min_volume_factor': 0.9},
+            'Candlestick_Hammer': {'min_volume_factor': 1.3},
+            'Candlestick_Bullish_Engulfing': {'min_volume_factor': 1.5},
+            'Candlestick_Doji': {'min_volume_factor': 1.2},
             
             # Ichimoku strategies
-            'Ichimoku_Cloud_Breakout': {'min_volume_factor': 1.2, 'breakout': True},
-            'Ichimoku_Kijun_Tenkan_Crossover': {'min_volume_factor': 1.0},
+            'Ichimoku_Cloud_Breakout': {'min_volume_factor': 1.6, 'breakout': True},
+            'Ichimoku_Kijun_Tenkan_Crossover': {'min_volume_factor': 1.4},
         }
         
         # Update with strategy-specific parameters if available

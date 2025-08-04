@@ -82,9 +82,9 @@ STRATEGY_CONFIG = {
     'Keltner_Channel_Squeeze': True,       # Low volatility preceding breakouts
 }
 
-# Minimum combined score for recommendation - realistic threshold
-# Lowered to account for market conditions and data limitations
-MIN_RECOMMENDATION_SCORE = 0.95
+# RELAXED: Minimum combined score for recommendation - easier to generate recommendations
+# Lowered to make it easier to see data in the frontend dashboard
+MIN_RECOMMENDATION_SCORE = 0.15
 
 # Sentiment analysis configuration
 SENTIMENT_MODEL = 'distilbert-base-uncased-finetuned-sst-2-english'
@@ -100,41 +100,42 @@ HISTORICAL_DATA_PERIOD = '2y'
 NSE_CACHE_FILE = 'data/nse_symbols.json'
 
 # Threading and batch processing configuration
-# Ultra-conservative settings for ML analysis to prevent segmentation faults
-MAX_WORKER_THREADS = 4  # Increased threads after OpenMP fix
-BATCH_SIZE = 1  # Process one stock at a time for ML analysis
-REQUEST_DELAY = 1.5  # Further increase to reduce API pressure
-MAX_RETRIES = 3  # Reduce retries to decrease API load
-TIMEOUT_SECONDS = 30  # Request timeout in seconds
-RATE_LIMIT_DELAY = 3.0  # Increased delay when rate limited (seconds)
-BACKOFF_MULTIPLIER = 3.0  # Larger backoff multiplier for retries
+# Balanced settings for good performance without overwhelming APIs
+MAX_WORKER_THREADS = 6  # Optimal threads for most systems
+BATCH_SIZE = 8  # Process multiple stocks per batch for efficiency
+REQUEST_DELAY = 0.8  # Reasonable delay to avoid rate limits
+MAX_RETRIES = 3  # Standard retry count
+TIMEOUT_SECONDS = 30  # Reasonable timeout
+RATE_LIMIT_DELAY = 3.0  # Delay when rate limited (seconds)
+BACKOFF_MULTIPLIER = 2.0  # Standard backoff multiplier
 
 # Data purge configuration
-DATA_PURGE_DAYS = 0  # Number of days to keep old data (recommendations and backtest results)
+DATA_PURGE_DAYS = 7  # Number of days to keep old data (recommendations and backtest results)
+# WARNING: Setting to 0 will DELETE ALL DATA every time analysis runs!
 
-# Analysis weightage configuration - Enhanced with ML components
+# VERY STRICT: Analysis weightage configuration - Emphasis on technical and fundamental quality
 ANALYSIS_WEIGHTS = {
-    'technical': 0.4,     # Technical analysis weight (40%)
-    'fundamental': 0.2,   # Fundamental analysis weight (20%)
-    'sentiment': 0.15,    # Sentiment analysis weight (15%) - ML-based
-    'sector': 0.1,        # Sector analysis weight (10%) - ML insights
-    'predictive': 0.1,    # Predictive analysis weight (10%) - LSTM predictions
-    'rl_agent': 0.05      # RL agent weight (5%) - Reinforcement learning
+    'technical': 0.45,    # Technical analysis weight (45%) - Increased for signal quality
+    'fundamental': 0.35,  # Fundamental analysis weight (35%) - Increased for company quality
+    'sentiment': 0.08,    # Sentiment analysis weight (8%) - Reduced influence
+    'sector': 0.05,       # Sector analysis weight (5%) - Reduced influence
+    'predictive': 0.05,   # Predictive analysis weight (5%) - Reduced influence
+    'rl_agent': 0.02      # RL agent weight (2%) - Minimal influence
 }
 
-# Recommendation thresholds - Lowered for testing to generate BUY signals
+# RELAXED: Recommendation thresholds - Much easier to generate recommendations
 RECOMMENDATION_THRESHOLDS = {
-    'strong_buy_combined': 0.70,     # More conservative threshold for strong buy
-    'buy_combined': 0.55,            # More conservative threshold for buy
-    'technical_strong_buy': 0.40,    # More conservative threshold for strong technical buy
+    'strong_buy_combined': 0.50,     # RELAXED threshold for strong buy
+    'buy_combined': 0.20,            # RELAXED threshold for buy
+    'technical_strong_buy': 0.25,    # RELAXED threshold for strong technical buy
     'sell_combined': -0.3,           # Combined score threshold for sell
-    'sentiment_positive': 0.10,      # Raised sentiment threshold for positive
-    'sentiment_negative': -0.02,     # Sentiment score threshold for negative
-    'min_backtest_return': 0.0,      # Require positive CAGR
-    'technical_minimum': 0.0,        # Minimum technical score to be considered
-    'fundamental_minimum': 0.0,      # Minimum fundamental score to be considered
-    'volume_confirmation_required': True,  # Require volume confirmation
-    'market_trend_weight': 0.4       # Weight for overall market trend consideration
+    'sentiment_positive': 0.05,      # RELAXED sentiment threshold for positive
+    'sentiment_negative': -0.15,     # Stricter sentiment threshold for negative
+    'min_backtest_return': 5.0,      # RELAXED minimum 5% CAGR
+    'technical_minimum': 0.10,       # RELAXED minimum technical score
+    'fundamental_minimum': 0.05,     # RELAXED minimum fundamental score
+    'volume_confirmation_required': False,  # RELAXED - no volume confirmation required
+    'market_trend_weight': 0.3       # Lower weight for overall market trend
 }
 
 # Analysis Modules Configuration - Enable/disable high-level analysis types
@@ -154,14 +155,14 @@ ANALYSIS_CONFIG = {
     'tca_analysis': True  # ENABLED - Enhanced transaction cost analysis
 }
 
-# Stock filtering configuration
+# RELAXED: Stock filtering configuration - Allow more stocks to generate data
 STOCK_FILTERING = {
-    'min_volume': 10000,           # Minimum average daily volume
-    'min_price': 5.0,               # Minimum stock price
+    'min_volume': 10000,            # RELAXED minimum average daily volume
+    'min_price': 10.0,              # RELAXED minimum stock price
     'max_price': 50000.0,           # Maximum stock price
-    'min_market_cap': 100000000,    # Minimum market cap (10 crores)
-    'min_historical_days': 200,     # Minimum days of historical data required
-    'volume_lookback_days': 100,     # Days to look back for volume calculation
+    'min_market_cap': 50000000,     # RELAXED minimum market cap (5 crores)
+    'min_historical_days': 100,     # RELAXED historical data required
+    'volume_lookback_days': 50,     # RELAXED volume lookback period
     'exclude_delisted': True,       # Exclude delisted stocks
     'exclude_suspended': True       # Exclude suspended stocks
 }

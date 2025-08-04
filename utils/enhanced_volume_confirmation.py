@@ -410,23 +410,22 @@ class EnhancedVolumeConfirmation:
             vol_strength = volume_strength.get('strength', 'unknown')
             vol_multiplier = volume_strength.get('multiplier', 0.0)
             
-            # For buy signals, require bullish or neutral volume
+            # VERY STRICT: For buy signals, require strong bullish volume only
             if signal == 1:
                 if volume_analysis['overall_signal'] == 'bullish':
-                    if volume_analysis['confidence'] >= 0.6:
+                    if volume_analysis['confidence'] >= 0.8:  # VERY HIGH confidence required
+                        return 1, f"Exceptional volume confirmation: {vol_description}"
+                    elif volume_analysis['confidence'] >= 0.7:  # HIGH confidence required
                         return 1, f"Strong volume confirmation: {vol_description}"
                     else:
-                        return 1, f"Volume confirmation: {vol_description}"
+                        return 0, f"Signal filtered - insufficient bullish volume confidence: {vol_strength} (confidence: {volume_analysis['confidence']:.2f})"
                 elif volume_analysis['overall_signal'] == 'neutral':
-                    if volume_analysis['confidence'] >= 0.1:  # Further reduced from 0.3 to 0.1
-                        return 1, f"Neutral volume allows signal: {vol_description}"
+                    if volume_analysis['confidence'] >= 0.6:  # STRICT neutral volume threshold
+                        return 1, f"High-confidence neutral volume allows signal: {vol_description}"
                     else:
-                        return 0, f"Signal filtered due to weak volume: {vol_strength} (factor: {vol_multiplier:.2f})"
-                else:  # bearish volume - be more lenient
-                    if volume_analysis['confidence'] >= 0.2:  # Allow some bearish volume signals
-                        return 1, f"Accepting signal despite bearish volume: {vol_description}"
-                    else:
-                        return 0, f"Signal filtered due to bearish volume: {vol_description}"
+                        return 0, f"Signal filtered due to weak neutral volume: {vol_strength} (confidence: {volume_analysis['confidence']:.2f})"
+                else:  # bearish volume - REJECT ALL
+                    return 0, f"Signal filtered due to bearish volume: {vol_description} (confidence: {volume_analysis['confidence']:.2f})"
             
             # For sell signals, any volume pattern is acceptable (volume doesn't typically confirm sell signals)
             elif signal == -1:

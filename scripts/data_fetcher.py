@@ -95,7 +95,7 @@ def get_historical_data_with_retry(symbol: str, period: str = '1y', interval: st
             # Download data using yfinance with enhanced error handling
             data = yf.download(yf_symbol, period=period, interval=interval, progress=False, 
                              auto_adjust=True, timeout=TIMEOUT_SECONDS,
-                             threads=False, group_by='ticker')  # Disable threading for stability
+                             threads=False, group_by=None)  # Don't group by ticker to avoid MultiIndex
             
             # Enhanced data validation
             if data.empty:
@@ -104,12 +104,39 @@ def get_historical_data_with_retry(symbol: str, period: str = '1y', interval: st
                     return pd.DataFrame()
                 continue
             
-            # Data quality checks
-            if len(data) < 10:  # Too few data points
+            # Handle MultiIndex columns from yfinance
+            if isinstance(data.columns, pd.MultiIndex):
+                # Flatten MultiIndex columns - take the second level (OHLCV names)
+                # group_by=None prevents a MultiIndex, so just handle it if present anyway.
+                data.columns = data.columns.get_level_values(-1)
+            
+            # Ensure column names are properly formatted
+            if len(data.columns) == 5:
+                # Standard OHLCV format
+                data.columns = ['Open', 'High', 'Low', 'Close', 'Volume']
+            elif 'Adj Close' in data.columns:
+                # Handle adjusted close
+                expected_cols = ['Open', 'High', 'Low', 'Close', 'Adj Close', 'Volume']
+                if len(data.columns) == len(expected_cols):
+                    data.columns = expected_cols
+                    # Use Adj Close as Close if it exists
+                    data['Close'] = data['Adj Close']
+                    data = data[['Open', 'High', 'Low', 'Close', 'Volume']]
+            
+            # Data quality checks (relaxed for testing)
+            min_data_points = 5 if period in ['5d', '1w'] else 10  # Lower requirement for short periods
+            if len(data) < min_data_points:  # Too few data points
                 retry_stats['data_quality_issues'] += 1
-                logger.warning(f"Insufficient data points ({len(data)}) for {symbol}")
+                logger.warning(f"Insufficient data points ({len(data)}) for {symbol} (minimum: {min_data_points})")
                 if attempt == MAX_RETRIES - 1:
                     return data  # Return what we have if it's the last attempt
+                continue
+            
+            # Check if we have the basic required columns
+            if 'Close' not in data.columns:
+                logger.warning(f"No 'Close' column found for {symbol}. Available columns: {list(data.columns)}")
+                if attempt == MAX_RETRIES - 1:
+                    return pd.DataFrame()
                 continue
             
             # Check for data anomalies
@@ -171,7 +198,10 @@ def get_historical_data(symbol: str, period: str = '1y', interval: str = '1d') -
     Supports multiple intervals ('1d', '1h', '4h').
     NSE symbols need '.NS' suffix for yfinance.
     """
-    cache_file = f"cache/{symbol}_{period}_{interval}.csv"
+    # Use absolute path for cache directory
+    backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    cache_dir = os.path.join(backend_dir, "cache")
+    cache_file = os.path.join(cache_dir, f"{symbol}_{period}_{interval}.csv")
 
     # Load from cache if available
     if os.path.exists(cache_file):
@@ -222,8 +252,9 @@ def get_historical_data(symbol: str, period: str = '1y', interval: str = '1d') -
 
         # Ensure we have the required columns
         required_cols = ['Open', 'High', 'Low', 'Close', 'Volume']
-        if not set(required_cols).issubset(data.columns):
-            logger.error(f"Data missing required columns for {symbol} ({interval}).")
+        missing_cols = set(required_cols) - set(data.columns)
+        if missing_cols:
+            logger.error(f"Data missing required columns for {symbol} ({interval}). Missing: {missing_cols}. Available: {list(data.columns)}")
             return pd.DataFrame()
 
         # Optimize memory usage
@@ -563,9 +594,13 @@ def get_offline_symbols_from_cache(max_stocks: int = None) -> Dict[str, str]:
     cached_symbols = {}
     
     try:
-        if os.path.exists('cache'):
+        # Use absolute path for cache directory
+        backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        cache_dir = os.path.join(backend_dir, "cache")
+        
+        if os.path.exists(cache_dir):
             # Get all CSV files in cache directory
-            csv_files = [f for f in os.listdir('cache') if f.endswith('.csv')]
+            csv_files = [f for f in os.listdir(cache_dir) if f.endswith('.csv')]
             
             # Extract stock symbols from CSV filenames
             # Format: SYMBOL_period_interval.csv (e.g., RELIANCE_1y_1d.csv)
@@ -629,8 +664,10 @@ def get_filtered_nse_symbols(max_stocks: int = None) -> Dict[str, str]:
     """
     logger.info(f"Getting filtered NSE symbols with max_stocks={max_stocks}")
     
-    # Use cache for filtered symbols
-    cache_file = f"cache/filtered_symbols_{max_stocks or 'all'}.json"
+    # Use cache for filtered symbols with absolute path
+    backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    cache_dir = os.path.join(backend_dir, "cache")
+    cache_file = os.path.join(cache_dir, f"filtered_symbols_{max_stocks or 'all'}.json")
     
     # Load from cache if available and not older than 1 hour (for testing)
     if os.path.exists(cache_file):
