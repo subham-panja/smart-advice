@@ -129,6 +129,8 @@ class StrategyEvaluator:
                     
                 except Exception as e:
                     logger.error(f"Failed to load strategy {strategy_name}: {e}")
+                    import traceback
+                    logger.error(f"Full traceback for {strategy_name}: {traceback.format_exc()}")
                     
     def evaluate_strategies(self, symbol: str, data: pd.DataFrame) -> Dict[str, Any]:
         """

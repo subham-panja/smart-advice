@@ -46,17 +46,53 @@ class StockAnalyzer:
         """
         Initialize the stock analyzer.
         """
+        logger.info("Initializing StockAnalyzer...")
+        
+        logger.info("Initializing StrategyEvaluator...")
         self.strategy_evaluator = StrategyEvaluator()
+        logger.info("StrategyEvaluator initialized")
+        
+        logger.info("Initializing FundamentalAnalysis...")
         self.fundamental_analyzer = FundamentalAnalysis()
+        logger.info("FundamentalAnalysis initialized")
+        
+        logger.info("Initializing SentimentAnalysis...")
         self.sentiment_analyzer = SentimentAnalysis()
+        logger.info("SentimentAnalysis initialized")
+        
+        logger.info("Initializing RiskManager...")
         self.risk_manager = RiskManager()
+        logger.info("RiskManager initialized")
+        
+        logger.info("Initializing SectorAnalyzer...")
         self.sector_analyzer = SectorAnalyzer()
+        logger.info("SectorAnalyzer initialized")
+        
+        logger.info("Initializing MarketRegimeDetection...")
         self.market_regime_detector = MarketRegimeDetection(symbol='DEFAULT', n_regimes=3, lookback_period='2y')
+        logger.info("MarketRegimeDetection initialized")
+        
+        logger.info("Initializing MarketMicrostructureAnalyzer...")
         self.market_microstructure_analyzer = MarketMicrostructureAnalyzer()
+        logger.info("MarketMicrostructureAnalyzer initialized")
+        
+        logger.info("Initializing AlternativeDataAnalyzer...")
         self.alternative_data_analyzer = AlternativeDataAnalyzer()
+        logger.info("AlternativeDataAnalyzer initialized")
+        
+        logger.info("Initializing PricePredictor...")
         self.predictor = PricePredictor(symbol='DEFAULT')
+        logger.info("PricePredictor initialized")
+        
+        logger.info("Initializing RLTradingAgent...")
         self.rl_trading_agent = RLTradingAgent(symbol='DEFAULT')
+        logger.info("RLTradingAgent initialized")
+        
+        logger.info("Initializing TransactionCostAnalyzer...")
         self.tca_analyzer = TransactionCostAnalyzer()
+        logger.info("TransactionCostAnalyzer initialized")
+        
+        logger.info("StockAnalyzer initialization complete")
         
     def analyze_stock(self, symbol: str, app_config: Dict[str, Any]) -> Dict[str, Any]:
         """

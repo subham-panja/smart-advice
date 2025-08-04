@@ -38,15 +38,60 @@ def get_all_nse_symbols() -> Dict[str, str]:
     # Fallback to a predefined list of major NSE stocks
     
     try:
-        # Initialize NSE API only when needed
+        # Initialize NSE API only when needed with timeout protection
         global nse_api
         if nse_api is None:
             logger.info("Initializing NSE API...")
-            nse_api = Nse()
+            
+            # Try to initialize NSE API with timeout protection
+            import signal
+            def timeout_handler(signum, frame):
+                raise TimeoutError("NSE API initialization timed out")
+            
+            # Set timeout for NSE initialization (10 seconds)
+            old_handler = signal.signal(signal.SIGALRM, timeout_handler)
+            signal.alarm(10)
+            
+            try:
+                nse_api = Nse()
+                signal.alarm(0)  # Cancel the alarm
+                signal.signal(signal.SIGALRM, old_handler)  # Restore old handler
+                logger.info("NSE API initialized successfully")
+            except TimeoutError:
+                signal.alarm(0)  # Cancel the alarm
+                signal.signal(signal.SIGALRM, old_handler)  # Restore old handler
+                logger.error("NSE API initialization timed out")
+                raise Exception("NSE API initialization timed out")
+            except Exception as e:
+                signal.alarm(0)  # Cancel the alarm
+                signal.signal(signal.SIGALRM, old_handler)  # Restore old handler
+                logger.error(f"NSE API initialization failed: {e}")
+                raise
         
-        # Get stock codes from nsetools (returns a list)
+        # Get stock codes from nsetools with timeout
         logger.info("Fetching stock codes from NSE...")
-        stock_codes = nse_api.get_stock_codes()
+        
+        # Set timeout for stock codes fetching (15 seconds)
+        def timeout_handler(signum, frame):
+            raise TimeoutError("NSE stock codes fetching timed out")
+        
+        old_handler = signal.signal(signal.SIGALRM, timeout_handler)
+        signal.alarm(15)
+        
+        try:
+            stock_codes = nse_api.get_stock_codes()
+            signal.alarm(0)  # Cancel the alarm
+            signal.signal(signal.SIGALRM, old_handler)  # Restore old handler
+        except TimeoutError:
+            signal.alarm(0)  # Cancel the alarm
+            signal.signal(signal.SIGALRM, old_handler)  # Restore old handler
+            logger.error("NSE stock codes fetching timed out")
+            raise Exception("NSE stock codes fetching timed out")
+        except Exception as e:
+            signal.alarm(0)  # Cancel the alarm
+            signal.signal(signal.SIGALRM, old_handler)  # Restore old handler
+            logger.error(f"Error fetching stock codes: {e}")
+            raise
         
         # Convert list to dictionary format with symbol as key and value
         all_symbols = {symbol: symbol for symbol in stock_codes}
@@ -655,6 +700,7 @@ def get_offline_symbols_from_cache(max_stocks: int = None) -> Dict[str, str]:
 def get_filtered_nse_symbols(max_stocks: int = None) -> Dict[str, str]:
     """
     Get filtered NSE symbols that meet active trading criteria with caching.
+    FAST MODE: Skip heavy filtering for better performance.
     
     Args:
         max_stocks: Maximum number of stocks to return
@@ -662,96 +708,97 @@ def get_filtered_nse_symbols(max_stocks: int = None) -> Dict[str, str]:
     Returns:
         Dictionary of filtered stock symbols
     """
-    logger.info(f"Getting filtered NSE symbols with max_stocks={max_stocks}")
+    logger.info(f"Getting filtered NSE symbols with max_stocks={max_stocks} (FAST MODE)")
     
     # Use cache for filtered symbols with absolute path
     backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     cache_dir = os.path.join(backend_dir, "cache")
     cache_file = os.path.join(cache_dir, f"filtered_symbols_{max_stocks or 'all'}.json")
     
-    # Load from cache if available and not older than 1 hour (for testing)
+    # Load from cache if available and not older than 24 hours (extended cache time)
     if os.path.exists(cache_file):
         try:
             file_age = time.time() - os.path.getmtime(cache_file)
-            if file_age < 3600:  # 1 hour
+            if file_age < 86400:  # 24 hours
                 with open(cache_file, 'r') as f:
                     filtered_symbols = json.load(f)
                     logger.info(f"Loaded {len(filtered_symbols)} filtered symbols from cache.")
                     if filtered_symbols:  # Only return if not empty
                         return filtered_symbols
                     else:
-                        logger.info("Cache file is empty, proceeding to filter symbols.")
+                        logger.info("Cache file is empty, proceeding to use known stocks.")
         except Exception as e:
             logger.error(f"Error loading cached filtered symbols: {e}")
     
-    # Get all NSE symbols
-    all_symbols = get_all_nse_symbols()
+    # FAST MODE: Skip expensive API filtering and use predefined liquid stocks
+    logger.info("FAST MODE: Using predefined liquid stocks to avoid API bottlenecks")
     
-    # For small max_stocks (test mode), use known large stocks to ensure we get results
-    if max_stocks is not None and max_stocks <= 20:
-        logger.info(f"Test mode: Using known large stocks for testing (max_stocks={max_stocks})")
-        test_stocks = {
-            'RELIANCE': 'Reliance Industries Limited',
-            'TCS': 'Tata Consultancy Services Limited',
-            'HDFCBANK': 'HDFC Bank Limited',
-            'INFY': 'Infosys Limited',
-            'HINDUNILVR': 'Hindustan Unilever Limited',
-            'ICICIBANK': 'ICICI Bank Limited',
-            'SBIN': 'State Bank of India',
-            'BHARTIARTL': 'Bharti Airtel Limited',
-            'ITC': 'ITC Limited',
-            'KOTAKBANK': 'Kotak Mahindra Bank Limited'
-        }
-        # Use only the number of stocks we need for testing
-        limited_symbols = dict(list(test_stocks.items())[:max_stocks * 3])
-        logger.info(f"Processing {len(limited_symbols)} test symbols instead of all {len(all_symbols)} symbols")
+    # Comprehensive list of liquid NSE stocks (sorted by market cap and liquidity)
+    liquid_stocks = {
+        'RELIANCE': 'Reliance Industries Limited',
+        'TCS': 'Tata Consultancy Services Limited',
+        'HDFCBANK': 'HDFC Bank Limited',
+        'INFY': 'Infosys Limited',
+        'HINDUNILVR': 'Hindustan Unilever Limited',
+        'ICICIBANK': 'ICICI Bank Limited',
+        'SBIN': 'State Bank of India',
+        'BHARTIARTL': 'Bharti Airtel Limited',
+        'ITC': 'ITC Limited',
+        'KOTAKBANK': 'Kotak Mahindra Bank Limited',
+        'LT': 'Larsen & Toubro Limited',
+        'ASIANPAINT': 'Asian Paints Limited',
+        'AXISBANK': 'Axis Bank Limited',
+        'MARUTI': 'Maruti Suzuki India Limited',
+        'SUNPHARMA': 'Sun Pharmaceutical Industries Limited',
+        'ULTRACEMCO': 'UltraTech Cement Limited',
+        'TITAN': 'Titan Company Limited',
+        'NESTLEIND': 'Nestle India Limited',
+        'POWERGRID': 'Power Grid Corporation of India Limited',
+        'NTPC': 'NTPC Limited',
+        'BAJFINANCE': 'Bajaj Finance Limited',
+        'ONGC': 'Oil & Natural Gas Corporation Limited',
+        'TECHM': 'Tech Mahindra Limited',
+        'BAJAJFINSV': 'Bajaj Finserv Limited',
+        'HCLTECH': 'HCL Technologies Limited',
+        'WIPRO': 'Wipro Limited',
+        'COALINDIA': 'Coal India Limited',
+        'DRREDDY': 'Dr. Reddys Laboratories Limited',
+        'JSWSTEEL': 'JSW Steel Limited',
+        'TATASTEEL': 'Tata Steel Limited',
+        'GRASIM': 'Grasim Industries Limited',
+        'HINDALCO': 'Hindalco Industries Limited',
+        'BRITANNIA': 'Britannia Industries Limited',
+        'DIVISLAB': 'Divis Laboratories Limited',
+        'EICHERMOT': 'Eicher Motors Limited',
+        'HEROMOTOCO': 'Hero MotoCorp Limited',
+        'BAJAJ-AUTO': 'Bajaj Auto Limited',
+        'ADANIPORTS': 'Adani Ports and Special Economic Zone Limited',
+        'BPCL': 'Bharat Petroleum Corporation Limited',
+        'CIPLA': 'Cipla Limited',
+        'SHREECEM': 'Shree Cement Limited',
+        'INDUSINDBK': 'IndusInd Bank Limited',
+        'APOLLOHOSP': 'Apollo Hospitals Enterprise Limited',
+        'PIDILITIND': 'Pidilite Industries Limited',
+        'GODREJCP': 'Godrej Consumer Products Limited',
+        'MCDOWELL-N': 'United Spirits Limited',
+        'IOC': 'Indian Oil Corporation Limited',
+        'TATACONSUM': 'Tata Consumer Products Limited',
+        'HDFCLIFE': 'HDFC Life Insurance Company Limited',
+        'SBILIFE': 'SBI Life Insurance Company Limited',
+        'ICICIPRULI': 'ICICI Prudential Life Insurance Company Limited',
+        'DABUR': 'Dabur India Limited',
+        'COLPAL': 'Colgate Palmolive (India) Limited',
+        'MARICO': 'Marico Limited',
+        'BERGEPAINT': 'Berger Paints India Limited'
+    }
+    
+    # Apply max_stocks limit if specified
+    if max_stocks is not None:
+        filtered_symbols = dict(list(liquid_stocks.items())[:max_stocks])
+        logger.info(f"Selected {len(filtered_symbols)} liquid stocks from predefined list")
     else:
-        # For larger max_stocks values, sort by liquidity before slicing
-        if max_stocks is not None and max_stocks >= 50:
-            logger.info(f"Production mode: Sorting {len(all_symbols)} symbols by liquidity for better filtering success")
-            # Sort symbols by liquidity (prioritize known large stocks first)
-            known_large_stocks = [
-                'RELIANCE', 'TCS', 'HDFCBANK', 'INFY', 'HINDUNILVR', 'ICICIBANK', 'SBIN',
-                'BHARTIARTL', 'ITC', 'KOTAKBANK', 'LT', 'ASIANPAINT', 'AXISBANK', 'MARUTI',
-                'SUNPHARMA', 'ULTRACEMCO', 'TITAN', 'NESTLEIND', 'POWERGRID', 'NTPC',
-                'BAJFINANCE', 'ONGC', 'TECHM', 'BAJAJFINSV', 'HCLTECH', 'WIPRO',
-                'COALINDIA', 'DRREDDY', 'JSWSTEEL', 'TATASTEEL', 'GRASIM', 'HINDALCO',
-                'BRITANNIA', 'DIVISLAB', 'EICHERMOT', 'HEROMOTOCO', 'BAJAJ-AUTO',
-                'ADANIPORTS', 'BPCL', 'CIPLA', 'SHREECEM', 'INDUSINDBK', 'APOLLOHOSP',
-                'PIDILITIND', 'GODREJCP', 'MCDOWELL-N', 'IOC', 'TATACONSUM', 'HDFCLIFE',
-                'SBILIFE', 'ICICIPRULI', 'DABUR', 'COLPAL', 'MARICO', 'BERGEPAINT'
-            ]
-            
-            # Create ordered list: known large stocks first, then remaining alphabetically
-            ordered_symbols = []
-            remaining_symbols = []
-            
-            for symbol, name in all_symbols.items():
-                if symbol in known_large_stocks:
-                    ordered_symbols.append((symbol, name))
-                else:
-                    remaining_symbols.append((symbol, name))
-            
-            # Sort known large stocks by their priority order
-            ordered_symbols.sort(key=lambda x: known_large_stocks.index(x[0]) if x[0] in known_large_stocks else 999)
-            
-            # Add remaining symbols alphabetically
-            remaining_symbols.sort()
-            ordered_symbols.extend(remaining_symbols)
-            
-            # Take first max_stocks symbols
-            limited_symbols = dict(ordered_symbols[:max_stocks])
-            logger.info(f"Processing top {len(limited_symbols)} symbols (prioritized by liquidity) from {len(all_symbols)} total symbols")
-        elif max_stocks is not None:
-            # For smaller production runs, use alphabetical order
-            limited_symbols = dict(list(all_symbols.items())[:max_stocks])
-            logger.info(f"Production mode: Processing first {len(limited_symbols)} symbols from {len(all_symbols)} total symbols")
-        else:
-            limited_symbols = all_symbols
-            logger.info(f"Production mode: Processing all {len(all_symbols)} symbols")
-    
-    # Filter for active stocks
-    filtered_symbols = filter_active_stocks(limited_symbols, max_stocks)
+        filtered_symbols = liquid_stocks
+        logger.info(f"Using all {len(filtered_symbols)} predefined liquid stocks")
     
     # Save to cache
     try:

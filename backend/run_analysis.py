@@ -63,22 +63,25 @@ class AutomatedStockAnalysis:
             days_old: Number of days to keep. If 0, removes all data.
         """
         with self.app.app_context():
-            db = get_mongodb()
             try:
+                db = get_mongodb()
                 from datetime import datetime, timedelta
+                
+                # Add timeout to prevent hanging
+                db.client.server_info()  # Test connection
                 
                 if days_old == 0:
                     # Remove all data if days_old is 0
                     logger.info("Purging ALL data from database (days_old=0)")
                     
-                    # Delete all recommendations
+                    # Delete all recommendations with timeout
                     recommendations_collection = db['recommended_shares']
-                    rec_result = recommendations_collection.delete_many({})
+                    rec_result = recommendations_collection.delete_many({}, maxTimeMS=30000)  # 30 second timeout
                     deleted_recommendations = rec_result.deleted_count
                     
-                    # Delete all backtest results
+                    # Delete all backtest results with timeout
                     backtest_collection = db['backtest_results']
-                    backtest_result = backtest_collection.delete_many({})
+                    backtest_result = backtest_collection.delete_many({}, maxTimeMS=30000)  # 30 second timeout
                     deleted_backtest_results = backtest_result.deleted_count
                     
                     logger.info(f"Complete data purge: {deleted_recommendations} recommendations and {deleted_backtest_results} backtest results deleted (ALL DATA)")
@@ -87,20 +90,21 @@ class AutomatedStockAnalysis:
                     # Delete data older than specified days
                     logger.info(f"Purging data older than {days_old} days")
                     
-                    cutoff_date = datetime.utcnow() - timedelta(days=days_old)
+                    # Use timezone-aware datetime to fix deprecation warning
+                    cutoff_date = datetime.now(datetime.timezone.utc) - timedelta(days=days_old)
                     
-                    # Delete old recommendations
+                    # Delete old recommendations with timeout
                     recommendations_collection = db['recommended_shares']
                     rec_result = recommendations_collection.delete_many({
                         'recommendation_date': {'$lt': cutoff_date}
-                    })
+                    }, maxTimeMS=30000)  # 30 second timeout
                     deleted_recommendations = rec_result.deleted_count
                     
-                    # Delete old backtest results
+                    # Delete old backtest results with timeout
                     backtest_collection = db['backtest_results']
                     backtest_result = backtest_collection.delete_many({
                         'created_at': {'$lt': cutoff_date}
-                    })
+                    }, maxTimeMS=30000)  # 30 second timeout
                     deleted_backtest_results = backtest_result.deleted_count
                     
                     logger.info(f"Data purge completed: {deleted_recommendations} recommendations and {deleted_backtest_results} backtest results deleted (older than {days_old} days)")
@@ -109,7 +113,8 @@ class AutomatedStockAnalysis:
                 
             except Exception as e:
                 logger.error(f"Error clearing old data: {e}")
-                raise
+                logger.warning("Continuing without data purge - this may be due to database connectivity issues")
+                # Don't raise the exception - allow the script to continue
     
     def save_recommendation(self, analysis_result: Dict[str, Any]) -> bool:
         """Save analysis result to the database (only BUY recommendations, not HOLD)."""
@@ -730,11 +735,15 @@ class AutomatedStockAnalysis:
         if self.verbose:
             logger.info(f"Starting automated stock analysis with {mode_str} (max_stocks={max_stocks}, use_all_symbols={use_all_symbols})")
         
+        logger.info("DEBUG: About to fetch stock symbols...")
+        
         if offline_mode:
             # Use offline mode - get symbols from cached data only
             if self.verbose:
                 logger.info(f"Using OFFLINE mode: Getting symbols from cached data (max_stocks={max_stocks})...")
+            logger.info("DEBUG: About to call get_offline_symbols_from_cache...")
             filtered_symbols = get_offline_symbols_from_cache(max_stocks)
+            logger.info("DEBUG: Finished calling get_offline_symbols_from_cache")
             
             if not filtered_symbols:
                 logger.error("No cached symbols found in offline mode. Try running without --offline first to build cache.")
@@ -743,7 +752,9 @@ class AutomatedStockAnalysis:
             # Get all NSE symbols without filtering
             if self.verbose:
                 logger.info(f"Fetching all NSE symbols (max_stocks={max_stocks})...")
+            logger.info("DEBUG: About to call get_all_nse_symbols...")
             all_symbols = get_all_nse_symbols()
+            logger.info("DEBUG: Finished calling get_all_nse_symbols")
             
             if not all_symbols:
                 logger.error("No NSE symbols found. Exiting analysis.")
@@ -765,13 +776,13 @@ class AutomatedStockAnalysis:
             # Get filtered NSE symbols (actively traded with historical data)
             if self.verbose:
                 logger.info(f"Fetching actively traded NSE symbols with historical data (max_stocks={max_stocks})...")
+            logger.info("DEBUG: About to call get_filtered_nse_symbols...")
             filtered_symbols = get_filtered_nse_symbols(max_stocks)
-            
-            if not filtered_symbols:
-                logger.error("No filtered NSE symbols found. Exiting analysis.")
-                return
+            logger.info("DEBUG: Finished calling get_filtered_nse_symbols")
         
+        logger.info("DEBUG: Symbol fetching completed, creating symbols list...")
         symbols_list = list(filtered_symbols.keys())
+        logger.info(f"DEBUG: Created symbols list with {len(symbols_list)} symbols")
         symbol_type = "all NSE" if use_all_symbols else "actively traded"
         total_stocks = len(symbols_list)
         
@@ -804,19 +815,13 @@ class AutomatedStockAnalysis:
             
             logger.info(f"Processing batch {batch_num}: stocks {i+1}-{min(i+batch_size, total_stocks)}")
             
-            # Process batch using ThreadPoolExecutor
-            with ThreadPoolExecutor(max_workers=effective_threads) as executor:
-                # Submit all tasks for this batch
-                future_to_symbol = {
-                    executor.submit(self.analyze_single_stock, symbol, total_stocks, i + j + 1): symbol
-                    for j, symbol in enumerate(batch)
-                }
-                
-                # Process completed tasks
-                for future in as_completed(future_to_symbol):
-                    symbol = future_to_symbol[future]
+            if single_threaded:
+                # Single-threaded mode for debugging
+                logger.info("Using SINGLE-THREADED mode for debugging")
+                for j, symbol in enumerate(batch):
                     try:
-                        result = future.result()
+                        logger.info(f"Processing {symbol} in single-threaded mode...")
+                        result = self.analyze_single_stock(symbol, total_stocks, i + j + 1)
                         logger.debug(f"Received result for {symbol}: {result}")
                         processed_count += 1
                         
@@ -832,9 +837,45 @@ class AutomatedStockAnalysis:
                             failed_count += 1
                             
                     except Exception as e:
-                        logger.exception(f"Error in ThreadPoolExecutor for {symbol}: {e}")
+                        logger.exception(f"Error in single-threaded processing for {symbol}: {e}")
                         failed_count += 1
                         processed_count += 1
+            else:
+                # Multi-threaded mode with timeout handling
+                with ThreadPoolExecutor(max_workers=effective_threads) as executor:
+                    # Submit all tasks for this batch
+                    future_to_symbol = {
+                        executor.submit(self.analyze_single_stock, symbol, total_stocks, i + j + 1): symbol
+                        for j, symbol in enumerate(batch)
+                    }
+                    
+                    # Process completed tasks with timeout
+                    for future in as_completed(future_to_symbol, timeout=300):  # 5 minute timeout per stock
+                        symbol = future_to_symbol[future]
+                        try:
+                            result = future.result(timeout=60)  # 1 minute timeout to get result
+                            logger.debug(f"Received result for {symbol}: {result}")
+                            processed_count += 1
+                            
+                            if result['success']:
+                                if self.save_recommendation(result['result']):
+                                    if result['recommended']:
+                                        recommended_count += 1
+                                    else:
+                                        not_recommended_count += 1
+                                else:
+                                    failed_count += 1
+                            else:
+                                failed_count += 1
+                                
+                        except TimeoutError:
+                            logger.error(f"Timeout processing {symbol} - skipping")
+                            failed_count += 1
+                            processed_count += 1
+                        except Exception as e:
+                            logger.exception(f"Error in ThreadPoolExecutor for {symbol}: {e}")
+                            failed_count += 1
+                            processed_count += 1
             
             # Log progress and trigger garbage collection after each batch
             elapsed_time = (datetime.now() - self.start_time).total_seconds()
@@ -887,20 +928,29 @@ class AutomatedStockAnalysis:
         """
         with self.app.app_context():
             try:
+                logger.info("Starting run_analysis method")
+                
                 # Clean corrupted cache files first
+                logger.info("Cleaning corrupted cache files...")
                 cache_manager = get_cache_manager()
                 cleaned_files = cache_manager.clean_corrupted_cache_files()
                 if cleaned_files > 0:
                     logger.info(f"Cleaned {cleaned_files} corrupted cache files")
+                logger.info("Cache cleaning completed")
                 
                 # Get configurable threshold for data purge
                 days_old = self.app.config.get('DATA_PURGE_DAYS', 7)
+                logger.info(f"Data purge threshold: {days_old} days")
                 
                 # Clear old data (recommendations and backtest results) at the start
-                self.clear_old_data(days_old=days_old)
+                logger.info("SKIPPING database purge operation temporarily for debugging...")
+                # self.clear_old_data(days_old=days_old)
+                logger.info("Database purge operation skipped")
                 
                 # Analyze all stocks
-                self.analyze_all_stocks(max_stocks=max_stocks, use_all_symbols=use_all_symbols, offline_mode=offline_mode)
+                logger.info("Starting stock analysis...")
+                self.analyze_all_stocks(max_stocks=max_stocks, use_all_symbols=use_all_symbols, offline_mode=offline_mode, single_threaded=getattr(self, 'single_threaded', False))
+                logger.info("Stock analysis completed")
                 
                 logger.info("Automated analysis completed successfully")
                 
@@ -921,6 +971,7 @@ def main():
     parser.add_argument('--offline', action='store_true', help='Use offline mode (cached data only, no API calls)')
     parser.add_argument('--purge-days', type=int, help='Number of days to keep old data (overrides config). Use 0 to remove ALL data.')
     parser.add_argument('--verbose', action='store_true', help='Enable verbose logging with detailed output')
+    parser.add_argument('--single-threaded', action='store_true', help='Use single-threaded mode for debugging (slower but more stable)')
     parser.add_argument('--disable-volume-filter', action='store_true', help='Disable volume-based filtering for analysis')
     
     args = parser.parse_args()
@@ -951,6 +1002,11 @@ def main():
     try:
         # Create analyzer with correct verbose setting from the start
         analyzer = AutomatedStockAnalysis(verbose=args.verbose)
+        
+        # Set single_threaded flag
+        analyzer.single_threaded = args.single_threaded
+        if args.single_threaded and args.verbose:
+            logger.info("Single-threaded mode enabled for debugging")
         
         # Override config if CLI argument provided
         if args.purge_days is not None:

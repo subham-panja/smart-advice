@@ -14,9 +14,10 @@ pydantic
 click
 pytest
 textblob
+pymongo
 # Phase 1 Enhancements
 hmmlearn>=0.3.0
-sklearn
+scikit-learn
 arch>=5.3.0
 statsmodels>=0.14.0
 plotly>=5.0.0

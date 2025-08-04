@@ -7,7 +7,13 @@ for scheduling or manual execution.
 Extracted from run_analysis.py for modularity.
 """
 
-from core.analysis import AnalysisOrchestrator
+import sys
+import os
+
+# Add parent directories to path to enable imports
+sys.path.append(os.path.join(os.path.dirname(__file__), '../..'))
+
+from core.analysis.analysis_orchestrator import AnalysisOrchestrator
 from utils.logger import setup_logging
 from datetime import datetime
 

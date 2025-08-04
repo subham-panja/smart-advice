@@ -5,10 +5,16 @@ Analysis Orchestrator Module
 Coordinates various analyses and handles the overall workflow.
 """
 
-from core.analysis.technical_analyzer import TechnicalAnalyzer
-from core.analysis.fundamental_analyzer import FundamentalAnalyzer
-from core.analysis.sentiment_analyzer import SentimentAnalyzer
-from core.analysis.recommendation_engine import RecommendationEngine
+import sys
+import os
+
+# Add parent directories to path to enable imports
+sys.path.append(os.path.join(os.path.dirname(__file__), '../..'))
+
+from .technical_analyzer import TechnicalAnalyzer
+from .fundamental_analyzer import FundamentalAnalyzer
+from .sentiment_analyzer import SentimentAnalyzer
+from .recommendation_engine import RecommendationEngine
 from utils.logger import setup_logging
 
 logger = setup_logging()
