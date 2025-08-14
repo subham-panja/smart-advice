@@ -34,6 +34,7 @@ class BacktestEngine:
         self.position = 0
         self.trades = []
         self.portfolio_values = []
+        self._data_aligned = None  # store last aligned OHLCV for per-trade analysis
     
     def run_backtest(self, data: pd.DataFrame, strategy_signals: pd.Series) -> Dict[str, Any]:
         """
@@ -59,6 +60,9 @@ class BacktestEngine:
                 return {'error': 'No aligned data between prices and signals'}
             
             data_aligned, signals_aligned = aligned_data
+
+            # Keep aligned data for metrics
+            self._data_aligned = data_aligned[['Open','High','Low','Close']].copy()
             
             # Execute trades based on signals
             for i, (date, row) in enumerate(data_aligned.iterrows()):
@@ -147,16 +151,37 @@ class BacktestEngine:
             buy_sell_pairs = []
             buy_price = None
             
+            # Build a quick map of trade dates for MAE/time-in-trade
+            prices_df = self._data_aligned if isinstance(self._data_aligned, pd.DataFrame) else None
+
             for trade in self.trades:
                 if trade['action'] == 'BUY':
                     buy_price = trade['price']
+                    buy_date = trade['date']
                 elif trade['action'] == 'SELL' and buy_price is not None:
-                    profit_loss = trade['price'] - buy_price
+                    sell_price = trade['price']
+                    sell_date = trade['date']
+                    profit_loss = sell_price - buy_price
+                    ret_pct = (profit_loss / buy_price) * 100
+
+                    # Compute time-in-trade and MAE using lows between buy and sell
+                    time_in_trade = (sell_date - buy_date).days if isinstance(sell_date, pd.Timestamp) else 0
+                    mae_pct = 0.0
+                    if prices_df is not None and buy_date in prices_df.index and sell_date in prices_df.index:
+                        window = prices_df.loc[buy_date:sell_date]
+                        if not window.empty and 'Low' in window.columns:
+                            min_price = float(window['Low'].min())
+                            mae_pct = ((min_price - buy_price) / buy_price) * 100
+                    
                     buy_sell_pairs.append({
+                        'buy_date': buy_date,
+                        'sell_date': sell_date,
                         'buy_price': buy_price,
-                        'sell_price': trade['price'],
+                        'sell_price': sell_price,
                         'profit_loss': profit_loss,
-                        'return_pct': (profit_loss / buy_price) * 100
+                        'return_pct': ret_pct,
+                        'time_in_trade_days': time_in_trade,
+                        'mae_pct': mae_pct
                     })
                     buy_price = None
             
@@ -181,8 +206,14 @@ class BacktestEngine:
                 avg_return = np.mean(returns)
                 std_return = np.std(returns)
                 sharpe_ratio = avg_return / std_return if std_return > 0 else 0
+
+                # Additional swing metrics
+                avg_time_in_trade = float(np.mean([t['time_in_trade_days'] for t in buy_sell_pairs])) if buy_sell_pairs else 0.0
+                avg_mae = float(np.mean([t['mae_pct'] for t in buy_sell_pairs])) if buy_sell_pairs else 0.0
             else:
                 sharpe_ratio = 0
+                avg_time_in_trade = 0.0
+                avg_mae = 0.0
             
             return {
                 'initial_capital': self.initial_capital,
@@ -196,6 +227,8 @@ class BacktestEngine:
                 'winning_trades': winning_trades,
                 'losing_trades': total_trades - winning_trades,
                 'period_days': days_in_period,
+                'avg_time_in_trade_days': round(avg_time_in_trade, 2),
+                'avg_mae_pct': round(avg_mae, 2),
                 'buy_sell_pairs': buy_sell_pairs
             }
             
