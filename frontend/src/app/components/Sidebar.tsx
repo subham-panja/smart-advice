@@ -17,6 +17,7 @@ import {
   ChevronUpIcon,
   InformationCircleIcon
 } from '@heroicons/react/24/outline';
+import ThemeToggle from './ThemeToggle';
 
 const Sidebar = () => {
   const pathname = usePathname();
@@ -78,10 +79,10 @@ const Sidebar = () => {
   };
 
   return (
-    <div className={`fixed left-0 top-0 h-full bg-white dark:bg-gray-800 shadow-lg border-r border-gray-200 dark:border-gray-700 transition-all duration-300 z-40 ${
+    <div className={`fixed left-0 top-0 h-full bg-white dark:bg-gray-800 shadow-lg border-r border-gray-200 dark:border-gray-700 transition-all duration-300 z-40 flex flex-col ${
       isCollapsed ? 'w-16' : 'w-64'
     }`}>
-      {/* Header with Logo and Toggle */}
+      {/* Header with Logo, Theme Toggle and Collapse Toggle */}
       <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
         {!isCollapsed && (
           <Link href="/" className="flex items-center space-x-2">
@@ -94,17 +95,20 @@ const Sidebar = () => {
             <ChartBarIcon className="h-8 w-8 text-blue-600 dark:text-blue-400" />
           </Link>
         )}
-        <button
-          onClick={toggleSidebar}
-          className="p-1.5 rounded-md text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-          title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        >
-          {isCollapsed ? (
-            <ChevronRightIcon className="h-5 w-5" />
-          ) : (
-            <ChevronLeftIcon className="h-5 w-5" />
-          )}
-        </button>
+        <div className="flex items-center space-x-2">
+          <ThemeToggle collapsed={isCollapsed} />
+          <button
+            onClick={toggleSidebar}
+            className="p-1.5 rounded-md text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+            title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          >
+            {isCollapsed ? (
+              <ChevronRightIcon className="h-5 w-5" />
+            ) : (
+              <ChevronLeftIcon className="h-5 w-5" />
+            )}
+          </button>
+        </div>
       </div>
 
       {/* Navigation Links */}
@@ -200,35 +204,10 @@ const Sidebar = () => {
         })}
       </nav>
 
-      {/* Bottom Section with About and Settings */}
+      {/* Bottom Section with Settings */}
       <div className="mt-auto">
-        {/* About Link */}
-        <div className="p-4 border-t border-gray-200 dark:border-gray-700">
-          <Link
-            href="/about"
-            className={`flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors group ${
-              isCollapsed ? 'justify-center' : ''
-            } ${
-              pathname === '/about'
-                ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300'
-                : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700'
-            }`}
-            title={isCollapsed ? 'About' : ''}
-          >
-            <InformationCircleIcon className={`h-5 w-5 flex-shrink-0 ${isCollapsed ? '' : 'mr-3'}`} />
-            {!isCollapsed && (
-              <div>
-                <div className="font-medium">About</div>
-                <div className="text-xs text-gray-500 dark:text-gray-400">
-                  Learn about the platform
-                </div>
-              </div>
-            )}
-          </Link>
-        </div>
-        
         {/* Settings Link */}
-        <div className="px-4 pb-4">
+        <div className="p-4 border-t border-gray-200 dark:border-gray-700">
           <Link
             href={settingsItem.href}
             className={`flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors group ${
@@ -252,10 +231,19 @@ const Sidebar = () => {
           </Link>
         </div>
         
-        {/* Footer */}
+        {/* Footer with About */}
         <div className="p-4 border-t border-gray-200 dark:border-gray-700">
-          <div className="text-center text-xs text-gray-500 dark:text-gray-400">
-            {!isCollapsed && 'Stock Advisor v1.0'}
+          <div className="flex items-center justify-center space-x-2">
+            {!isCollapsed && (
+              <span className="text-xs text-gray-500 dark:text-gray-400">Stock Advisor v1.0</span>
+            )}
+            <Link
+              href="/about"
+              className="p-1.5 rounded-md text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+              title="About"
+            >
+              <InformationCircleIcon className="h-4 w-4" />
+            </Link>
           </div>
         </div>
       </div>

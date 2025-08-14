@@ -59,14 +59,35 @@ class BacktestingRunner:
                     'data_length': len(historical_data)
                 }
             
-            # Default strategy classes if none provided
+            # Default strategy classes if none provided: derive from config
             if strategy_classes is None:
-                strategy_classes = [
-                    'MA_Crossover_50_200',
-                    'RSI_Overbought_Oversold',
-                    'MACD_Signal_Crossover',
-                    'Bollinger_Band_Breakout'
-                ]
+                try:
+                    from config import STRATEGY_CONFIG
+                    supported = {
+                        'MA_Crossover_50_200',
+                        'RSI_Overbought_Oversold',
+                        'MACD_Signal_Crossover',
+                        'Bollinger_Band_Breakout',
+                        'EMA_Crossover_12_26',
+                        'Stochastic_Overbought_Oversold',
+                        'ADX_Trend_Strength'
+                    }
+                    strategy_classes = [name for name, enabled in STRATEGY_CONFIG.items() if enabled and name in supported]
+                    if not strategy_classes:
+                        # Fallback to core set
+                        strategy_classes = [
+                            'MA_Crossover_50_200',
+                            'RSI_Overbought_Oversold',
+                            'MACD_Signal_Crossover',
+                            'Bollinger_Band_Breakout'
+                        ]
+                except Exception:
+                    strategy_classes = [
+                        'MA_Crossover_50_200',
+                        'RSI_Overbought_Oversold',
+                        'MACD_Signal_Crossover',
+                        'Bollinger_Band_Breakout'
+                    ]
             
             # Filter strategies to only include those with enough data
             min_data_requirements = {

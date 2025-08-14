@@ -65,7 +65,10 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     
     console.log('Initial theme:', initialTheme);
     setTheme(initialTheme);
-    applyTheme(initialTheme);
+    // Apply theme immediately during initialization
+    if (typeof window !== 'undefined') {
+      applyTheme(initialTheme);
+    }
   }, []);
 
   useEffect(() => {

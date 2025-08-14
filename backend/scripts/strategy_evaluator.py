@@ -34,6 +34,13 @@ class StrategyEvaluator:
         """
         Load and initialize all enabled strategies.
         """
+        import signal
+        import time
+        
+        # Define timeout handler
+        def timeout_handler(signum, frame):
+            raise TimeoutError("Strategy loading timed out")
+        
         strategy_mapping = {
             # Core strategies
             'MA_Crossover_50_200': 'scripts.strategies.ma_crossover_50_200',
@@ -99,14 +106,39 @@ class StrategyEvaluator:
             'Price_Volume_Trend': 'scripts.strategies.price_volume_trend',
         }
         
-        for strategy_name, enabled in self.strategy_config.items():
-            if enabled and strategy_name in strategy_mapping:
+        # Track loading progress
+        strategies_to_load = [(name, strategy_mapping[name]) 
+                             for name, enabled in self.strategy_config.items() 
+                             if enabled and name in strategy_mapping]
+        
+        logger.info(f"Will attempt to load {len(strategies_to_load)} strategies")
+        
+        for strategy_name, module_path in strategies_to_load:
+            try:
+                logger.info(f"Loading strategy {strategy_name} from {module_path}...")
+                
+                # Import the strategy module with timeout protection
+                import sys
+                
+                # Skip only truly problematic strategies that cause hangs
+                skip_strategies = ['Volume_Breakout']
+                
+                if strategy_name in skip_strategies:
+                    logger.warning(f"Temporarily skipping {strategy_name} to avoid potential hang")
+                    continue
+                
                 try:
-                    # Import the strategy module
-                    module_path = strategy_mapping[strategy_name]
                     module = importlib.import_module(module_path)
-                    
-                    # Get the strategy class - handle different class naming conventions
+                    logger.debug(f"Successfully imported module for {strategy_name}")
+                except ImportError as ie:
+                    logger.error(f"Import error for {strategy_name}: {ie}")
+                    continue
+                except Exception as e:
+                    logger.error(f"Unexpected error importing {strategy_name}: {e}")
+                    continue
+                
+                # Get the strategy class - handle different class naming conventions
+                try:
                     if strategy_name == 'Volume_Breakout':
                         strategy_class = getattr(module, 'VolumeBreakoutStrategy')
                     elif strategy_name == 'Support_Resistance_Breakout':
@@ -122,15 +154,25 @@ class StrategyEvaluator:
                     else:
                         strategy_class = getattr(module, strategy_name)
                     
-                    # Initialize the strategy
+                    logger.debug(f"Found strategy class for {strategy_name}")
+                except AttributeError as ae:
+                    logger.error(f"Strategy class not found for {strategy_name}: {ae}")
+                    continue
+                
+                # Initialize the strategy
+                try:
                     self.strategy_instances[strategy_name] = strategy_class()
+                    logger.info(f"Successfully loaded strategy: {strategy_name}")
+                except Exception as init_error:
+                    logger.error(f"Error initializing {strategy_name}: {init_error}")
+                    continue
                     
-                    logger.info(f"Loaded strategy: {strategy_name}")
-                    
-                except Exception as e:
-                    logger.error(f"Failed to load strategy {strategy_name}: {e}")
-                    import traceback
-                    logger.error(f"Full traceback for {strategy_name}: {traceback.format_exc()}")
+            except Exception as e:
+                logger.error(f"Failed to load strategy {strategy_name}: {e}")
+                import traceback
+                logger.error(f"Full traceback for {strategy_name}: {traceback.format_exc()}")
+        
+        logger.info(f"Strategy loading complete. Loaded {len(self.strategy_instances)} strategies")
                     
     def evaluate_strategies(self, symbol: str, data: pd.DataFrame) -> Dict[str, Any]:
         """

@@ -163,7 +163,7 @@ function DataTable<T>({
 
       {/* Table */}
       <div className="overflow-hidden shadow ring-1 ring-black ring-opacity-5 rounded-lg">
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto max-w-full">
           <table className="min-w-full divide-y divide-gray-300 dark:divide-gray-600">
           <thead className="bg-gray-50 dark:bg-gray-700">
             {table.getHeaderGroups().map((headerGroup) => (

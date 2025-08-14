@@ -141,6 +141,12 @@ def get_historical_data_with_retry(symbol: str, period: str = '1y', interval: st
             data = yf.download(yf_symbol, period=period, interval=interval, progress=False, 
                              auto_adjust=True, timeout=TIMEOUT_SECONDS,
                              threads=False, group_by=None)  # Don't group by ticker to avoid MultiIndex
+
+            # Ensure we have a DataFrame
+            if isinstance(data, pd.Series):
+                data = data.to_frame(name='Close')
+            elif not isinstance(data, pd.DataFrame):
+                data = pd.DataFrame(data)
             
             # Enhanced data validation
             if data.empty:
@@ -261,8 +267,20 @@ def get_historical_data(symbol: str, period: str = '1y', interval: str = '1d') -
                 except (KeyError, ValueError):
                     continue
             
-            if data is not None:
-                return data
+            # If loaded, ensure cache is fresh (last bar not older than 3 days)
+            if data is not None and not data.empty:
+                try:
+                    last_ts = data.index[-1]
+                    if isinstance(last_ts, pd.Timestamp):
+                        age_days = (pd.Timestamp.now(tz=last_ts.tz) - last_ts).days if last_ts.tzinfo else (pd.Timestamp.now() - last_ts).days
+                        if age_days <= 3:
+                            return data
+                        else:
+                            logger.info(f"Cache for {symbol} is stale ({age_days} days old). Will fetch fresh data.")
+                    else:
+                        return data
+                except Exception:
+                    return data
             else:
                 # If all attempts fail, read without specifying index and set it manually
                 data = pd.read_csv(cache_file, parse_dates=True)
@@ -320,14 +338,28 @@ def get_historical_data(symbol: str, period: str = '1y', interval: str = '1d') -
         return pd.DataFrame()
 
 def get_current_price(symbol: str) -> Optional[float]:
-    """Get current price for a stock symbol."""
+    """Get current price for a stock symbol with robust fallbacks."""
     try:
         yf_symbol = f"{symbol}.NS"
         
-        # Let yfinance handle sessions automatically to avoid curl_cffi errors
+        # Primary: yfinance info
         ticker = yf.Ticker(yf_symbol)
-        info = ticker.info
-        return info.get('currentPrice') or info.get('regularMarketPrice')
+        info = ticker.info or {}
+        price = info.get('currentPrice') or info.get('regularMarketPrice')
+        if price:
+            return float(price)
+        
+        # Fallback 1: last close from recent historical data
+        hist = get_historical_data(symbol, period='5d', interval='1d')
+        if not hist.empty:
+            return float(hist['Close'].iloc[-1])
+        
+        # Fallback 2: direct download of 1d
+        data = yf.download(yf_symbol, period='1d', interval='1d', progress=False, auto_adjust=True, threads=False)
+        if not data.empty and 'Close' in data.columns:
+            return float(data['Close'].iloc[-1])
+        
+        return None
     except Exception as e:
         logger.error(f"Error fetching current price for {symbol}: {e}")
         return None

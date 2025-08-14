@@ -192,26 +192,30 @@ class StockAnalyzer:
                     result['sentiment_score'] = 0.1  # Default to neutral positive score
                     result['reason'].append("Sentiment analysis unavailable")
             
-            # 4. Sector Analysis
-            logger.info(f"Performing sector analysis for {symbol}")
-            logger.debug(f"Starting sector analysis for {symbol}")
-            
-            try:
-                sector_recommendation = self.sector_analyzer.get_sector_recommendation(symbol)
-                result['sector_analysis'] = sector_recommendation
-                logger.debug(f"Sector analysis complete for {symbol}: {sector_recommendation['recommendation']}")
-                
-                # Adjust recommendation based on sector momentum
-                if sector_recommendation['recommendation'] == 'Strong Sector Momentum - Favorable':
-                    result['reason'].append("Strong sector momentum supports the trade")
-                elif sector_recommendation['recommendation'] == 'Weak Sector Momentum - Caution':
-                    result['reason'].append("Weak sector momentum - trade with caution")
-                else:
-                    result['reason'].append("Neutral sector momentum")
+            # 4. Sector Analysis (only if enabled)
+            analysis_config = app_config.get('ANALYSIS_CONFIG', {})
+            if analysis_config.get('sector_analysis'):
+                logger.info(f"Performing sector analysis for {symbol}")
+                logger.debug(f"Starting sector analysis for {symbol}")
+                try:
+                    # Lazy init sector analyzer
+                    if self.sector_analyzer is None:
+                        from scripts.sector_analysis import SectorAnalyzer
+                        self.sector_analyzer = SectorAnalyzer()
+                    sector_recommendation = self.sector_analyzer.get_sector_recommendation(symbol)
+                    result['sector_analysis'] = sector_recommendation
+                    logger.debug(f"Sector analysis complete for {symbol}: {sector_recommendation['recommendation']}")
                     
-            except Exception as e:
-                logger.exception(f"Error in sector analysis for {symbol}: {e}")
-                result['sector_analysis'] = {'error': str(e)}
+                    # Adjust recommendation based on sector momentum
+                    if sector_recommendation['recommendation'] == 'Strong Sector Momentum - Favorable':
+                        result['reason'].append("Strong sector momentum supports the trade")
+                    elif sector_recommendation['recommendation'] == 'Weak Sector Momentum - Caution':
+                        result['reason'].append("Weak sector momentum - trade with caution")
+                    else:
+                        result['reason'].append("Neutral sector momentum")
+                except Exception as e:
+                    logger.exception(f"Error in sector analysis for {symbol}: {e}")
+                    result['sector_analysis'] = {'error': str(e)}
 
             # 5. Advanced Analysis Modules
             analysis_config = app_config.get('ANALYSIS_CONFIG', {})
