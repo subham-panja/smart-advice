@@ -27,7 +27,7 @@ import threading
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from app import create_app
-from scripts.data_fetcher import get_all_nse_symbols, get_filtered_nse_symbols, get_offline_symbols_from_cache
+from scripts.data_fetcher import get_all_nse_symbols, get_filtered_nse_symbols
 from scripts.analyzer import StockAnalyzer
 from models.recommendation import RecommendedShare
 from database import query_mongodb, get_mongodb, insert_backtest_result, init_db, close_db
@@ -727,7 +727,7 @@ class AutomatedStockAnalysis:
                 'recommended': False
             }
     
-    def analyze_all_stocks(self, max_stocks: int = None, batch_size: int = None, use_all_symbols: bool = False, single_threaded: bool = False, offline_mode: bool = False):
+    def analyze_all_stocks(self, max_stocks: int = None, batch_size: int = None, use_all_symbols: bool = False, single_threaded: bool = False):
         """
         Analyze all NSE stocks using multithreading and save recommendations.
         
@@ -743,18 +743,7 @@ class AutomatedStockAnalysis:
         
         logger.info("DEBUG: About to fetch stock symbols...")
         
-        if offline_mode:
-            # Use offline mode - get symbols from cached data only
-            if self.verbose:
-                logger.info(f"Using OFFLINE mode: Getting symbols from cached data (max_stocks={max_stocks})...")
-            logger.info("DEBUG: About to call get_offline_symbols_from_cache...")
-            filtered_symbols = get_offline_symbols_from_cache(max_stocks)
-            logger.info("DEBUG: Finished calling get_offline_symbols_from_cache")
-            
-            if not filtered_symbols:
-                logger.error("No cached symbols found in offline mode. Try running without --offline first to build cache.")
-                return
-        elif use_all_symbols:
+        if use_all_symbols:
             # Get all NSE symbols without filtering
             if self.verbose:
                 logger.info(f"Fetching all NSE symbols (max_stocks={max_stocks})...")
@@ -924,7 +913,7 @@ class AutomatedStockAnalysis:
         except Exception as e:
             logger.error(f"Error getting total recommendations count: {e}")
     
-    def run_analysis(self, max_stocks: int = None, use_all_symbols: bool = False, offline_mode: bool = False):
+    def run_analysis(self, max_stocks: int = None, use_all_symbols: bool = False):
         """
         Run the complete analysis process.
         
@@ -955,7 +944,7 @@ class AutomatedStockAnalysis:
                 
                 # Analyze all stocks
                 logger.info("Starting stock analysis...")
-                self.analyze_all_stocks(max_stocks=max_stocks, use_all_symbols=use_all_symbols, offline_mode=offline_mode, single_threaded=getattr(self, 'single_threaded', False))
+                self.analyze_all_stocks(max_stocks=max_stocks, use_all_symbols=use_all_symbols, single_threaded=getattr(self, 'single_threaded', False))
                 logger.info("Stock analysis completed")
                 
                 logger.info("Automated analysis completed successfully")
@@ -974,7 +963,6 @@ def main():
     parser.add_argument('--max-stocks', type=int, help='Maximum number of stocks to analyze (for testing)')
     parser.add_argument('--test', action='store_true', help='Run in test mode with limited stocks')
     parser.add_argument('--all', action='store_true', help='Analyze all NSE stocks (not just filtered/actively traded ones)')
-    parser.add_argument('--offline', action='store_true', help='Use offline mode (cached data only, no API calls)')
     parser.add_argument('--purge-days', type=int, help='Number of days to keep old data (overrides config). Use 0 to remove ALL data.')
     parser.add_argument('--verbose', action='store_true', help='Enable verbose logging with detailed output')
     parser.add_argument('--single-threaded', action='store_true', help='Use single-threaded mode for debugging (slower but more stable)')
@@ -1022,7 +1010,7 @@ def main():
         
         if args.verbose:
             # Verbose mode - logging already configured in constructor
-            analyzer.run_analysis(max_stocks=max_stocks, use_all_symbols=args.all, offline_mode=args.offline)
+            analyzer.run_analysis(max_stocks=max_stocks, use_all_symbols=args.all)
             logger.info("Script completed successfully")
         else:
             # Non-verbose mode - logging already configured in constructor
@@ -1044,7 +1032,7 @@ def main():
             
             # Show initial message (we'll update this after getting the actual stock count)
             print(f"Initializing analysis...")
-            analyzer.run_analysis(max_stocks=max_stocks, use_all_symbols=args.all, offline_mode=args.offline)
+            analyzer.run_analysis(max_stocks=max_stocks, use_all_symbols=args.all)
             print("\n")
             
             # Show final summary in non-verbose mode

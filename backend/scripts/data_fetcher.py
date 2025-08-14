@@ -15,6 +15,14 @@ from requests.exceptions import RequestException
 import random
 from contextlib import contextmanager
 
+# Import alternative data fetcher
+try:
+    from scripts.alternative_data_fetcher import AlternativeDataFetcher, get_alternative_nse_symbols
+    ALTERNATIVE_FETCHER_AVAILABLE = True
+except ImportError:
+    ALTERNATIVE_FETCHER_AVAILABLE = False
+    logger.warning("Alternative data fetcher not available")
+
 logger = setup_logging()
 nse_api = None  # NSE API for stock operations - initialize when needed
 
@@ -108,7 +116,26 @@ def get_all_nse_symbols() -> Dict[str, str]:
         return all_symbols
     except Exception as e:
         logger.error(f"Error fetching NSE symbols: {e}")
-        # Fallback to a minimal set of major stocks
+        
+        # Try alternative symbol fetcher first
+        if ALTERNATIVE_FETCHER_AVAILABLE:
+            try:
+                logger.info("Trying alternative symbol fetcher...")
+                alt_symbols = get_alternative_nse_symbols()
+                if alt_symbols:
+                    logger.info(f"Got {len(alt_symbols)} symbols from alternative fetcher")
+                    # Cache the alternative symbols
+                    try:
+                        with open(NSE_CACHE_FILE, 'w') as f:
+                            json.dump(alt_symbols, f, indent=4)
+                        logger.info(f"Cached alternative symbols")
+                    except Exception as cache_e:
+                        logger.warning(f"Failed to cache alternative symbols: {cache_e}")
+                    return alt_symbols
+            except Exception as alt_e:
+                logger.error(f"Alternative symbol fetcher also failed: {alt_e}")
+        
+        # Final fallback to a minimal set of major stocks
         fallback_stocks = {
             'RELIANCE': 'Reliance Industries Limited',
             'TCS': 'Tata Consultancy Services Limited',
@@ -121,7 +148,7 @@ def get_all_nse_symbols() -> Dict[str, str]:
             'ITC': 'ITC Limited',
             'SBIN': 'State Bank of India'
         }
-        logger.info(f"Using fallback stocks: {len(fallback_stocks)} symbols")
+        logger.info(f"Using final fallback stocks: {len(fallback_stocks)} symbols")
         return fallback_stocks
 
 def get_historical_data_with_retry(symbol: str, period: str = '1y', interval: str = '1d') -> pd.DataFrame:
@@ -305,11 +332,30 @@ def get_historical_data(symbol: str, period: str = '1y', interval: str = '1d') -
             logger.error(f"Error loading cached data for {symbol}: {e}")
 
     try:
-        # Get data with retry mechanism
-        data = get_historical_data_with_retry(symbol, period=period, interval=interval)
+        # Try alternative data sources first for latest data
+        if ALTERNATIVE_FETCHER_AVAILABLE:
+            logger.info(f"Trying alternative data sources first for {symbol}...")
+            try:
+                alt_fetcher = AlternativeDataFetcher()
+                data = alt_fetcher.get_historical_data(symbol, period=period, interval=interval)
+                
+                if not data.empty:
+                    logger.info(f"Successfully fetched {len(data)} data points for {symbol} from alternative sources")
+                else:
+                    logger.info(f"Alternative sources returned empty data for {symbol}, trying yfinance fallback")
+                    # Fallback to yfinance if alternative sources fail
+                    data = get_historical_data_with_retry(symbol, period=period, interval=interval)
+            except Exception as e:
+                logger.error(f"Alternative data fetcher failed for {symbol}: {e}")
+                # Fallback to yfinance if alternative sources fail
+                data = get_historical_data_with_retry(symbol, period=period, interval=interval)
+        else:
+            # If alternative fetcher is not available, use yfinance
+            logger.warning("Alternative data fetcher not available, using yfinance")
+            data = get_historical_data_with_retry(symbol, period=period, interval=interval)
 
         if data.empty:
-            logger.warning(f"No data found for {symbol} ({interval}).")
+            logger.warning(f"No data found for {symbol} ({interval}) from any source.")
             return pd.DataFrame()
 
         # Handle MultiIndex columns from yfinance
@@ -349,6 +395,18 @@ def get_historical_data(symbol: str, period: str = '1y', interval: str = '1d') -
 def get_current_price(symbol: str) -> Optional[float]:
     """Get current price for a stock symbol with robust fallbacks."""
     try:
+        # Try alternative data sources first for latest prices
+        if ALTERNATIVE_FETCHER_AVAILABLE:
+            try:
+                alt_fetcher = AlternativeDataFetcher()
+                alt_price = alt_fetcher.get_current_price(symbol)
+                if alt_price and alt_price > 0:
+                    logger.debug(f"Got current price for {symbol} from alternative sources: {alt_price}")
+                    return float(alt_price)
+            except Exception as e:
+                logger.debug(f"Alternative price fetch failed for {symbol}: {e}")
+        
+        # Fallback to yfinance methods
         yf_symbol = f"{symbol}.NS"
         
         # Primary: yfinance info
@@ -663,80 +721,6 @@ def filter_active_stocks(symbols: Dict[str, str], max_stocks: int = None) -> Dic
     logger.info(f"Filtered to {len(filtered_stocks)} active stocks from {len(symbols)} total symbols")
     return filtered_stocks
 
-def get_offline_symbols_from_cache(max_stocks: int = None) -> Dict[str, str]:
-    """
-    Get symbols purely from existing cache without making any API calls.
-    This is a fallback mode to avoid rate limiting issues.
-    
-    Args:
-        max_stocks: Maximum number of stocks to return
-        
-    Returns:
-        Dictionary of cached stock symbols
-    """
-    logger.info(f"Using offline mode: getting symbols from existing cache files with max_stocks={max_stocks}")
-    
-    # Check if we have any cached CSV files that indicate stock symbols
-    cached_symbols = {}
-    
-    try:
-        # Use absolute path for cache directory
-        backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        cache_dir = os.path.join(backend_dir, "cache")
-        
-        if os.path.exists(cache_dir):
-            # Get all CSV files in cache directory
-            csv_files = [f for f in os.listdir(cache_dir) if f.endswith('.csv')]
-            
-            # Extract stock symbols from CSV filenames
-            # Format: SYMBOL_period_interval.csv (e.g., RELIANCE_1y_1d.csv)
-            for csv_file in csv_files:
-                try:
-                    # Extract symbol from filename
-                    symbol = csv_file.split('_')[0]
-                    if symbol and len(symbol) <= 20:  # Valid stock symbol length
-                        cached_symbols[symbol] = symbol
-                        
-                        # Stop if we have enough symbols
-                        if max_stocks and len(cached_symbols) >= max_stocks:
-                            break
-                except:
-                    continue
-            
-            logger.info(f"Found {len(cached_symbols)} cached stock symbols")
-            
-            # If we found cached symbols, use them
-            if cached_symbols:
-                if max_stocks:
-                    # Return only the requested number
-                    limited_symbols = dict(list(cached_symbols.items())[:max_stocks])
-                    logger.info(f"Using {len(limited_symbols)} cached symbols for offline mode")
-                    return limited_symbols
-                else:
-                    return cached_symbols
-    
-    except Exception as e:
-        logger.error(f"Error reading cached symbols: {e}")
-    
-    # Fallback to known major stocks if no cache found
-    fallback_stocks = {
-        'RELIANCE': 'Reliance Industries Limited',
-        'TCS': 'Tata Consultancy Services Limited', 
-        'HDFCBANK': 'HDFC Bank Limited',
-        'INFY': 'Infosys Limited',
-        'HINDUNILVR': 'Hindustan Unilever Limited',
-        'ICICIBANK': 'ICICI Bank Limited',
-        'SBIN': 'State Bank of India',
-        'BHARTIARTL': 'Bharti Airtel Limited',
-        'ITC': 'ITC Limited',
-        'KOTAKBANK': 'Kotak Mahindra Bank Limited'
-    }
-    
-    if max_stocks:
-        fallback_stocks = dict(list(fallback_stocks.items())[:max_stocks])
-    
-    logger.info(f"Using {len(fallback_stocks)} fallback symbols for offline mode")
-    return fallback_stocks
 
 def get_filtered_nse_symbols(max_stocks: int = None) -> Dict[str, str]:
     """

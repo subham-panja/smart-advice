@@ -97,13 +97,13 @@ NSE_CACHE_FILE = 'data/nse_symbols.json'
 
 # Threading and batch processing configuration
 # OPTIMIZED settings for MAXIMUM performance
-MAX_WORKER_THREADS = 12  # Increased threads for faster processing
+MAX_WORKER_THREADS = 2  # Reduced threads to avoid rate limiting
 BATCH_SIZE = 16  # Larger batches for better efficiency
-REQUEST_DELAY = 0.3  # Reduced delay for faster processing
+REQUEST_DELAY = 2.0  # Increased delay to avoid rate limiting
 MAX_RETRIES = 2  # Reduced retries to save time
 TIMEOUT_SECONDS = 20  # Reduced timeout for faster failures
-RATE_LIMIT_DELAY = 1.5  # Reduced delay when rate limited
-BACKOFF_MULTIPLIER = 1.5  # Reduced backoff multiplier
+RATE_LIMIT_DELAY = 5.0  # Increased delay when rate limited
+BACKOFF_MULTIPLIER = 2.0  # Increased backoff multiplier
 
 # Data purge configuration
 DATA_PURGE_DAYS = 7  # Number of days to keep old data (recommendations and backtest results)
