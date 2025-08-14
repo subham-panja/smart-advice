@@ -1,8 +1,5 @@
 strictly follow this : always read readme.md and digest.txt before doing anything
 
 cd backend
-1. please check the stock on run_analysis.py file as its not giving accurate result. please check the saved recommendation data as well 
-2. its showing me nestle india buy price : 1144.37 but actual current price of nestle india is 1,088.50, how it getting wrong data?
-3. check config.py check enabled strategies, and check db saved recommendation field backtest_metrics and its showed me few strategies only, but it should save all the strategies I enabled on config.py file
-4. update the config for more realistic result. 
-5. run the run_analysis.py --all and check the result on db and check if recommendation table field backtest_metrics is saved all the strategies I enabled on cofnig file. 
+1. Check why run_analysis.py --max-stocks 10 showing me lots of log even I didnt added --verbose
+2. wihtout --verbose it should show me the loading only fix the code please adn tets it, 
