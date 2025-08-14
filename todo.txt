@@ -1,2 +1,93 @@
-strictly follow this : always read readme.md before doing anything
- 
+# TODO: Swing Trading Improvement Plan (aiming for very high accuracy)
+
+- [ ] Always read README.md and digest.txt before changes
+
+Core goal: maximize swing-trading recommendation quality (target high precision). We will prioritize precision over volume, use robust confirmations, and validate with out-of-sample testing.
+
+1) Data quality and reliability
+- [x] Replace any residual synthetic/offline data paths with live sources only (verify all fetch flows)
+- [x] Add multi-provider reconciliation for OHLCV (NSE official + Yahoo direct + backup). If providers disagree, flag symbol for skip.
+- [x] Enforce trading-days continuity check; drop symbols with >2% missing bars in last 2y
+- [x] Normalize splits/dividends and corporate actions; re-check adjusted series
+- [x] Cache raw vendor payloads + normalized OHLCV to detect upstream drift
+
+2) Swing-trading signal design (precision-first)
+- [x] Add trend filter: ADX(14) > 20 and price above 200SMA for long-only signals
+- [x] Multi-timeframe confirmation: Daily signal must not contradict Weekly trend (W 20/50 SMA up)
+- [x] Volatility gate: ATR(14) within 20th–80th pct (avoid chop and extreme spikes)
+- [x] Volume confirmation: OBV uptrend OR Volume Z-score > 1 on breakout day
+- [x] Entry patterns to implement/strengthen:
+  - [x] Pullback to rising 20EMA with bullish reversal candle + RSI(14) 40–60 rising
+  - [x] Bollinger band squeeze breakout with retest and hold
+  - [x] MACD(12,26,9) signal cross above zero-line only (filter many false crosses)
+  - [x] Higher-low swing structure (pivot-based) before entry
+- [x] Exit rules:
+  - [x] Initial SL = recent swing low (or 1.5×ATR below entry)
+  - [x] TP1 = 1×ATR, move SL to BE; TP2 = 2–2.5×ATR; optional trail = 3×ATR chandelier
+  - [x] Time-stop: exit if no progress after 12–15 bars
+
+3) Scoring and recommendation thresholds
+- [x] Rebalance weights to favor technical and volume confirmations for swing context
+- [x] Require ALL gates to pass: trend filter + volatility gate + volume confirmation
+- [x] Raise BUY thresholds, lower SELL generation to avoid noise (see Config changes)
+- [x] Produce fewer, higher-confidence picks; add reason strings explaining each gate pass
+
+3) Backtesting, validation and robustness
+- [x] Implement strict walk-forward: 2018–2021 train, 2022 validate, 2023–2024 test (rolling)
+- [x] Use purged K-fold CV to avoid leakage on overlapping bars
+- [x] Evaluate precision/PPV of BUY signals at 10/20 trading-day horizons, not just CAGR
+- [ ] Report hit-rate, avg R multiple, max adverse excursion (MAE), and time-in-trade  (Partially done: win_rate, MAE, time-in-trade; avg R multiple pending)
+- [x] Perform ablation tests per gate (trend, volatility, volume) to quantify lift
+- [x] Monte Carlo resample trade sequence to estimate downside risk
+
+5) Risk and position sizing
+- [ ] Enforce risk-per-trade cap (e.g., 0.5–1.0% of equity)
+- [ ] Use ATR-based position sizing for consistent risk across symbols
+- [ ] Portfolio-level guards: max 5 concurrent positions, sector concentration <= 40%
+- [ ] Hard daily loss cap; pause signals after breach
+
+6) Data/infra performance and reliability
+- [ ] Tune rate-limits; add jitter and vendor-specific backoffs
+- [ ] Expand cache keys by symbol+provider+date-range to avoid collisions
+- [ ] Add integrity checksums for cached frames
+- [ ] Observability: structured logs for each gate decision; daily summary
+
+7) Config changes to propose (backend/config.py)
+- [ ] STRATEGY_CONFIG: enable swing-relevant indicators once stable
+  - [ ] Enable: 'ADX_Trend_Strength', 'On_Balance_Volume', 'ATR_Volatility', 'SMA_Crossover_20_50', 'Stochastic_Overbought_Oversold' (with strict filters), 'Multi_Timeframe_RSI'
+  - [ ] Keep heavy/unstable items disabled until validated
+- [ ] HISTORICAL_DATA_PERIOD: change '2y' -> '5y' to improve regime coverage
+- [ ] ANALYSIS_WEIGHTS (proposed): {'technical': 0.55, 'fundamental': 0.20, 'sentiment': 0.10, 'sector': 0.05, 'predictive': 0.05, 'rl_agent': 0.05}
+- [ ] RECOMMENDATION_THRESHOLDS (proposed stricter):
+  - [ ] 'strong_buy_combined' -> 0.65
+  - [ ] 'buy_combined' -> 0.35
+  - [ ] 'technical_strong_buy' -> 0.40
+  - [ ] 'technical_minimum' -> 0.25
+  - [ ] 'fundamental_minimum' -> 0.10
+  - [ ] 'min_backtest_return' -> 10.0
+  - [ ] Keep 'volume_confirmation_required' = True
+- [ ] STOCK_FILTERING tighten:
+  - [ ] 'min_volume' -> 100000
+  - [ ] 'min_historical_days' -> 250
+  - [ ] Add min delivery/turnover filter if available from provider
+- [ ] THREADING: keep MAX_WORKER_THREADS=2 for rate limits; revisit after caching
+
+8) Fundamentals and sentiment
+- [ ] Fundamentals as tie-breaker: prefer positive EPS growth, low debt/equity, stable margins
+- [ ] Sector filter: avoid weak sector regimes even if single stock looks good
+- [ ] Sentiment: cap contribution; use only to down-rank high-risk events
+
+9) Deliverables and QA
+- [ ] Add unit tests for each gate (trend/vol/volume/MTF) with fixture charts
+- [ ] Golden-run notebooks/reports for prior quarter showing precision and MAE
+- [ ] Canary deploy with shadow recommendations; compare with production for 2 weeks
+- [ ] Document playbook: entry/exit, position sizing, and monitoring
+
+10) Optional ML layer (after rule-set stabilizes)
+- [ ] Feature set: returns(1/5/10), RSI regimes, ADX, ATR bands, volume Z, pattern flags
+- [ ] Train classifier to predict 10–20 bar positive R multiple; calibrate with Platt scaling
+- [ ] Use as secondary ranker; do not override rule-based hard gates
+
+Notes
+- Swing-trading “~90% accuracy” is unrealistic in markets; aim for high precision with controlled risk and positive expectancy. We will optimize for precision, R-multiple, and drawdown, and transparently report metrics.
+
