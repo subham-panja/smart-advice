@@ -279,6 +279,38 @@ def get_historical_data_with_retry(symbol: str, period: str = '1y', interval: st
     
     return pd.DataFrame()
 
+def _cache_checksum_path(path: str) -> str:
+    return path + '.sha256'
+
+def _write_checksum(path: str):
+    try:
+        import hashlib
+        with open(path, 'rb') as f:
+            data = f.read()
+        digest = hashlib.sha256(data).hexdigest()
+        with open(_cache_checksum_path(path), 'w') as cf:
+            cf.write(digest)
+    except Exception as e:
+        logger.warning(f"Failed to write checksum for {path}: {e}")
+
+
+def _verify_checksum(path: str) -> bool:
+    try:
+        import hashlib
+        ch_path = _cache_checksum_path(path)
+        if not os.path.exists(ch_path):
+            return True  # no checksum available, don't block
+        with open(ch_path, 'r') as cf:
+            expected = cf.read().strip()
+        with open(path, 'rb') as f:
+            data = f.read()
+        actual = hashlib.sha256(data).hexdigest()
+        return actual == expected
+    except Exception as e:
+        logger.warning(f"Checksum verification failed for {path}: {e}")
+        return False
+
+
 def get_historical_data(symbol: str, period: str = '1y', interval: str = '1d') -> pd.DataFrame:
     """
     Fetch historical stock data using yfinance with caching.
@@ -288,51 +320,64 @@ def get_historical_data(symbol: str, period: str = '1y', interval: str = '1d') -
     # Use absolute path for cache directory
     backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     cache_dir = os.path.join(backend_dir, "cache")
-    cache_file = os.path.join(cache_dir, f"{symbol}_{period}_{interval}.csv")
+    # Try provider-specific cache files (alt or yf)
+    provider_candidates = [
+        os.path.join(cache_dir, f"{symbol}_{period}_{interval}_alt.csv"),
+        os.path.join(cache_dir, f"{symbol}_{period}_{interval}_yf.csv"),
+    ]
 
-    # Load from cache if available
-    if os.path.exists(cache_file):
-        try:
+    # Load from the freshest valid cache if available
+    try:
+        freshest_path = None
+        freshest_mtime = -1
+        for path in provider_candidates:
+            if os.path.exists(path):
+                if not _verify_checksum(path):
+                    logger.warning(f"Checksum mismatch for cache {path}; ignoring")
+                    continue
+                mtime = os.path.getmtime(path)
+                if mtime > freshest_mtime:
+                    freshest_mtime = mtime
+                    freshest_path = path
+        if freshest_path:
             # Try to read with different possible index column names
-            data = None
-            for index_col in ['Datetime', 'Date', 0]:  # Try Datetime, Date, or first column
+            for index_col in ['Datetime', 'Date', 0]:
                 try:
-                    data = pd.read_csv(cache_file, index_col=index_col, parse_dates=True)
-                    logger.info(f"Loaded {len(data)} data points for {symbol} ({interval}) from cache using index '{index_col}'.")
-                    break
+                    data = pd.read_csv(freshest_path, index_col=index_col, parse_dates=True)
+                    logger.info(f"Loaded {len(data)} data points for {symbol} ({interval}) from cache: {os.path.basename(freshest_path)}")
+                    # Freshness check (<=3 days old)
+                    if not data.empty:
+                        try:
+                            last_ts = data.index[-1]
+                            if isinstance(last_ts, pd.Timestamp):
+                                age_days = (pd.Timestamp.now(tz=last_ts.tz) - last_ts).days if last_ts.tzinfo else (pd.Timestamp.now() - last_ts).days
+                                if age_days <= 3:
+                                    return data
+                                else:
+                                    logger.info(f"Cache for {symbol} is stale ({age_days} days); will fetch fresh data")
+                            else:
+                                return data
+                        except Exception:
+                            return data
                 except (KeyError, ValueError):
                     continue
-            
-            # If loaded, ensure cache is fresh (last bar not older than 3 days)
-            if data is not None and not data.empty:
-                try:
-                    last_ts = data.index[-1]
-                    if isinstance(last_ts, pd.Timestamp):
-                        age_days = (pd.Timestamp.now(tz=last_ts.tz) - last_ts).days if last_ts.tzinfo else (pd.Timestamp.now() - last_ts).days
-                        if age_days <= 3:
-                            return data
-                        else:
-                            logger.info(f"Cache for {symbol} is stale ({age_days} days old). Will fetch fresh data.")
-                    else:
-                        return data
-                except Exception:
-                    return data
-            else:
-                # If all attempts fail, read without specifying index and set it manually
-                data = pd.read_csv(cache_file, parse_dates=True)
+            # Fallback generic read
+            try:
+                data = pd.read_csv(freshest_path, parse_dates=True)
                 if not data.empty and len(data.columns) > 0:
-                    # Set first column as index if it looks like a date
                     first_col = data.columns[0]
                     if 'date' in first_col.lower():
                         data.set_index(first_col, inplace=True)
-                        logger.info(f"Loaded {len(data)} data points for {symbol} ({interval}) from cache using column '{first_col}' as index.")
                         return data
-                logger.warning(f"Could not properly load cached data for {symbol}, will fetch fresh data")
-        except Exception as e:
-            logger.error(f"Error loading cached data for {symbol}: {e}")
+            except Exception:
+                pass
+            logger.warning(f"Could not properly load cached data for {symbol}, will fetch fresh data")
+    except Exception as e:
+        logger.error(f"Error loading cached data for {symbol}: {e}")
 
     try:
         # Try alternative data sources first for latest data
+        provider_used = 'yf'
         if ALTERNATIVE_FETCHER_AVAILABLE:
             logger.info(f"Trying alternative data sources first for {symbol}...")
             try:
@@ -340,19 +385,23 @@ def get_historical_data(symbol: str, period: str = '1y', interval: str = '1d') -
                 data = alt_fetcher.get_historical_data(symbol, period=period, interval=interval)
                 
                 if not data.empty:
+                    provider_used = 'alt'
                     logger.info(f"Successfully fetched {len(data)} data points for {symbol} from alternative sources")
                 else:
                     logger.info(f"Alternative sources returned empty data for {symbol}, trying yfinance fallback")
                     # Fallback to yfinance if alternative sources fail
                     data = get_historical_data_with_retry(symbol, period=period, interval=interval)
+                    provider_used = 'yf'
             except Exception as e:
                 logger.error(f"Alternative data fetcher failed for {symbol}: {e}")
                 # Fallback to yfinance if alternative sources fail
                 data = get_historical_data_with_retry(symbol, period=period, interval=interval)
+                provider_used = 'yf'
         else:
             # If alternative fetcher is not available, use yfinance
             logger.warning("Alternative data fetcher not available, using yfinance")
             data = get_historical_data_with_retry(symbol, period=period, interval=interval)
+            provider_used = 'yf'
 
         if data.empty:
             logger.warning(f"No data found for {symbol} ({interval}) from any source.")
@@ -380,9 +429,11 @@ def get_historical_data(symbol: str, period: str = '1y', interval: str = '1d') -
 
         # Save to cache with better error handling
         try:
-            os.makedirs(os.path.dirname(cache_file), exist_ok=True)
-            data.to_csv(cache_file)
-            logger.info(f"Fetched and cached {len(data)} data points for {symbol} ({interval}).")
+            os.makedirs(os.path.dirname(cache_dir), exist_ok=True)
+            cache_path = os.path.join(cache_dir, f"{symbol}_{period}_{interval}_{provider_used}.csv")
+            data.to_csv(cache_path)
+            _write_checksum(cache_path)
+            logger.info(f"Fetched and cached {len(data)} data points for {symbol} ({interval}) provider={provider_used} -> {os.path.basename(cache_path)}")
         except Exception as e:
             logger.warning(f"Failed to cache data for {symbol}: {e}")
 

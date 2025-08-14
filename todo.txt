@@ -47,10 +47,10 @@ Core goal: maximize swing-trading recommendation quality (target high precision)
 - [x] Hard daily loss cap; pause signals after breach
 
 6) Data/infra performance and reliability
-- [ ] Tune rate-limits; add jitter and vendor-specific backoffs
-- [ ] Expand cache keys by symbol+provider+date-range to avoid collisions
-- [ ] Add integrity checksums for cached frames
-- [ ] Observability: structured logs for each gate decision; daily summary
+- [x] Tune rate-limits; add jitter and vendor-specific backoffs
+- [x] Expand cache keys by symbol+provider+date-range to avoid collisions
+- [x] Add integrity checksums for cached frames
+- [x] Observability: structured logs for each gate decision; daily summary (structured logs added; daily summary pending)
 
 7) Config changes to propose (backend/config.py)
 - [ ] STRATEGY_CONFIG: enable swing-relevant indicators once stable
