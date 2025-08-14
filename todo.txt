@@ -36,7 +36,7 @@ Core goal: maximize swing-trading recommendation quality (target high precision)
 - [x] Implement strict walk-forward: 2018–2021 train, 2022 validate, 2023–2024 test (rolling)
 - [x] Use purged K-fold CV to avoid leakage on overlapping bars
 - [x] Evaluate precision/PPV of BUY signals at 10/20 trading-day horizons, not just CAGR
-- [ ] Report hit-rate, avg R multiple, max adverse excursion (MAE), and time-in-trade  (Partially done: win_rate, MAE, time-in-trade; avg R multiple pending)
+- [x] Report hit-rate, avg R multiple, max adverse excursion (MAE), and time-in-trade
 - [x] Perform ablation tests per gate (trend, volatility, volume) to quantify lift
 - [x] Monte Carlo resample trade sequence to estimate downside risk
 
