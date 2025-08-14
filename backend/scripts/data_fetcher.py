@@ -48,23 +48,29 @@ def get_all_nse_symbols() -> Dict[str, str]:
             def timeout_handler(signum, frame):
                 raise TimeoutError("NSE API initialization timed out")
             
-            # Set timeout for NSE initialization (10 seconds)
-            old_handler = signal.signal(signal.SIGALRM, timeout_handler)
-            signal.alarm(10)
+            # Set timeout for NSE initialization (5 seconds) - reduced to prevent hang
+            # Note: This only works on Unix-like systems
+            import platform
+            if platform.system() != 'Windows':
+                old_handler = signal.signal(signal.SIGALRM, timeout_handler)
+                signal.alarm(5)
             
             try:
                 nse_api = Nse()
-                signal.alarm(0)  # Cancel the alarm
-                signal.signal(signal.SIGALRM, old_handler)  # Restore old handler
+                if platform.system() != 'Windows':
+                    signal.alarm(0)  # Cancel the alarm
+                    signal.signal(signal.SIGALRM, old_handler)  # Restore old handler
                 logger.info("NSE API initialized successfully")
             except TimeoutError:
-                signal.alarm(0)  # Cancel the alarm
-                signal.signal(signal.SIGALRM, old_handler)  # Restore old handler
+                if platform.system() != 'Windows':
+                    signal.alarm(0)  # Cancel the alarm
+                    signal.signal(signal.SIGALRM, old_handler)  # Restore old handler
                 logger.error("NSE API initialization timed out")
                 raise Exception("NSE API initialization timed out")
             except Exception as e:
-                signal.alarm(0)  # Cancel the alarm
-                signal.signal(signal.SIGALRM, old_handler)  # Restore old handler
+                if platform.system() != 'Windows':
+                    signal.alarm(0)  # Cancel the alarm
+                    signal.signal(signal.SIGALRM, old_handler)  # Restore old handler
                 logger.error(f"NSE API initialization failed: {e}")
                 raise
         
@@ -126,6 +132,9 @@ def get_historical_data_with_retry(symbol: str, period: str = '1y', interval: st
     
     # Track retry statistics
     retry_stats = {'http_errors': 0, 'timeout_errors': 0, 'data_quality_issues': 0}
+    
+    # Add initial delay to prevent rate limiting
+    time.sleep(1.0)  # Add 1 second delay between API calls
     
     for attempt in range(MAX_RETRIES):
         try:

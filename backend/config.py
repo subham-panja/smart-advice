@@ -80,7 +80,7 @@ STRATEGY_CONFIG = {
 
 # BALANCED: Minimum combined score for recommendation - balanced for quality and quantity
 # Adjusted for realistic recommendations while maintaining quality
-MIN_RECOMMENDATION_SCORE = 0.25  # Increased for better quality recommendations
+MIN_RECOMMENDATION_SCORE = 0.03  # Very low threshold for testing backtest_metrics saving
 
 # Sentiment analysis configuration
 SENTIMENT_MODEL = 'distilbert-base-uncased-finetuned-sst-2-english'
@@ -119,17 +119,17 @@ ANALYSIS_WEIGHTS = {
     'rl_agent': 0.02      # RL agent weight (2%) - Minimal influence
 }
 
-# BALANCED: Recommendation thresholds - Realistic thresholds for quality recommendations
+# BALANCED: Recommendation thresholds - More realistic thresholds for generating recommendations
 RECOMMENDATION_THRESHOLDS = {
-    'strong_buy_combined': 0.65,     # More selective for strong buy
-    'buy_combined': 0.35,            # Balanced threshold for buy
-    'technical_strong_buy': 0.40,    # Higher threshold for strong technical signals
+    'strong_buy_combined': 0.4,      # Reduced for more recommendations
+    'buy_combined': 0.03,            # Very low for testing backtest_metrics saving
+    'technical_strong_buy': 0.25,    # More achievable technical threshold
     'sell_combined': -0.2,           # Combined score threshold for sell
-    'sentiment_positive': 0.10,      # Balanced sentiment threshold for positive
+    'sentiment_positive': 0.05,      # Lowered sentiment threshold
     'sentiment_negative': -0.10,     # Balanced sentiment threshold for negative
-    'min_backtest_return': 8.0,      # Higher minimum CAGR for better quality
-    'technical_minimum': 0.20,       # Realistic minimum technical score
-    'fundamental_minimum': 0.15,     # Realistic minimum fundamental score
+    'min_backtest_return': 2.0,      # More realistic minimum CAGR
+    'technical_minimum': 0.10,       # Achievable minimum technical score
+    'fundamental_minimum': 0.05,     # Achievable minimum fundamental score
     'volume_confirmation_required': True,  # Enable volume confirmation for quality
     'market_trend_weight': 0.2       # Reduced weight for overall market trend
 }

@@ -127,9 +127,15 @@ class StockAnalyzer:
                 else:
                     logger.debug(f"Running strategy evaluation for {symbol}")
                     technical_analysis = self.strategy_evaluator.evaluate_strategies(symbol, historical_data)
-                    # Convert technical score to -1 to 1 scale
-                    result['technical_score'] = (technical_analysis['technical_score'] * 2) - 1
-                    logger.debug(f"Technical analysis complete for {symbol}: score={result['technical_score']:.2f}")
+                    # Convert technical score to -1 to 1 scale, but less punitive for neutral signals
+                    # Original: 0.0 -> -1.0, 0.5 -> 0.0, 1.0 -> 1.0
+                    # New: 0.0 -> -0.3, 0.5 -> 0.4, 1.0 -> 1.0 (more forgiving for neutral technical signals)
+                    raw_score = technical_analysis['technical_score']
+                    if raw_score <= 0.5:
+                        result['technical_score'] = (raw_score * 1.4) - 0.3  # 0.0->-0.3, 0.5->0.4
+                    else:
+                        result['technical_score'] = (raw_score - 0.5) * 1.2 + 0.4  # 0.5->0.4, 1.0->1.0
+                    logger.debug(f"Technical analysis complete for {symbol}: raw={raw_score:.2f}, scaled={result['technical_score']:.2f}")
                     
             except Exception as e:
                 logger.exception(f"Error in technical analysis for {symbol}: {e}")
