@@ -8,6 +8,7 @@ Extracted from analyzer.py for better organization.
 
 import pandas as pd
 import numpy as np
+import talib as ta
 from typing import Dict, List, Any, Optional
 from utils.logger import setup_logging
 
@@ -63,6 +64,17 @@ class BacktestEngine:
 
             # Keep aligned data for metrics
             self._data_aligned = data_aligned[['Open','High','Low','Close']].copy()
+
+            # Pre-compute ATR(14) for R-multiple calculations
+            try:
+                self._data_aligned['ATR14'] = ta.ATR(
+                    self._data_aligned['High'].values.astype(float),
+                    self._data_aligned['Low'].values.astype(float),
+                    self._data_aligned['Close'].values.astype(float),
+                    timeperiod=14
+                )
+            except Exception:
+                self._data_aligned['ATR14'] = np.nan
             
             # Execute trades based on signals
             for i, (date, row) in enumerate(data_aligned.iterrows()):
@@ -167,11 +179,24 @@ class BacktestEngine:
                     # Compute time-in-trade and MAE using lows between buy and sell
                     time_in_trade = (sell_date - buy_date).days if isinstance(sell_date, pd.Timestamp) else 0
                     mae_pct = 0.0
+                    r_multiple = None
                     if prices_df is not None and buy_date in prices_df.index and sell_date in prices_df.index:
                         window = prices_df.loc[buy_date:sell_date]
                         if not window.empty and 'Low' in window.columns:
                             min_price = float(window['Low'].min())
                             mae_pct = ((min_price - buy_price) / buy_price) * 100
+                        # Estimate stop using ATR14 at buy date with 1.5x multiplier
+                        try:
+                            atr_at_buy = float(prices_df.loc[buy_date, 'ATR14']) if 'ATR14' in prices_df.columns else np.nan
+                        except Exception:
+                            atr_at_buy = np.nan
+                        if np.isnan(atr_at_buy) or atr_at_buy c= 0:
+                            # fallback 4% stop
+                            stop_loss = buy_price * 0.96
+                        else:
+                            stop_loss = max(0.0, buy_price - 1.5 * atr_at_buy)
+                        risk_per_share = max(1e-6, buy_price - stop_loss)
+                        r_multiple = (sell_price - buy_price) / risk_per_share
                     
                     buy_sell_pairs.append({
                         'buy_date': buy_date,
@@ -181,7 +206,8 @@ class BacktestEngine:
                         'profit_loss': profit_loss,
                         'return_pct': ret_pct,
                         'time_in_trade_days': time_in_trade,
-                        'mae_pct': mae_pct
+                        'mae_pct': mae_pct,
+                        'r_multiple': float(r_multiple) if r_multiple is not None else None
                     })
                     buy_price = None
             
@@ -214,6 +240,13 @@ class BacktestEngine:
                 sharpe_ratio = 0
                 avg_time_in_trade = 0.0
                 avg_mae = 0.0
+
+            # Average R-multiple across completed trades
+            if buy_sell_pairs:
+                r_values = [t['r_multiple'] for t in buy_sell_pairs if t.get('r_multiple') is not None]
+                avg_r_multiple = float(np.mean(r_values)) if r_values else 0.0
+            else:
+                avg_r_multiple = 0.0
             
             return {
                 'initial_capital': self.initial_capital,
@@ -227,8 +260,9 @@ class BacktestEngine:
                 'winning_trades': winning_trades,
                 'losing_trades': total_trades - winning_trades,
                 'period_days': days_in_period,
-                'avg_time_in_trade_days': round(avg_time_in_trade, 2),
+'avg_time_in_trade_days': round(avg_time_in_trade, 2),
                 'avg_mae_pct': round(avg_mae, 2),
+                'avg_r_multiple': round(avg_r_multiple, 2),
                 'buy_sell_pairs': buy_sell_pairs
             }
             
