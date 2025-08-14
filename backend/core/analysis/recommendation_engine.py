@@ -194,30 +194,58 @@ class RecommendationEngine:
             technical_score = result['technical_score']
             fundamental_score = result['fundamental_score']
             sentiment_score = result['sentiment_score']
-            
+
+            # Optional volume analysis payload (if upstream provides it)
+            volume_info = result.get('volume_analysis') or result.get('volume') or {}
+            vol_signal = volume_info.get('overall_signal') or volume_info.get('signal')
+            vol_confidence = float(volume_info.get('confidence', volume_info.get('strength', 0.0)) or 0.0)
+
             # Get configurable weights and thresholds
-            technical_weight = ANALYSIS_WEIGHTS.get('technical', 0.5)
+            base_technical_weight = ANALYSIS_WEIGHTS.get('technical', 0.5)
             fundamental_weight = ANALYSIS_WEIGHTS.get('fundamental', 0.3)
             sentiment_weight = ANALYSIS_WEIGHTS.get('sentiment', 0.2)
-            
-            # Normalize weights
+
+            # Rebalance to favor technical when volume is supportive (swing context)
+            # If bullish volume with decent confidence, boost technical weight slightly
+            technical_weight = base_technical_weight
+            reasons = result.get('reason', []) if keep_reason_as_list else []
+            if isinstance(reasons, str):
+                reasons = [reasons]
+
+            if vol_signal in ('bullish', 'neutral') and vol_confidence:
+                # Scale boost between 0 and ~0.15 depending on confidence
+                boost = min(0.15, 0.20 * max(0.0, min(1.0, vol_confidence)))
+                if vol_signal == 'bullish':
+                    technical_weight = min(0.80, base_technical_weight + boost)
+                    reasons.append(f"Technical weight boosted by volume ({vol_signal}, conf={vol_confidence:.2f})")
+                else:  # neutral
+                    technical_weight = min(0.75, base_technical_weight + boost * 0.5)
+                    reasons.append(f"Technical weight slightly boosted by neutral volume (conf={vol_confidence:.2f})")
+            elif vol_signal == 'bearish' and vol_confidence:
+                # If bearish volume, slightly reduce technical reliance to avoid false positives
+                reduction = min(0.10, 0.15 * max(0.0, min(1.0, vol_confidence)))
+                technical_weight = max(0.35, base_technical_weight - reduction)
+                reasons.append(f"Technical weight reduced due to bearish volume (conf={vol_confidence:.2f})")
+
+            # Normalize weights across the available components (here: tech/fund/sent)
             total_weight = technical_weight + fundamental_weight + sentiment_weight
-            if total_weight != 1.0:
-                technical_weight /= total_weight
-                fundamental_weight /= total_weight
-                sentiment_weight /= total_weight
-            
+            if total_weight == 0:
+                total_weight = 1.0
+            technical_weight /= total_weight
+            fundamental_weight /= total_weight
+            sentiment_weight /= total_weight
+
             combined_score = (
                 technical_score * technical_weight +
                 fundamental_score * fundamental_weight +
                 sentiment_score * sentiment_weight
             )
-            
+
             result['combined_score'] = combined_score
             result['analysis_weights'] = {
-                'technical': technical_weight,
-                'fundamental': fundamental_weight,
-                'sentiment': sentiment_weight
+                'technical': round(technical_weight, 3),
+                'fundamental': round(fundamental_weight, 3),
+                'sentiment': round(sentiment_weight, 3)
             }
             
             # Get thresholds
@@ -253,30 +281,81 @@ class RecommendationEngine:
             # Enhanced recommendation logic
             technical_minimum = RECOMMENDATION_THRESHOLDS.get('technical_minimum', -0.1)
             fundamental_minimum = RECOMMENDATION_THRESHOLDS.get('fundamental_minimum', -0.2)
+
+            # Add a small gate for volume if required
+            require_volume = RECOMMENDATION_THRESHOLDS.get('volume_confirmation_required', False)
+            volume_ok = True
+            if require_volume:
+                # Consider bullish or high-confidence neutral as acceptable
+                volume_ok = (vol_signal == 'bullish' and vol_confidence e= 0.6) or \
+                            (vol_signal == 'neutral' and vol_confidence e= 0.7)
+                if not volume_ok:
+                    reasons.append("Volume confirmation not sufficient for recommendation")
+
+            # Centralized gate enforcement (trend, volatility, volume, MTF) when available
+            require_all_gates = RECOMMENDATION_THRESHOLDS.get('require_all_gates', False)
+            gates_ok = True
+            gates_source = None
+            if require_all_gates:
+                # Look for gates in common locations produced by swing analysis modules
+                gates = None
+                if isinstance(result.get('gates_passed'), dict):
+                    gates = result.get('gates_passed')
+                    gates_source = 'root.gates_passed'
+                elif isinstance(result.get('swing_analysis', {}), dict) and isinstance(result['swing_analysis'].get('gates_passed'), dict):
+                    gates = result['swing_analysis']['gates_passed']
+                    gates_source = 'swing_analysis.gates_passed'
+                elif isinstance(result.get('swing', {}), dict) and isinstance(result['swing'].get('gates_passed'), dict):
+                    gates = result['swing']['gates_passed']
+                    gates_source = 'swing.gates_passed'
+
+                if isinstance(gates, dict) and gates:
+                    gates_ok = all(bool(v) for v in gates.values())
+                    if not gates_ok:
+                        failed = [k for k, v in gates.items() if not v]
+                        reasons.append(f"Gate check failed ({gates_source}): {', '.join(failed)}")
+                else:
+                    # If gate details are not present, do not block recommendations
+                    gates_ok = True
             
-            # Strong buy conditions
-            if ((technical_score > 0.1 and fundamental_score > 0.1 and sentiment_score > 0) or 
-                (combined_score > strong_buy_threshold) or
-                (technical_score > 0.3 and fundamental_score > -0.1) or
-                (fundamental_score > 0.4 and technical_score > -0.1)) and backtest_condition:
+            # Strong buy conditions (tighter)
+            if (
+                combined_score >= strong_buy_threshold and
+                technical_score >= technical_strong_threshold and
+                backtest_condition and volume_ok and gates_ok
+            ):
                 result['is_recommended'] = True
                 result['recommendation_strength'] = 'STRONG_BUY'
                 if not keep_reason_as_list:
-                    result['reason'] = "All analysis types show positive signals"
+                    result['reason'] = (
+                        f"Combined score {combined_score:.2f} >= strong threshold {strong_buy_threshold:.2f} "
+                        f"and technical {technical_score:.2f} >= {technical_strong_threshold:.2f} with all gates passing"
+                    )
                 else:
-                    result['reason'].append("All analysis types show positive signals")
+                    reasons.append(
+                        f"Strong BUY: combined {combined_score:.2f} >= {strong_buy_threshold:.2f}, "
+                        f"technical {technical_score:.2f} >= {technical_strong_threshold:.2f}, gates OK"
+                    )
             
-            # Regular buy conditions
-            elif (combined_score >= 0 and
-                  ((technical_score > 0 and fundamental_score > fundamental_minimum) or 
-                   (fundamental_score > 0 and technical_score > technical_minimum) or 
-                   (combined_score > buy_threshold))):
+            # Regular buy conditions (tighter)
+            elif (
+                combined_score >= buy_threshold and
+                technical_score >= technical_minimum and
+                fundamental_score >= fundamental_minimum and
+                backtest_condition and volume_ok and gates_ok
+            ):
                 result['is_recommended'] = True
                 result['recommendation_strength'] = 'BUY'
                 if not keep_reason_as_list:
-                    result['reason'] = "Majority of analysis types show positive signals"
+                    result['reason'] = (
+                        f"BUY: combined {combined_score:.2f} >= {buy_threshold:.2f}, "
+                        f"technical {technical_score:.2f} >= {technical_minimum:.2f}, "
+                        f"fundamental {fundamental_score:.2f} >= {fundamental_minimum:.2f}, gates OK"
+                    )
                 else:
-                    result['reason'].append("Majority of analysis types show positive signals")
+                    reasons.append(
+                        f"BUY conditions met at stricter thresholds and gates OK"
+                    )
             
             else:
                 result['is_recommended'] = False
@@ -284,11 +363,14 @@ class RecommendationEngine:
                 if not keep_reason_as_list:
                     result['reason'] = "Analysis does not support buying at this time"
                 else:
-                    result['reason'].append("Analysis does not support buying at this time")
+                    reasons.append("Analysis does not support buying at this time")
             
-            # Format reason if needed
-            if not keep_reason_as_list and isinstance(result['reason'], list):
-                result['reason'] = " ".join(result['reason'])
+            # Attach accumulated reasons if list mode
+            if keep_reason_as_list:
+                result['reason'] = reasons
+            else:
+                if isinstance(result.get('reason'), list):
+                    result['reason'] = " ".join(result['reason'])
             
             return result
             
