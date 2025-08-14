@@ -1,5 +1,2 @@
-strictly follow this : always read readme.md and digest.txt before doing anything
-
-cd backend
-1. Check why run_analysis.py --max-stocks 10 showing me lots of log even I didnt added --verbose
-2. wihtout --verbose it should show me the loading only fix the code please adn tets it, 
+strictly follow this : always read readme.md before doing anything
+ 
