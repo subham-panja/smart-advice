@@ -1,5 +1,3 @@
 strictly follow this : always read readme.md before doing anything
 
 1. check backend run_analysis.py --max-stocks 5 --verbose, fix if any error occured, 
-2. check how to make my backend run faster anaalysis. update the code if needed. 
-3. check while it saving recommendation it should save all data, 

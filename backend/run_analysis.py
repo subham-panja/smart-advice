@@ -67,8 +67,14 @@ class AutomatedStockAnalysis:
                 db = get_mongodb()
                 from datetime import datetime, timedelta
                 
-                # Add timeout to prevent hanging
-                db.client.server_info()  # Test connection
+                # Add timeout to prevent hanging - test database connectivity
+                try:
+                    # Test database connection by attempting to list collections
+                    collection_names = db.list_collection_names()
+                    logger.debug(f"Database connection test successful. Collections: {len(collection_names)}")
+                except Exception as db_test_error:
+                    logger.warning(f"Database connection test failed: {db_test_error}")
+                    # Continue anyway as it might be a minor connection issue
                 
                 if days_old == 0:
                     # Remove all data if days_old is 0

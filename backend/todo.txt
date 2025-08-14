@@ -1,4 +1,0 @@
-1. if --verbose is not added in run_analysis.py command please just show me the loading indicator. 
-2. If verbose if not true on /trigger-analysis api it shouldnt show me the all data, only the loading indicator please. 
-3. run_analysis.py should save more data on database, currently it saving few.
-4. /recommendations get requests should have more data, like backtested data as wel, with other info which are saved during analysis, 
