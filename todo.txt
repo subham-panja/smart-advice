@@ -41,10 +41,10 @@ Core goal: maximize swing-trading recommendation quality (target high precision)
 - [x] Monte Carlo resample trade sequence to estimate downside risk
 
 5) Risk and position sizing
-- [ ] Enforce risk-per-trade cap (e.g., 0.5–1.0% of equity)
-- [ ] Use ATR-based position sizing for consistent risk across symbols
-- [ ] Portfolio-level guards: max 5 concurrent positions, sector concentration <= 40%
-- [ ] Hard daily loss cap; pause signals after breach
+- [x] Enforce risk-per-trade cap (e.g., 0.5–1.0% of equity)
+- [x] Use ATR-based position sizing for consistent risk across symbols
+- [x] Portfolio-level guards: max 5 concurrent positions, sector concentration c= 40%
+- [x] Hard daily loss cap; pause signals after breach
 
 6) Data/infra performance and reliability
 - [ ] Tune rate-limits; add jitter and vendor-specific backoffs
