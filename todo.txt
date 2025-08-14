@@ -1,3 +1,17 @@
-strictly follow this : always read readme.md before doing anything
+strictly follow this : always read readme.md and digest.txt before doing anything
 
 1. check backend run_analysis.py --max-stocks 5 --verbose, fix if any error occured, 
+ problem : on above command its keep stucking on 
+
+ cd backend && python run_analysis.py --max-stocks 5 --verbose
+2025-08-14 21:01:15,057 - utils.logger - INFO - Running in PRODUCTION mode with all stocks
+2025-08-14 21:01:15,057 - utils.logger - INFO - Using FILTERED NSE symbols (only actively traded stocks)
+2025-08-14 21:01:15,071 - utils.logger - INFO - Initializing StockAnalyzer...
+2025-08-14 21:01:15,071 - utils.logger - INFO - Initializing StrategyEvaluator...
+2025-08-14 21:01:15,071 - utils.logger - INFO - Loaded strategy: MA_Crossover_50_200
+2025-08-14 21:01:15,072 - utils.logger - INFO - Loaded strategy: RSI_Overbought_Oversold
+2025-08-14 21:01:15,072 - utils.logger - INFO - Loaded strategy: MACD_Signal_Crossover
+2025-08-14 21:01:15,072 - utils.logger - INFO - Loaded strategy: Bollinger_Band_Breakout
+2025-08-14 21:01:15,073 - utils.logger - INFO - Loaded strategy: EMA_Crossover_12_26
+
+on last line it stuck so before running the run_analysis.py check code and fix the issue 

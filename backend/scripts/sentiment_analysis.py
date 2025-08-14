@@ -30,8 +30,9 @@ class SentimentAnalysis:
         """
         self.model_name = model_name
         self.sentiment_pipeline = None
-        self.google_news = GoogleNews(lang='en', region='US')  # Use US region for English content
-        self.google_news.set_period(NEWS_DATE_RANGE)
+        # Defer GoogleNews initialization to avoid network calls during init
+        self.google_news = None
+        self.news_date_range = NEWS_DATE_RANGE
         
     def get_sentiment_pipeline(self):
         """
@@ -197,6 +198,11 @@ class SentimentAnalysis:
             List of news article texts
         """
         try:
+            # Initialize GoogleNews on first use
+            if self.google_news is None:
+                self.google_news = GoogleNews(lang='en', region='US')
+                self.google_news.set_period(self.news_date_range)
+            
             # Clear previous results
             self.google_news.clear()
             

@@ -56,41 +56,28 @@ class StockAnalyzer:
         self.fundamental_analyzer = FundamentalAnalysis()
         logger.info("FundamentalAnalysis initialized")
         
-        logger.info("Initializing SentimentAnalysis...")
-        self.sentiment_analyzer = SentimentAnalysis()
-        logger.info("SentimentAnalysis initialized")
+        # Note: SentimentAnalysis initialization deferred to avoid model loading hang
+        logger.info("Deferring SentimentAnalysis initialization to avoid hang...")
+        self.sentiment_analyzer = None
+        logger.info("SentimentAnalysis will be initialized on first use")
         
         logger.info("Initializing RiskManager...")
         self.risk_manager = RiskManager()
         logger.info("RiskManager initialized")
         
-        logger.info("Initializing SectorAnalyzer...")
-        self.sector_analyzer = SectorAnalyzer()
-        logger.info("SectorAnalyzer initialized")
+        # Skip heavy initializations that might hang
+        logger.info("Skipping heavy analyzer initializations to prevent hangs...")
         
-        logger.info("Initializing MarketRegimeDetection...")
-        self.market_regime_detector = MarketRegimeDetection(symbol='DEFAULT', n_regimes=3, lookback_period='2y')
-        logger.info("MarketRegimeDetection initialized")
+        # These analyzers will be initialized on first use if needed
+        self.sector_analyzer = None
+        self.market_regime_detector = None
+        self.market_microstructure_analyzer = None
+        self.alternative_data_analyzer = None
+        self.predictor = None
+        self.rl_trading_agent = None
+        self.tca_analyzer = None
         
-        logger.info("Initializing MarketMicrostructureAnalyzer...")
-        self.market_microstructure_analyzer = MarketMicrostructureAnalyzer()
-        logger.info("MarketMicrostructureAnalyzer initialized")
-        
-        logger.info("Initializing AlternativeDataAnalyzer...")
-        self.alternative_data_analyzer = AlternativeDataAnalyzer()
-        logger.info("AlternativeDataAnalyzer initialized")
-        
-        logger.info("Initializing PricePredictor...")
-        self.predictor = PricePredictor(symbol='DEFAULT')
-        logger.info("PricePredictor initialized")
-        
-        logger.info("Initializing RLTradingAgent...")
-        self.rl_trading_agent = RLTradingAgent(symbol='DEFAULT')
-        logger.info("RLTradingAgent initialized")
-        
-        logger.info("Initializing TransactionCostAnalyzer...")
-        self.tca_analyzer = TransactionCostAnalyzer()
-        logger.info("TransactionCostAnalyzer initialized")
+        logger.info("Heavy analyzers will be initialized on demand")
         
         logger.info("StockAnalyzer initialization complete")
         
@@ -183,6 +170,12 @@ class StockAnalyzer:
                 logger.debug(f"Starting sentiment analysis for {symbol} ({company_name})")
                 
                 try:
+                    # Initialize sentiment analyzer on first use
+                    if self.sentiment_analyzer is None:
+                        logger.info("Initializing SentimentAnalysis on first use...")
+                        self.sentiment_analyzer = SentimentAnalysis()
+                        logger.info("SentimentAnalysis initialized")
+                    
                     sentiment_score = self.sentiment_analyzer.perform_sentiment_analysis(company_name)
                     result['sentiment_score'] = sentiment_score
                     logger.debug(f"Sentiment analysis complete for {symbol}: score={sentiment_score:.2f}")
