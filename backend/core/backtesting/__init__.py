@@ -1,3 +1,7 @@
+from .backtest_engine import BacktestEngine
+from .backtest_metrics import BacktestMetrics
+from .validation import WalkForwardConfig, walk_forward_evaluate
+
 """
 Backtesting Package
 ==================
