@@ -33,7 +33,7 @@ STRATEGY_CONFIG = {
     'ATR_Volatility': True,                # ENABLED - Volatility gates and position sizing
     'SMA_Crossover_20_50': True,           # ENABLED - Medium-term trend confirmation
     'Stochastic_Overbought_Oversold': True, # ENABLED - With strict filters for swing entries
-    'Multi_Timeframe_RSI': True,           # ENABLED - Multi-timeframe confirmation
+    'Multi_Timeframe_RSI': False,          # DISABLED - Causes import hang on some systems
 
     # Keep problematic strategies disabled
     'Volume_Breakout': False,              # Causes loading hang on some environments

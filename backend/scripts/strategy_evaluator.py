@@ -127,15 +127,33 @@ class StrategyEvaluator:
                     logger.warning(f"Temporarily skipping {strategy_name} to avoid potential hang")
                     continue
                 
+                # Add timeout protection for problematic strategies
+                import signal
+                import time
+                
+                def strategy_timeout_handler(signum, frame):
+                    raise TimeoutError(f"Strategy {strategy_name} import timed out")
+                
+                # Set timeout for strategy import (10 seconds)
+                old_handler = signal.signal(signal.SIGALRM, strategy_timeout_handler)
+                signal.alarm(10)
+                
                 try:
                     module = importlib.import_module(module_path)
                     logger.debug(f"Successfully imported module for {strategy_name}")
+                except TimeoutError as te:
+                    logger.error(f"Timeout error importing {strategy_name}: {te}")
+                    continue
                 except ImportError as ie:
                     logger.error(f"Import error for {strategy_name}: {ie}")
                     continue
                 except Exception as e:
                     logger.error(f"Unexpected error importing {strategy_name}: {e}")
                     continue
+                finally:
+                    # Clear the alarm
+                    signal.alarm(0)
+                    signal.signal(signal.SIGALRM, old_handler)
                 
                 # Get the strategy class - handle different class naming conventions
                 try:

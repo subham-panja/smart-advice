@@ -1,9 +1,9 @@
 import pandas as pd
 import talib as ta
 from scripts.strategies.base_strategy import BaseStrategy, TechnicalIndicatorMixin
-from utils.logger import setup_logging
 
-logger = setup_logging()
+# Initialize logger only when class is instantiated to avoid import hangs
+logger = None
 
 class MultiTimeframeRSI(BaseStrategy, TechnicalIndicatorMixin):
     """
@@ -16,6 +16,12 @@ class MultiTimeframeRSI(BaseStrategy, TechnicalIndicatorMixin):
     
     def __init__(self, params: dict = None):
         super().__init__(params)
+        # Initialize logger when strategy is instantiated
+        global logger
+        if logger is None:
+            from utils.logger import setup_logging
+            logger = setup_logging()
+        
         self.params = params or {
             'daily_rsi_period': 14,
             'weekly_rsi_period': 14,
