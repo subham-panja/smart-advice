@@ -166,7 +166,14 @@ class VolumeAnalyzer:
             recent_data = data.tail(self.divergence_lookback)
             
             # Calculate price and volume trends
+            if recent_data['Close'].iloc[0] == 0:
+                return {'factor': 1.0, 'details': []}
+            
             price_change = (recent_data['Close'].iloc[-1] - recent_data['Close'].iloc[0]) / recent_data['Close'].iloc[0]
+            
+            if recent_data['Volume'].iloc[0] == 0:
+                return {'factor': 1.0, 'details': []}
+            
             volume_change = (recent_data['Volume'].iloc[-1] - recent_data['Volume'].iloc[0]) / recent_data['Volume'].iloc[0]
             
             # Look for bullish divergence (price declining, volume increasing)

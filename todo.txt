@@ -1,93 +1,171 @@
-# TODO: Swing Trading Improvement Plan (aiming for very high accuracy)
+Smart Advice - Missing Features & Improvements TODO
+===================================================
 
-- [ ] Always read README.md and digest.txt before changes
+Based on analysis of improvement.txt, digest.txt, and current codebase, here are the missing features that need to be implemented:
 
-Core goal: maximize swing-trading recommendation quality (target high precision). We will prioritize precision over volume, use robust confirmations, and validate with out-of-sample testing.
+## HIGH PRIORITY IMPROVEMENTS (Week 1-2)
 
-1) Data quality and reliability
-- [x] Replace any residual synthetic/offline data paths with live sources only (verify all fetch flows)
-- [x] Add multi-provider reconciliation for OHLCV (NSE official + Yahoo direct + backup). If providers disagree, flag symbol for skip.
-- [x] Enforce trading-days continuity check; drop symbols with >2% missing bars in last 2y
-- [x] Normalize splits/dividends and corporate actions; re-check adjusted series
-- [x] Cache raw vendor payloads + normalized OHLCV to detect upstream drift
+### Technical Indicators & Analysis
+□ **Add Stock Screener/Scanner Endpoint** ⭐⭐⭐
+  - Implement GET /screener endpoint with server-side filters
+  - Filter by volume spikes, RSI range, price rank, moving averages
+  - This addresses the largest UX gap compared to FinViz/TradingView
+  - Status: NOT IMPLEMENTED (no screener endpoint found in app.py)
 
-2) Swing-trading signal design (precision-first)
-- [x] Add trend filter: ADX(14) > 20 and price above 200SMA for long-only signals
-- [x] Multi-timeframe confirmation: Daily signal must not contradict Weekly trend (W 20/50 SMA up)
-- [x] Volatility gate: ATR(14) within 20th–80th pct (avoid chop and extreme spikes)
-- [x] Volume confirmation: OBV uptrend OR Volume Z-score > 1 on breakout day
-- [x] Entry patterns to implement/strengthen:
-  - [x] Pullback to rising 20EMA with bullish reversal candle + RSI(14) 40–60 rising
-  - [x] Bollinger band squeeze breakout with retest and hold
-  - [x] MACD(12,26,9) signal cross above zero-line only (filter many false crosses)
-  - [x] Higher-low swing structure (pivot-based) before entry
-- [x] Exit rules:
-  - [x] Initial SL = recent swing low (or 1.5×ATR below entry)
-  - [x] TP1 = 1×ATR, move SL to BE; TP2 = 2–2.5×ATR; optional trail = 3×ATR chandelier
-  - [x] Time-stop: exit if no progress after 12–15 bars
+□ **Implement Ease of Movement (EoM) Indicator** ⭐⭐⭐
+  - Add EoM oscillator combining volume and price range
+  - Highly recommended in swing-trading guides but missing
+  - Status: NOT FOUND in technical analysis modules
 
-3) Scoring and recommendation thresholds
-- [x] Rebalance weights to favor technical and volume confirmations for swing context
-- [x] Require ALL gates to pass: trend filter + volatility gate + volume confirmation
-- [x] Raise BUY thresholds, lower SELL generation to avoid noise (see Config changes)
-- [x] Produce fewer, higher-confidence picks; add reason strings explaining each gate pass
+□ **Implement SuperTrend Indicator** ⭐⭐⭐
+  - Add for spotting trend breakouts in swing trading
+  - Include trend-based stops functionality
+  - Status: NOT FOUND in strategies or technical analysis
 
-3) Backtesting, validation and robustness
-- [x] Implement strict walk-forward: 2018–2021 train, 2022 validate, 2023–2024 test (rolling)
-- [x] Use purged K-fold CV to avoid leakage on overlapping bars
-- [x] Evaluate precision/PPV of BUY signals at 10/20 trading-day horizons, not just CAGR
-- [x] Report hit-rate, avg R multiple, max adverse excursion (MAE), and time-in-trade
-- [x] Perform ablation tests per gate (trend, volatility, volume) to quantify lift
-- [x] Monte Carlo resample trade sequence to estimate downside risk
+□ **Add Donchian Channels Indicator** ⭐⭐⭐
+  - Implement for breakout entry strategies
+  - Useful for breakout strategies not currently covered
+  - Status: NOT FOUND in current indicator suite
 
-5) Risk and position sizing
-- [x] Enforce risk-per-trade cap (e.g., 0.5–1.0% of equity)
-- [x] Use ATR-based position sizing for consistent risk across symbols
-- [x] Portfolio-level guards: max 5 concurrent positions, sector concentration c= 40%
-- [x] Hard daily loss cap; pause signals after breach
+### Alternative Data Integration
+□ **Enable Google Trends API Integration** ⭐⭐⭐
+  - Activate and expand alternative data pipeline
+  - Flag surges in keyword interest for stocks
+  - Status: alternative_data_fetcher.py exists but lacks Google Trends
 
-6) Data/infra performance and reliability
-- [x] Tune rate-limits; add jitter and vendor-specific backoffs
-- [x] Expand cache keys by symbol+provider+date-range to avoid collisions
-- [x] Add integrity checksums for cached frames
-- [x] Observability: structured logs for each gate decision; daily summary (structured logs added; daily summary pending)
+□ **Add Social Media Sentiment Analysis** ⭐⭐⭐
+  - Ingest Twitter/Reddit/StockTwits sentiment
+  - Provides early signals for swing timing
+  - Status: Mentioned in digest but not implemented
 
-7) Config changes to propose (backend/config.py)
-- [x] STRATEGY_CONFIG: enable swing-relevant indicators once stable
-  - [x] Enable: 'ADX_Trend_Strength', 'On_Balance_Volume', 'ATR_Volatility', 'SMA_Crossover_20_50', 'Stochastic_Overbought_Oversold' (with strict filters), 'Multi_Timeframe_RSI'
-  - [x] Keep heavy/unstable items disabled until validated
-- [x] HISTORICAL_DATA_PERIOD: change '2y' -> '5y' to improve regime coverage
-- [x] ANALYSIS_WEIGHTS (proposed): {'technical': 0.55, 'fundamental': 0.20, 'sentiment': 0.10, 'sector': 0.05, 'predictive': 0.05, 'rl_agent': 0.05}
-- [x] RECOMMENDATION_THRESHOLDS (proposed stricter):
-  - [x] 'strong_buy_combined' -> 0.65
-  - [x] 'buy_combined' -> 0.35
-  - [x] 'technical_strong_buy' -> 0.40
-  - [x] 'technical_minimum' -> 0.25
-  - [x] 'fundamental_minimum' -> 0.10
-  - [x] 'min_backtest_return' -> 10.0
-  - [x] Keep 'volume_confirmation_required' = True
-- [x] STOCK_FILTERING tighten:
-  - [x] 'min_volume' -> 100000
-  - [x] 'min_historical_days' -> 250
-  - [x] Add min delivery/turnover filter if available from provider
-- [x] THREADING: keep MAX_WORKER_THREADS=2 for rate limits; revisit after caching
+□ **Implement News Sentiment Feed** ⭐⭐⭐
+  - Use free news API to detect breaking news
+  - Critical for alternative data integration
+  - Status: NOT IMPLEMENTED
 
-8) Fundamentals and sentiment
-- [x] Fundamentals as tie-breaker: prefer positive EPS growth, low debt/equity, stable margins
-- [x] Sector filter: avoid weak sector regimes even if single stock looks good
-- [x] Sentiment: cap contribution; use only to down-rank high-risk events
+## MEDIUM PRIORITY IMPROVEMENTS (Week 3-4)
 
-9) Deliverables and QA
-- [x] Add unit tests for each gate (trend/vol/volume/MTF) with fixture charts
-- [x] Golden-run notebooks/reports for prior quarter showing precision and MAE
-- [ ] Canary deploy with shadow recommendations; compare with production for 2 weeks
-- [x] Document playbook: entry/exit, position sizing, and monitoring
+### Chart Patterns & Recognition
+□ **Add Cup-and-Handle Pattern Recognition** ⭐⭐
+  - Classic pattern in swing-trading tutorials
+  - Status: NOT FOUND in chart_patterns.py
 
-10) Optional ML layer (after rule-set stabilizes)
-- [x] Feature set: returns(1/5/10), RSI regimes, ADX, ATR bands, volume Z, pattern flags
-- [x] Train classifier to predict 10–20 bar positive R multiple; calibrate with Platt scaling
-- [x] Use as secondary ranker; do not override rule-based hard gates
+□ **Add Double-Top/Bottom Pattern Recognition** ⭐⭐
+  - Taught in swing-trading courses but missing
+  - Status: NOT FOUND in current pattern detection
 
-Notes
-- Swing-trading “~90% accuracy” is unrealistic in markets; aim for high precision with controlled risk and positive expectancy. We will optimize for precision, R-multiple, and drawdown, and transparently report metrics.
+□ **Add Camarilla Pivot Point Strategy** ⭐⭐
+  - Pivot setups commonly discussed in forums
+  - Status: NOT FOUND in current pivot strategies
 
+### Visualization Enhancements
+□ **Enhance Charts with TradingView Widget** ⭐⭐
+  - Replace/augment Chart.js with interactive widgets
+  - Allow zooming, annotations, alternate chart types
+  - Status: Current implementation uses Chart.js only
+
+□ **Add Market/Sector Heatmap Visualization** ⭐⭐
+  - Visualize sector performance and correlations
+  - Status: NOT IMPLEMENTED
+
+□ **Add Renko/Heikin-Ashi Chart Types** ⭐⭐
+  - Alternative chart types for swing traders
+  - Status: NOT FOUND in visualization tools
+
+### Backtesting & Analytics
+□ **Enhance Backtesting Interface** ⭐⭐
+  - Portfolio-level testing and optimization
+  - Walk-forward analysis, parameter sweeps
+  - Status: Basic backtesting exists but needs enhancement
+
+□ **Add Walk-Forward Analysis** ⭐⭐
+  - Backtest visualization with equity curves
+  - Status: NOT FOUND in backtesting modules
+
+□ **Add Monte Carlo Risk Simulation** ⭐⭐
+  - Drawdown risk analysis
+  - Status: NOT IMPLEMENTED
+
+□ **Expose Performance Metrics in UI** ⭐⭐
+  - Display Sharpe, Sortino, drawdown clearly
+  - Status: Some metrics coded but may not appear in UI
+
+### Trading Utilities
+□ **Add Trading Journal Interface** ⭐⭐
+  - Record trades and review performance
+  - Essential for trading discipline
+  - Status: NOT IMPLEMENTED
+
+□ **Add Alert/Notification System** ⭐⭐
+  - Email/push notifications for triggers
+  - Status: NOT FOUND in current system
+
+□ **Add Position Sizing Calculator** ⭐⭐
+  - Kelly calculators and position sizing tools
+  - Status: NOT IMPLEMENTED
+
+## LOW PRIORITY IMPROVEMENTS (Week 5+)
+
+### Forecasting Models
+□ **Add ARIMA Forecasting Model** ⭐
+  - Classical statistical forecasting alternative
+  - Status: Current system uses ML/RL only
+
+□ **Add Facebook Prophet Forecasting** ⭐
+  - Time-series forecasting for price projection
+  - Status: NOT IMPLEMENTED
+
+□ **Add VIX Analysis Module** ⭐
+  - Volatility indices and options-derived metrics
+  - Status: NOT FOUND
+
+### Strategy Variations
+□ **Add Gap Trading Variations** ⭐
+  - Expand beyond basic gap strategy
+  - Status: Basic gap_trading.py exists, needs variations
+
+□ **Add Woodie Pivot Point Strategy** ⭐
+  - Additional pivot methods
+  - Status: NOT FOUND
+
+## WHAT'S ALREADY IMPLEMENTED ✅
+
+Based on codebase analysis, these features are ALREADY PRESENT:
+✅ Technical Analysis with TA-Lib (RSI, SMA, EMA, Bollinger Bands, etc.)
+✅ Williams %R, ADX, Aroon, Vortex Indicator strategies
+✅ On Balance Volume (OBV) analysis and divergence detection
+✅ Directional Indicator (DI) crossover strategies
+✅ Basic chart patterns recognition framework
+✅ Alternative data fetcher scaffolding (needs enhancement)
+✅ Backtesting engine (needs portfolio-level features)
+✅ MongoDB data storage and caching
+✅ Flask API with key endpoints (/recommendations, /trigger-analysis, etc.)
+✅ Next.js frontend with Chart.js visualization
+
+## IMMEDIATE ACTION ITEMS (Next 2 Weeks)
+
+1. **Week 1 Focus:**
+   - [ ] Implement stock screener MVP endpoint (highest impact)
+   - [ ] Add EoM and SuperTrend indicators  
+   - [ ] Enable Google Trends in alternative data pipeline
+
+2. **Week 2 Focus:**
+   - [ ] Add social sentiment ingestion
+   - [ ] Implement Donchian Channels
+   - [ ] Add news sentiment feed
+
+## NOTES
+
+- Priority levels: ⭐⭐⭐ = High, ⭐⭐ = Medium, ⭐ = Low
+- Items marked as "NOT IMPLEMENTED" were not found in the codebase
+- Some features may exist in basic form but need significant enhancement
+- Focus on high-impact features that improve user experience first
+- Alternative data pipeline exists but needs activation and expansion
+
+## REFERENCE FILES
+
+- improvement.txt: Detailed analysis of missing features
+- digest.txt: 3-week roadmap and action items
+- backend/scripts/strategies/: Current strategy implementations
+- backend/core/analysis/: Technical analysis modules
+- backend/app.py: Current API endpoints
