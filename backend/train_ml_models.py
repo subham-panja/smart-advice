@@ -194,10 +194,29 @@ class MLPipeline:
         """
         logger.info("Training ML models...")
         
-        # Prepare training data
-        train_features, train_targets = self.classifier.prepare_training_data(
-            [(features, 'combined_training_data')]
-        )
+        # Prepare training data - features are already extracted
+        # Extract target column and feature columns
+        target_col = f'target_r_positive_{self.target_horizon}d'
+        
+        if target_col not in features.columns:
+            raise ValueError(f"Target column {target_col} not found in features")
+        
+        # Filter out rows with NaN targets
+        valid_idx = features[target_col].notna()
+        if not valid_idx.any():
+            raise ValueError("No valid targets found")
+        
+        features_clean = features[valid_idx].copy()
+        train_targets = features_clean[target_col].copy()
+        
+        # Remove target columns and metadata from features
+        excluded_cols = [col for col in features_clean.columns 
+                        if col.startswith('target_') or col in ['symbol', 'extraction_date']]
+        feature_cols = [col for col in features_clean.columns if col not in excluded_cols]
+        train_features = features_clean[feature_cols].copy()
+        
+        logger.info(f"Training data prepared: {len(train_features)} samples, {len(train_features.columns)} features")
+        logger.info(f"Target distribution: {train_targets.value_counts().to_dict()}")
         
         # Time-based split for validation
         split_date = pd.to_datetime(self.config['train_test_split_date'])

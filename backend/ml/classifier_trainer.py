@@ -214,7 +214,7 @@ class SwingTradingClassifier:
                 
                 # Calibrate with Platt scaling
                 logger.info(f"Calibrating {model_name} with Platt scaling")
-                calibrated_model = CalibratedClassifierCV(base_model, method='platt', cv=3)
+                calibrated_model = CalibratedClassifierCV(base_model, method='sigmoid', cv=3)
                 calibrated_model.fit(X_scaled, y)
                 
                 self.models[model_name] = {
@@ -385,12 +385,25 @@ class SwingTradingClassifier:
                 joblib.dump(scaler, scaler_path)
                 logger.info(f"Saved {model_name} scaler to {scaler_path}")
         
-        # Save metadata
+        # Save metadata (convert numpy arrays to lists for JSON serialization)
+        serializable_metrics = {}
+        for model_name, metrics in self.training_metrics.items():
+            serializable_metrics[model_name] = {}
+            for key, value in metrics.items():
+                if isinstance(value, np.ndarray):
+                    serializable_metrics[model_name][key] = value.tolist()
+                elif isinstance(value, np.floating):
+                    serializable_metrics[model_name][key] = float(value)
+                elif isinstance(value, np.integer):
+                    serializable_metrics[model_name][key] = int(value)
+                else:
+                    serializable_metrics[model_name][key] = value
+        
         metadata = {
             'target_horizon': self.target_horizon,
             'feature_names': self.feature_names,
             'target_config': self.target_config,
-            'training_metrics': self.training_metrics,
+            'training_metrics': serializable_metrics,
             'timestamp': datetime.now().isoformat()
         }
         

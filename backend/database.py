@@ -184,3 +184,49 @@ def init_app(app):
     # Register migration command
     from scripts.db_migrate import migrate_db_command
     app.cli.add_command(migrate_db_command)
+
+
+class DatabaseManager:
+    """Database manager class for handling database operations outside Flask context.
+    Provides a class-based interface to database functions for use in ML pipeline."""
+    
+    def __init__(self):
+        """Initialize the database manager"""
+        # This will be lazy-loaded when needed
+        self._db = None
+    
+    def _get_db(self):
+        """Get database connection"""
+        if self._db is None:
+            self._db = get_mongodb()
+        return self._db
+    
+    def fetch_historical_data(self, symbol=None, start_date=None, end_date=None):
+        """Fetch historical price data for a symbol or multiple symbols
+        
+        Args:
+            symbol: Stock symbol to fetch or None for all
+            start_date: Start date for data fetch
+            end_date: End date for data fetch
+            
+        Returns:
+            Dictionary of DataFrames keyed by symbol
+        """
+        # This is a placeholder implementation
+        # In a real application, this would fetch from the price history collection
+        return {}
+    
+    def get_training_symbols(self, min_samples=100, max_symbols=50):
+        """Get list of symbols suitable for model training
+        
+        Args:
+            min_samples: Minimum number of samples required per symbol
+            max_symbols: Maximum number of symbols to return
+            
+        Returns:
+            List of symbol strings
+        """
+        # This is a placeholder implementation
+        # In a real application, this would query the database for symbols
+        # with sufficient historical data
+        return []
