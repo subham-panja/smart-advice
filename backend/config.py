@@ -47,7 +47,6 @@ STRATEGY_CONFIG = {
     'Volume_Price_Trend': False,
     'Momentum_Oscillator': False,
     'ROC_Rate_of_Change': False,
-    'ATR_Volatility': False,
     'Keltner_Channels_Breakout': False,
     'DEMA_Crossover': False,
     'TEMA_Crossover': False,
@@ -136,7 +135,9 @@ RECOMMENDATION_THRESHOLDS = {
     'volume_confirmation_required': True,  # Enable volume confirmation for quality
     'market_trend_weight': 0.2,      # Reduced weight for overall market trend
     'require_all_gates': True,       # NEW: All gates must pass for signal
-    'min_risk_reward_ratio': 2.5     # NEW: Minimum 2.5:1 risk-reward ratio
+    'min_risk_reward_ratio': 2.5,    # NEW: Minimum 2.5:1 risk-reward ratio
+    'sector_filter_enabled': True,   # NEW: Enable sector regime filter
+    'min_sector_score': -0.2         # NEW: Minimum sector score to allow recommendations
 }
 
 # Analysis Modules Configuration - BALANCED for ACCURACY and SPEED

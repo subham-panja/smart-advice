@@ -53,28 +53,28 @@ Core goal: maximize swing-trading recommendation quality (target high precision)
 - [x] Observability: structured logs for each gate decision; daily summary (structured logs added; daily summary pending)
 
 7) Config changes to propose (backend/config.py)
-- [ ] STRATEGY_CONFIG: enable swing-relevant indicators once stable
-  - [ ] Enable: 'ADX_Trend_Strength', 'On_Balance_Volume', 'ATR_Volatility', 'SMA_Crossover_20_50', 'Stochastic_Overbought_Oversold' (with strict filters), 'Multi_Timeframe_RSI'
-  - [ ] Keep heavy/unstable items disabled until validated
-- [ ] HISTORICAL_DATA_PERIOD: change '2y' -> '5y' to improve regime coverage
-- [ ] ANALYSIS_WEIGHTS (proposed): {'technical': 0.55, 'fundamental': 0.20, 'sentiment': 0.10, 'sector': 0.05, 'predictive': 0.05, 'rl_agent': 0.05}
-- [ ] RECOMMENDATION_THRESHOLDS (proposed stricter):
-  - [ ] 'strong_buy_combined' -> 0.65
-  - [ ] 'buy_combined' -> 0.35
-  - [ ] 'technical_strong_buy' -> 0.40
-  - [ ] 'technical_minimum' -> 0.25
-  - [ ] 'fundamental_minimum' -> 0.10
-  - [ ] 'min_backtest_return' -> 10.0
-  - [ ] Keep 'volume_confirmation_required' = True
-- [ ] STOCK_FILTERING tighten:
-  - [ ] 'min_volume' -> 100000
-  - [ ] 'min_historical_days' -> 250
-  - [ ] Add min delivery/turnover filter if available from provider
-- [ ] THREADING: keep MAX_WORKER_THREADS=2 for rate limits; revisit after caching
+- [x] STRATEGY_CONFIG: enable swing-relevant indicators once stable
+  - [x] Enable: 'ADX_Trend_Strength', 'On_Balance_Volume', 'ATR_Volatility', 'SMA_Crossover_20_50', 'Stochastic_Overbought_Oversold' (with strict filters), 'Multi_Timeframe_RSI'
+  - [x] Keep heavy/unstable items disabled until validated
+- [x] HISTORICAL_DATA_PERIOD: change '2y' -> '5y' to improve regime coverage
+- [x] ANALYSIS_WEIGHTS (proposed): {'technical': 0.55, 'fundamental': 0.20, 'sentiment': 0.10, 'sector': 0.05, 'predictive': 0.05, 'rl_agent': 0.05}
+- [x] RECOMMENDATION_THRESHOLDS (proposed stricter):
+  - [x] 'strong_buy_combined' -> 0.65
+  - [x] 'buy_combined' -> 0.35
+  - [x] 'technical_strong_buy' -> 0.40
+  - [x] 'technical_minimum' -> 0.25
+  - [x] 'fundamental_minimum' -> 0.10
+  - [x] 'min_backtest_return' -> 10.0
+  - [x] Keep 'volume_confirmation_required' = True
+- [x] STOCK_FILTERING tighten:
+  - [x] 'min_volume' -> 100000
+  - [x] 'min_historical_days' -> 250
+  - [x] Add min delivery/turnover filter if available from provider
+- [x] THREADING: keep MAX_WORKER_THREADS=2 for rate limits; revisit after caching
 
 8) Fundamentals and sentiment
-- [ ] Fundamentals as tie-breaker: prefer positive EPS growth, low debt/equity, stable margins
-- [ ] Sector filter: avoid weak sector regimes even if single stock looks good
+- [x] Fundamentals as tie-breaker: prefer positive EPS growth, low debt/equity, stable margins
+- [x] Sector filter: avoid weak sector regimes even if single stock looks good
 - [ ] Sentiment: cap contribution; use only to down-rank high-risk events
 
 9) Deliverables and QA

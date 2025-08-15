@@ -287,10 +287,29 @@ class RecommendationEngine:
             volume_ok = True
             if require_volume:
                 # Consider bullish or high-confidence neutral as acceptable
-                volume_ok = (vol_signal == 'bullish' and vol_confidence e= 0.6) or \
-                            (vol_signal == 'neutral' and vol_confidence e= 0.7)
+                volume_ok = (vol_signal == 'bullish' and vol_confidence >= 0.6) or \
+                            (vol_signal == 'neutral' and vol_confidence >= 0.7)
                 if not volume_ok:
                     reasons.append("Volume confirmation not sufficient for recommendation")
+            
+            # Sector filter - avoid weak sector regimes
+            sector_ok = True
+            sector_filter_enabled = RECOMMENDATION_THRESHOLDS.get('sector_filter_enabled', True)
+            if sector_filter_enabled:
+                sector_analysis = result.get('sector_analysis', {})
+                sector_score = sector_analysis.get('sector_score', 0)
+                sector_name = sector_analysis.get('sector', 'Unknown')
+                
+                # Minimum sector score threshold (configurable)
+                min_sector_score = RECOMMENDATION_THRESHOLDS.get('min_sector_score', -0.2)
+                
+                if sector_name != 'Unknown' and sector_score < min_sector_score:
+                    sector_ok = False
+                    reasons.append(f"Weak sector regime ({sector_name}: score {sector_score:.2f})")
+                elif sector_name == 'Unknown':
+                    # If sector is unknown, use a more lenient approach
+                    logger.warning(f"Sector unknown for stock, applying lenient filter")
+                    sector_ok = True  # Don't block if we can't identify sector
 
             # Centralized gate enforcement (trend, volatility, volume, MTF) when available
             require_all_gates = RECOMMENDATION_THRESHOLDS.get('require_all_gates', False)
@@ -322,7 +341,7 @@ class RecommendationEngine:
             if (
                 combined_score >= strong_buy_threshold and
                 technical_score >= technical_strong_threshold and
-                backtest_condition and volume_ok and gates_ok
+                backtest_condition and volume_ok and gates_ok and sector_ok
             ):
                 result['is_recommended'] = True
                 result['recommendation_strength'] = 'STRONG_BUY'
@@ -342,7 +361,7 @@ class RecommendationEngine:
                 combined_score >= buy_threshold and
                 technical_score >= technical_minimum and
                 fundamental_score >= fundamental_minimum and
-                backtest_condition and volume_ok and gates_ok
+                backtest_condition and volume_ok and gates_ok and sector_ok
             ):
                 result['is_recommended'] = True
                 result['recommendation_strength'] = 'BUY'
@@ -356,6 +375,49 @@ class RecommendationEngine:
                     reasons.append(
                         f"BUY conditions met at stricter thresholds and gates OK"
                     )
+            
+            # Borderline cases - use fundamentals as tie-breaker
+            elif (
+                0.9 * buy_threshold <= combined_score < buy_threshold and
+                technical_score >= technical_minimum * 0.9 and
+                backtest_condition and volume_ok and gates_ok and sector_ok
+            ):
+                # Check for strong fundamentals as tie-breaker
+                fundamental_details = result.get('fundamental_details', {})
+                eps_growth = fundamental_details.get('eps_growth', 0)
+                de_ratio = fundamental_details.get('de_ratio', float('inf'))
+                profit_margins = fundamental_details.get('profit_margins', 0)
+                roe = fundamental_details.get('roe', 0)
+                
+                # Strong fundamentals criteria for tie-breaking
+                strong_fundamentals = (
+                    eps_growth > 0.1 and  # EPS growth > 10%
+                    de_ratio < 0.5 and  # Low debt/equity
+                    profit_margins > 0.1 and  # Stable margins > 10%
+                    roe > 0.15  # Good return on equity > 15%
+                )
+                
+                if strong_fundamentals:
+                    result['is_recommended'] = True
+                    result['recommendation_strength'] = 'BUY'
+                    if not keep_reason_as_list:
+                        result['reason'] = (
+                            f"BUY (Fundamental tie-breaker): Strong fundamentals with "
+                            f"EPS growth {eps_growth:.1%}, D/E {de_ratio:.2f}, "
+                            f"margins {profit_margins:.1%}, ROE {roe:.1%}"
+                        )
+                    else:
+                        reasons.append(
+                            f"Borderline case resolved by strong fundamentals: "
+                            f"EPS growth {eps_growth:.1%}, D/E {de_ratio:.2f}"
+                        )
+                else:
+                    result['is_recommended'] = False
+                    result['recommendation_strength'] = 'HOLD'
+                    if not keep_reason_as_list:
+                        result['reason'] = "Borderline case - fundamentals not strong enough for BUY"
+                    else:
+                        reasons.append("Borderline case - fundamentals not strong enough")
             
             else:
                 result['is_recommended'] = False
