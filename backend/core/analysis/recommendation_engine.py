@@ -203,14 +203,36 @@ class RecommendationEngine:
             # Get configurable weights and thresholds
             base_technical_weight = ANALYSIS_WEIGHTS.get('technical', 0.5)
             fundamental_weight = ANALYSIS_WEIGHTS.get('fundamental', 0.3)
-            sentiment_weight = ANALYSIS_WEIGHTS.get('sentiment', 0.2)
+            base_sentiment_weight = ANALYSIS_WEIGHTS.get('sentiment', 0.2)
+            
+            # Initialize reasons list early
+            reasons = result.get('reason', []) if keep_reason_as_list else []
+            if isinstance(reasons, str):
+                reasons = [reasons]
+            
+            # SENTIMENT CAPPING: Cap sentiment contribution and use primarily for down-ranking
+            # Cap positive sentiment impact but allow full negative sentiment impact for risk events
+            capped_sentiment_score = sentiment_score
+            sentiment_cap_positive = RECOMMENDATION_THRESHOLDS.get('sentiment_cap_positive', 0.15)
+            sentiment_cap_negative = RECOMMENDATION_THRESHOLDS.get('sentiment_cap_negative', -0.50)
+            
+            if sentiment_score > sentiment_cap_positive:
+                capped_sentiment_score = sentiment_cap_positive
+                reasons.append(f"Sentiment capped at {sentiment_cap_positive:.2f} (original: {sentiment_score:.2f})")
+            elif sentiment_score < sentiment_cap_negative:
+                capped_sentiment_score = sentiment_cap_negative
+                reasons.append(f"High-risk sentiment event detected: {sentiment_score:.2f}")
+            
+            # Reduce sentiment weight for positive contributions, keep full weight for negative
+            if sentiment_score >= 0:
+                sentiment_weight = base_sentiment_weight * 0.5  # Reduce positive sentiment impact
+            else:
+                sentiment_weight = base_sentiment_weight  # Keep full weight for risk down-ranking
+                reasons.append(f"Full sentiment weight applied for negative sentiment: {sentiment_score:.2f}")
 
             # Rebalance to favor technical when volume is supportive (swing context)
             # If bullish volume with decent confidence, boost technical weight slightly
             technical_weight = base_technical_weight
-            reasons = result.get('reason', []) if keep_reason_as_list else []
-            if isinstance(reasons, str):
-                reasons = [reasons]
 
             if vol_signal in ('bullish', 'neutral') and vol_confidence:
                 # Scale boost between 0 and ~0.15 depending on confidence

@@ -129,6 +129,8 @@ RECOMMENDATION_THRESHOLDS = {
     'sell_combined': -0.35,          # Stricter sell threshold
     'sentiment_positive': 0.05,      # Lowered sentiment threshold
     'sentiment_negative': -0.10,     # Balanced sentiment threshold for negative
+    'sentiment_cap_positive': 0.15,  # Cap positive sentiment contribution
+    'sentiment_cap_negative': -0.50, # Cap negative sentiment for risk events
     'min_backtest_return': 10.0,     # Higher CAGR requirement for swing trades
     'technical_minimum': 0.25,       # Higher minimum technical score
     'fundamental_minimum': 0.10,     # Higher minimum fundamental score

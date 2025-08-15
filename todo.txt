@@ -75,18 +75,18 @@ Core goal: maximize swing-trading recommendation quality (target high precision)
 8) Fundamentals and sentiment
 - [x] Fundamentals as tie-breaker: prefer positive EPS growth, low debt/equity, stable margins
 - [x] Sector filter: avoid weak sector regimes even if single stock looks good
-- [ ] Sentiment: cap contribution; use only to down-rank high-risk events
+- [x] Sentiment: cap contribution; use only to down-rank high-risk events
 
 9) Deliverables and QA
-- [ ] Add unit tests for each gate (trend/vol/volume/MTF) with fixture charts
-- [ ] Golden-run notebooks/reports for prior quarter showing precision and MAE
+- [x] Add unit tests for each gate (trend/vol/volume/MTF) with fixture charts
+- [x] Golden-run notebooks/reports for prior quarter showing precision and MAE
 - [ ] Canary deploy with shadow recommendations; compare with production for 2 weeks
-- [ ] Document playbook: entry/exit, position sizing, and monitoring
+- [x] Document playbook: entry/exit, position sizing, and monitoring
 
 10) Optional ML layer (after rule-set stabilizes)
-- [ ] Feature set: returns(1/5/10), RSI regimes, ADX, ATR bands, volume Z, pattern flags
-- [ ] Train classifier to predict 10–20 bar positive R multiple; calibrate with Platt scaling
-- [ ] Use as secondary ranker; do not override rule-based hard gates
+- [x] Feature set: returns(1/5/10), RSI regimes, ADX, ATR bands, volume Z, pattern flags
+- [x] Train classifier to predict 10–20 bar positive R multiple; calibrate with Platt scaling
+- [x] Use as secondary ranker; do not override rule-based hard gates
 
 Notes
 - Swing-trading “~90% accuracy” is unrealistic in markets; aim for high precision with controlled risk and positive expectancy. We will optimize for precision, R-multiple, and drawdown, and transparently report metrics.
