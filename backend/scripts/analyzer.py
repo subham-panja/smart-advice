@@ -145,26 +145,31 @@ class StockAnalyzer:
                 
             result['detailed_analysis']['technical'] = technical_analysis
             
-            # 2. Fundamental Analysis
-            logger.info(f"Performing fundamental analysis for {symbol}")
-            logger.debug(f"Starting fundamental analysis for {symbol}")
-            
-            try:
-                fundamental_score = self.fundamental_analyzer.perform_fundamental_analysis(symbol)
-                result['fundamental_score'] = fundamental_score
-                logger.debug(f"Fundamental analysis complete for {symbol}: score={fundamental_score:.2f}")
-                
-                if fundamental_score > 0:
-                    result['reason'].append("Fundamental analysis shows positive indicators")
-                elif fundamental_score < -0.5:
-                    result['reason'].append("Fundamental analysis shows negative indicators")
-                else:
-                    result['reason'].append("Fundamental analysis shows neutral indicators")
-                    
-            except Exception as e:
-                logger.exception(f"Error in fundamental analysis for {symbol}: {e}")
+            # 2. Fundamental Analysis - Skip if disabled for speed
+            if app_config.get('SKIP_FUNDAMENTAL', False):
+                logger.info(f"Skipping fundamental analysis for {symbol} (SKIP_FUNDAMENTAL=True)")
                 result['fundamental_score'] = 0.1  # Default to neutral positive score
-                result['reason'].append("Fundamental analysis unavailable")
+                result['reason'].append("Fundamental analysis skipped for performance")
+            else:
+                logger.info(f"Performing fundamental analysis for {symbol}")
+                logger.debug(f"Starting fundamental analysis for {symbol}")
+                
+                try:
+                    fundamental_score = self.fundamental_analyzer.perform_fundamental_analysis(symbol)
+                    result['fundamental_score'] = fundamental_score
+                    logger.debug(f"Fundamental analysis complete for {symbol}: score={fundamental_score:.2f}")
+                    
+                    if fundamental_score > 0:
+                        result['reason'].append("Fundamental analysis shows positive indicators")
+                    elif fundamental_score < -0.5:
+                        result['reason'].append("Fundamental analysis shows negative indicators")
+                    else:
+                        result['reason'].append("Fundamental analysis shows neutral indicators")
+                        
+                except Exception as e:
+                    logger.exception(f"Error in fundamental analysis for {symbol}: {e}")
+                    result['fundamental_score'] = 0.1  # Default to neutral positive score
+                    result['reason'].append("Fundamental analysis unavailable")
             
             # 3. Sentiment Analysis
             if app_config.get('SKIP_SENTIMENT', False):
@@ -568,27 +573,27 @@ class StockAnalyzer:
             else:
                 result['reason'].append("High combined score indicates strong buy opportunity")
         
-        # Regular buy: More flexible criteria but require non-negative combined score
-        elif (combined_score >= 0 and  # SAFETY CHECK: No negative combined scores for BUY
-              ((technical_score > 0 and fundamental_score > fundamental_minimum) or 
+        # Regular buy: More flexible criteria with negative combined scores allowed
+        elif (combined_score >= buy_threshold and  # Allow negative scores based on threshold
+              ((technical_score > technical_minimum and fundamental_score > fundamental_minimum) or 
                (fundamental_score > 0 and technical_score > technical_minimum) or 
                (technical_score > 0.1 and sentiment_score > sentiment_positive_threshold) or 
                (fundamental_score > 0.1 and sentiment_score > sentiment_positive_threshold) or 
                (combined_score > buy_threshold))):
             result['is_recommended'] = True
             result['recommendation_strength'] = 'BUY'
-            result['reason'].append("Majority of analysis types show positive signals")
+            result['reason'].append("Analysis meets buy criteria with acceptable combined score")
         
         # Technical-focused buy: Technical analysis is primary for swing trading
-        elif (combined_score >= -0.02 and  # SAFETY CHECK: Very small negative tolerance for technical signals
+        elif (combined_score >= -0.30 and  # More lenient negative tolerance
               (technical_score > technical_strong_threshold or 
-               (technical_score > 0.15 and combined_score > -0.02)) and backtest_condition):
+               (technical_score > -0.20 and combined_score > -0.25)) and backtest_condition):
             result['is_recommended'] = True
             result['recommendation_strength'] = 'WEAK_BUY'
-            result['reason'].append("Strong technical analysis signals with acceptable combined score")
+            result['reason'].append("Technical analysis signals with acceptable risk profile")
         
-        # Opportunistic buy: Good combined score even with mixed individual scores
-        elif (combined_score > (buy_threshold * 0.7) and combined_score >= 0 and  # Must be positive
+        # Opportunistic buy: Reasonable combined score even with mixed individual scores
+        elif (combined_score > (buy_threshold * 0.5) and combined_score >= -0.25 and  # Allow some negative
               backtest_condition and not consider_backtest):
             result['is_recommended'] = True
             result['recommendation_strength'] = 'OPPORTUNISTIC_BUY'

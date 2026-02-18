@@ -1,9 +1,9 @@
 'use client';
 
-import { 
-  ChartBarIcon, 
-  PlayIcon, 
-  ArrowTrendingUpIcon, 
+import {
+  ChartBarIcon,
+  PlayIcon,
+  ArrowTrendingUpIcon,
   SparklesIcon,
   ShieldCheckIcon,
   ClockIcon,
@@ -21,20 +21,39 @@ import ApiTest from './components/ApiTest';
 export default function Home() {
   const [recommendations, setRecommendations] = useState<StockRecommendation[]>([]);
   const [topN, setTopN] = useState(10); // State for top N stocks selection
+  const [isClient, setIsClient] = useState(false);
+
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
 
   useEffect(() => {
     async function fetchData() {
+      console.log('Fetching recommendations...');
       const response = await getRecommendations();
+      console.log('API Response:', response);
+      console.log('Response status:', response.status);
+      console.log('Recommendations:', response.recommendations);
+      console.log('Recommendations length:', response.recommendations?.length);
       if (response.status === 'success' && response.recommendations) {
+        console.log('Setting recommendations:', response.recommendations);
         setRecommendations(response.recommendations);
+      } else {
+        console.log('NOT setting recommendations - status:', response.status);
       }
     }
     fetchData();
   }, []);
 
+  if (!isClient) {
+    return <div className="flex items-center justify-center min-h-screen">
+      <div className="text-xl text-gray-600 dark:text-gray-300">Loading...</div>
+    </div>;
+  }
+
   // Chart data preparation
   const topStocks = recommendations.slice(0, topN); // Show top N stocks in charts
-  
+
   // Chart 1: Top stocks by backtest returns
   const backtestReturnsData = {
     labels: topStocks.map(rec => rec.symbol),
@@ -117,7 +136,7 @@ export default function Home() {
   // Statistics
   const stats = {
     totalStocks: recommendations.length,
-    avgTechnicalScore: recommendations.length > 0 ? 
+    avgTechnicalScore: recommendations.length > 0 ?
       (recommendations.reduce((sum, rec) => sum + rec.technical_score, 0) / recommendations.length).toFixed(2) : '0',
     avgFundamentalScore: recommendations.length > 0 ?
       (recommendations.reduce((sum, rec) => sum + rec.fundamental_score, 0) / recommendations.length).toFixed(2) : '0',
@@ -135,8 +154,8 @@ export default function Home() {
           Stock Advice Dashboard
         </h1>
         <p className="text-lg sm:text-xl text-gray-600 dark:text-gray-300 max-w-3xl mx-auto px-4">
-          AI-powered stock analysis and recommendations for smart investing. 
-          Advanced algorithms analyze market trends, technical indicators, and fundamental data 
+          AI-powered stock analysis and recommendations for smart investing.
+          Advanced algorithms analyze market trends, technical indicators, and fundamental data
           to provide actionable investment insights.
         </p>
       </div>
@@ -147,7 +166,7 @@ export default function Home() {
           <h3 className="text-2xl font-semibold text-gray-900 dark:text-gray-100 mb-4 sm:mb-0">
             Top Stocks Analysis
           </h3>
-          
+
           {/* Top N Dropdown */}
           <div className="flex items-center space-x-2">
             <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -165,7 +184,7 @@ export default function Home() {
             <span className="text-sm text-gray-500 dark:text-gray-400">stocks</span>
           </div>
         </div>
-        
+
         {/* 2x2 Grid of Charts */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Chart 1: Top Stocks by Backtest Returns */}
@@ -174,8 +193,8 @@ export default function Home() {
               Best Backtest Returns (CAGR %)
             </h4>
             <div className="h-64">
-              <Bar 
-                data={backtestReturnsData} 
+              <Bar
+                data={backtestReturnsData}
                 options={{
                   responsive: true,
                   maintainAspectRatio: false,
@@ -193,14 +212,14 @@ export default function Home() {
               />
             </div>
           </div>
-          
+
           {/* Chart 2: Combined Scores */}
           <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-4">
             <h4 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4 text-center">
               Combined Scores
             </h4>
             <div className="h-64">
-              <Bar 
+              <Bar
                 data={profitPercentageData}
                 options={{
                   responsive: true,
@@ -219,14 +238,14 @@ export default function Home() {
               />
             </div>
           </div>
-          
+
           {/* Chart 3: Technical vs Fundamental Scores */}
           <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-4">
             <h4 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4 text-center">
               Technical vs Fundamental Scores
             </h4>
             <div className="h-64">
-              <Bar 
+              <Bar
                 data={scoresComparisonData}
                 options={{
                   responsive: true,
@@ -240,7 +259,7 @@ export default function Home() {
               />
             </div>
           </div>
-          
+
           {/* Chart 4: Recommendation Strength Distribution */}
           <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-4">
             <h4 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4 text-center">
@@ -248,7 +267,7 @@ export default function Home() {
             </h4>
             <div className="h-64 flex items-center justify-center">
               <div className="w-48 h-48">
-                <Doughnut 
+                <Doughnut
                   data={doughnutData}
                   options={{
                     responsive: true,
@@ -284,8 +303,8 @@ export default function Home() {
             <h3 className="text-xl sm:text-2xl font-semibold text-gray-900 dark:text-gray-100 ml-4">What We Do</h3>
           </div>
           <p className="text-gray-600 dark:text-gray-300 leading-relaxed">
-            Our platform combines machine learning algorithms with traditional financial analysis 
-            to evaluate stocks across multiple dimensions including technical patterns, 
+            Our platform combines machine learning algorithms with traditional financial analysis
+            to evaluate stocks across multiple dimensions including technical patterns,
             fundamental metrics, and market sentiment.
           </p>
         </div>
@@ -299,8 +318,8 @@ export default function Home() {
             <h3 className="text-2xl font-semibold text-gray-900 dark:text-gray-100 ml-4">How It Works</h3>
           </div>
           <p className="text-gray-600 dark:text-gray-300 leading-relaxed">
-            Generate comprehensive analysis by configuring parameters, analyzing market data, 
-            and receiving scored recommendations. View detailed insights including risk assessments, 
+            Generate comprehensive analysis by configuring parameters, analyzing market data,
+            and receiving scored recommendations. View detailed insights including risk assessments,
             price targets, and technical indicators.
           </p>
         </div>
@@ -314,7 +333,7 @@ export default function Home() {
             <h3 className="text-2xl font-semibold text-gray-900 dark:text-gray-100 ml-4">Key Benefits</h3>
           </div>
           <p className="text-gray-600 dark:text-gray-300 leading-relaxed">
-            Data-driven decisions backed by comprehensive analysis, real-time market data integration, 
+            Data-driven decisions backed by comprehensive analysis, real-time market data integration,
             and systematic evaluation processes that remove emotional bias from investment choices.
           </p>
         </div>

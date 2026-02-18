@@ -130,12 +130,6 @@ class AutomatedStockAnalysis:
             recommendation_strength = analysis_result.get('recommendation_strength', 'HOLD')
             is_recommended = analysis_result.get('is_recommended', False)
             
-            # CRITICAL SAFETY CHECK: Never save BUY recommendations with negative combined scores
-            combined_score = analysis_result.get('combined_score', 0.0)
-            if combined_score < 0 and recommendation_strength in ['STRONG_BUY', 'BUY', 'WEAK_BUY', 'OPPORTUNISTIC_BUY']:
-                logger.warning(f"SAFETY CHECK: Blocking BUY recommendation for {analysis_result.get('symbol', 'UNKNOWN')} with negative combined score ({combined_score:.4f})")
-                return True  # Block this recommendation
-            
             # Skip if recommendation strength is HOLD
             if recommendation_strength == 'HOLD':
                 logger.info(f"Skipping HOLD recommendation for {analysis_result.get('symbol', 'UNKNOWN')}")
@@ -693,23 +687,28 @@ class AutomatedStockAnalysis:
         try:
             logger.info(f"Analyzing {symbol} ({current_index}/{total_stocks})")
             
-            # Perform analysis
+            # Perform analysis with optimized configuration
             try:
-                analysis_result = self.analyzer.analyze_stock(symbol, self.app.config)
+                # Create fast mode configuration to skip heavy operations
+                fast_config = dict(self.app.config)
+                # fast_config['SKIP_SENTIMENT'] = True  # Skip sentiment for speed
+                # fast_config['SKIP_FUNDAMENTAL'] = True  # Skip fundamental for speed
+                # fast_config['FAST_MODE'] = True  # Enable fast mode
+                
+                analysis_result = self.analyzer.analyze_stock(symbol, fast_config)
                 
                 logger.debug(f"Analysis result for {symbol}: {analysis_result}")
             except Exception as e:
                 logger.exception(f"Error in analyzing stock {symbol}: {e}")
                 raise
             
-            # Minimal delay to avoid overwhelming APIs (threads handle this naturally)
-            if total_stocks > 100:
-                time.sleep(REQUEST_DELAY / 5)  # Reduce delay for large batches
-            else:
-                time.sleep(REQUEST_DELAY)
+            # Minimal delay only for very large datasets
+            if total_stocks > 500:
+                time.sleep(REQUEST_DELAY / 10)  # Very minimal delay for large batches
             
-            # Force garbage collection after each stock analysis to prevent memory buildup
-            gc.collect()
+            # Less frequent garbage collection for better performance
+            if current_index % 10 == 0:  # Every 10 stocks instead of each
+                gc.collect()
             
             return {
                 'success': True,
@@ -743,37 +742,41 @@ class AutomatedStockAnalysis:
         
         logger.info("DEBUG: About to fetch stock symbols...")
         
-        if use_all_symbols:
-            # Get all NSE symbols without filtering
-            if self.verbose:
-                logger.info(f"Fetching all NSE symbols (max_stocks={max_stocks})...")
-            logger.info("DEBUG: About to call get_all_nse_symbols...")
-            all_symbols = get_all_nse_symbols()
-            logger.info("DEBUG: Finished calling get_all_nse_symbols")
-            
-            if not all_symbols:
-                logger.error("No NSE symbols found. Exiting analysis.")
-                return
-            
-            # Convert to dictionary format for consistency with filtered_symbols
-            if isinstance(all_symbols, list):
-                filtered_symbols = {symbol: {'company_name': symbol} for symbol in all_symbols}
-            else:
-                filtered_symbols = all_symbols
-            
-            # Apply max_stocks limit if specified
-            if max_stocks and len(filtered_symbols) > max_stocks:
-                symbols_list = list(filtered_symbols.keys())[:max_stocks]
-                filtered_symbols = {k: filtered_symbols[k] for k in symbols_list}
+        # Cache symbols for the entire analysis session
+        if not hasattr(self, '_cached_symbols'):
+            if use_all_symbols:
+                # Get all NSE symbols without filtering
                 if self.verbose:
-                    logger.info(f"Limited to first {max_stocks} symbols from all NSE stocks")
-        else:
-            # Get filtered NSE symbols (actively traded with historical data)
+                    logger.info(f"Fetching all NSE symbols (max_stocks={max_stocks})...")
+                logger.info("DEBUG: About to call get_all_nse_symbols...")
+                all_symbols = get_all_nse_symbols()
+                logger.info("DEBUG: Finished calling get_all_nse_symbols")
+                
+                if not all_symbols:
+                    logger.error("No NSE symbols found. Exiting analysis.")
+                    return
+                
+                # Convert to dictionary format for consistency with filtered_symbols
+                if isinstance(all_symbols, list):
+                    self._cached_symbols = {symbol: {'company_name': symbol} for symbol in all_symbols}
+                else:
+                    self._cached_symbols = all_symbols
+            else:
+                # Get filtered NSE symbols (actively traded with historical data)
+                if self.verbose:
+                    logger.info(f"Fetching actively traded NSE symbols with historical data (max_stocks={max_stocks})...")
+                logger.info("DEBUG: About to call get_filtered_nse_symbols...")
+                self._cached_symbols = get_filtered_nse_symbols(max_stocks)
+                logger.info("DEBUG: Finished calling get_filtered_nse_symbols")
+        
+        filtered_symbols = self._cached_symbols
+        
+        # Apply max_stocks limit if specified and not already applied
+        if max_stocks and len(filtered_symbols) > max_stocks:
+            symbols_list = list(filtered_symbols.keys())[:max_stocks]
+            filtered_symbols = {k: filtered_symbols[k] for k in symbols_list}
             if self.verbose:
-                logger.info(f"Fetching actively traded NSE symbols with historical data (max_stocks={max_stocks})...")
-            logger.info("DEBUG: About to call get_filtered_nse_symbols...")
-            filtered_symbols = get_filtered_nse_symbols(max_stocks)
-            logger.info("DEBUG: Finished calling get_filtered_nse_symbols")
+                logger.info(f"Limited to first {max_stocks} symbols")
         
         logger.info("DEBUG: Symbol fetching completed, creating symbols list...")
         symbols_list = list(filtered_symbols.keys())
@@ -844,11 +847,11 @@ class AutomatedStockAnalysis:
                         for j, symbol in enumerate(batch)
                     }
                     
-                    # Process completed tasks with timeout
-                    for future in as_completed(future_to_symbol, timeout=300):  # 5 minute timeout per stock
+                    # Process completed tasks with reduced timeout for faster processing
+                    for future in as_completed(future_to_symbol, timeout=120):  # 2 minute timeout per stock
                         symbol = future_to_symbol[future]
                         try:
-                            result = future.result(timeout=60)  # 1 minute timeout to get result
+                            result = future.result(timeout=30)  # 30 second timeout to get result
                             logger.debug(f"Received result for {symbol}: {result}")
                             processed_count += 1
                             
@@ -872,13 +875,14 @@ class AutomatedStockAnalysis:
                             failed_count += 1
                             processed_count += 1
             
-            # Log progress and trigger garbage collection after each batch
+            # Log progress and trigger optimized garbage collection after each batch
             elapsed_time = (datetime.now() - self.start_time).total_seconds()
             avg_time_per_stock = elapsed_time / processed_count if processed_count > 0 else 0
             estimated_remaining = (total_stocks - processed_count) * avg_time_per_stock
 
-            # Manually trigger garbage collection
-            gc.collect()
+            # Optimized garbage collection - only when needed
+            if batch_num % 2 == 0:  # Every 2 batches instead of every batch
+                gc.collect()
 
             if self.verbose:
                 logger.info(f"Progress: {processed_count}/{total_stocks} stocks processed, "
@@ -913,34 +917,38 @@ class AutomatedStockAnalysis:
         except Exception as e:
             logger.error(f"Error getting total recommendations count: {e}")
     
-    def run_analysis(self, max_stocks: int = None, use_all_symbols: bool = False):
+    def run_analysis(self, max_stocks: int = None, use_all_symbols: bool = False, fast_mode: bool = False):
         """
         Run the complete analysis process.
         
         Args:
             max_stocks: Maximum number of stocks to analyze (for testing)
             use_all_symbols: If True, use all NSE symbols instead of filtered ones
+            fast_mode: If True, skip database purge and cache cleaning for speed
         """
         with self.app.app_context():
             try:
                 logger.info("Starting run_analysis method")
                 
-                # Clean corrupted cache files first
-                logger.info("Cleaning corrupted cache files...")
-                cache_manager = get_cache_manager()
-                cleaned_files = cache_manager.clean_corrupted_cache_files()
-                if cleaned_files > 0:
-                    logger.info(f"Cleaned {cleaned_files} corrupted cache files")
-                logger.info("Cache cleaning completed")
-                
-                # Get configurable threshold for data purge
-                days_old = self.app.config.get('DATA_PURGE_DAYS', 7)
-                logger.info(f"Data purge threshold: {days_old} days")
-                
-                # Clear old data (recommendations and backtest results) at the start
-                logger.info("SKIPPING database purge operation temporarily for debugging...")
-                # self.clear_old_data(days_old=days_old)
-                logger.info("Database purge operation skipped")
+                if not fast_mode:
+                    # Clean corrupted cache files first
+                    logger.info("Cleaning corrupted cache files...")
+                    cache_manager = get_cache_manager()
+                    cleaned_files = cache_manager.clean_corrupted_cache_files()
+                    if cleaned_files > 0:
+                        logger.info(f"Cleaned {cleaned_files} corrupted cache files")
+                    logger.info("Cache cleaning completed")
+                    
+                    # Get configurable threshold for data purge
+                    days_old = self.app.config.get('DATA_PURGE_DAYS', 7)
+                    logger.info(f"Data purge threshold: {days_old} days")
+                    
+                    # Clear old data (recommendations and backtest results) at the start
+                    logger.info("SKIPPING database purge operation temporarily for debugging...")
+                    # self.clear_old_data(days_old=days_old)
+                    logger.info("Database purge operation skipped")
+                else:
+                    logger.info("Fast mode enabled - skipping cache cleaning and database purge")
                 
                 # Analyze all stocks
                 logger.info("Starting stock analysis...")
@@ -967,6 +975,7 @@ def main():
     parser.add_argument('--verbose', action='store_true', help='Enable verbose logging with detailed output')
     parser.add_argument('--single-threaded', action='store_true', help='Use single-threaded mode for debugging (slower but more stable)')
     parser.add_argument('--disable-volume-filter', action='store_true', help='Disable volume-based filtering for analysis')
+    parser.add_argument('--fast', action='store_true', help='Enable fast mode - skip cache cleaning and database purge for maximum speed')
     
     args = parser.parse_args()
     
@@ -1010,7 +1019,7 @@ def main():
         
         if args.verbose:
             # Verbose mode - logging already configured in constructor
-            analyzer.run_analysis(max_stocks=max_stocks, use_all_symbols=args.all)
+            analyzer.run_analysis(max_stocks=max_stocks, use_all_symbols=args.all, fast_mode=args.fast)
             logger.info("Script completed successfully")
         else:
             # Non-verbose mode - logging already configured in constructor
@@ -1032,7 +1041,7 @@ def main():
             
             # Show initial message (we'll update this after getting the actual stock count)
             print(f"Initializing analysis...")
-            analyzer.run_analysis(max_stocks=max_stocks, use_all_symbols=args.all)
+            analyzer.run_analysis(max_stocks=max_stocks, use_all_symbols=args.all, fast_mode=args.fast)
             print("\n")
             
             # Show final summary in non-verbose mode

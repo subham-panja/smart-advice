@@ -139,11 +139,28 @@ class BacktestingRunner:
             # Generate summary
             summary = self._generate_backtest_summary(strategy_results, combined_metrics)
             
+            # Safely format dates - handle case where index might be strings already
+            try:
+                if hasattr(historical_data.index[0], 'strftime'):
+                    start_date = historical_data.index[0].strftime('%Y-%m-%d')
+                else:
+                    start_date = str(historical_data.index[0])[:10]  # Take first 10 chars for YYYY-MM-DD
+                
+                if hasattr(historical_data.index[-1], 'strftime'):
+                    end_date = historical_data.index[-1].strftime('%Y-%m-%d')
+                else:
+                    end_date = str(historical_data.index[-1])[:10]  # Take first 10 chars for YYYY-MM-DD
+                
+                period_str = f"{start_date} to {end_date}"
+            except Exception as e:
+                logger.warning(f"Error formatting dates for {symbol}: {e}")
+                period_str = f"Data length: {len(historical_data)} days"
+            
             return {
                 'symbol': symbol,
                 'status': 'completed',
                 'data_length': len(historical_data),
-                'period': f"{historical_data.index[0].strftime('%Y-%m-%d')} to {historical_data.index[-1].strftime('%Y-%m-%d')}",
+                'period': period_str,
                 'strategies_tested': len(valid_strategies),
                 'strategy_results': strategy_results,
                 'combined_metrics': combined_metrics,

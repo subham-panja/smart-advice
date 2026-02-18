@@ -176,6 +176,75 @@ def get_recommended_shares_with_analytics():
     results = collection.find().sort('recommendation_date', -1)
     return list(results)
 
+def screen_stocks(filters=None):
+    """
+    Screen stocks based on provided filters.
+    
+    Args:
+        filters (dict): Dictionary of filters like min_price, max_price, min_volume, etc.
+        
+    Returns:
+        list: List of matching stock documents
+    """
+    db = get_db()
+    collection = db[current_app.config['MONGODB_COLLECTIONS']['recommended_shares']]
+    
+    query = {}
+    
+    if not filters:
+        return list(collection.find().sort('recommendation_date', -1))
+        
+    # Price filters
+    if 'min_price' in filters or 'max_price' in filters:
+        price_query = {}
+        if 'min_price' in filters:
+            price_query['$gte'] = float(filters['min_price'])
+        if 'max_price' in filters:
+            price_query['$lte'] = float(filters['max_price'])
+        # Check against buy_price (current recommended entry)
+        query['buy_price'] = price_query
+
+    # Score filters
+    if 'min_technical_score' in filters:
+        query['technical_score'] = {'$gte': float(filters['min_technical_score'])}
+        
+    if 'min_fundamental_score' in filters:
+        query['fundamental_score'] = {'$gte': float(filters['min_fundamental_score'])}
+        
+    if 'min_sentiment_score' in filters:
+        query['sentiment_score'] = {'$gte': float(filters['min_sentiment_score'])}
+        
+    if 'min_combined_score' in filters:
+        query['combined_score'] = {'$gte': float(filters['min_combined_score'])}
+
+    # Sector filter
+    if 'sector' in filters:
+        query['sector_analysis.sector'] = filters['sector']
+
+    # RSI filter (nested in detailed_analysis)
+    if 'min_rsi' in filters or 'max_rsi' in filters:
+        rsi_query = {}
+        if 'min_rsi' in filters:
+            rsi_query['$gte'] = float(filters['min_rsi'])
+        if 'max_rsi' in filters:
+            rsi_query['$lte'] = float(filters['max_rsi'])
+        query['detailed_analysis.technical.rsi'] = rsi_query
+        
+    # Volume filter (nested)
+    if 'min_volume' in filters:
+        # Note: Volume might be in 'detailed_analysis.technical.volume' or similar
+        # Depending on how it's stored. Assuming detailed_analysis structure.
+        query['detailed_analysis.technical.volume'] = {'$gte': float(filters['min_volume'])}
+
+    # Moving Average Logic (e.g., Price > SMA20)
+    # This is harder to query directly if not pre-calculated as a boolean.
+    # We'll assume the client filters this or we check against stored SMA values.
+    if 'above_sma_20' in filters and filters['above_sma_20'].lower() == 'true':
+        # Requires $expr to compare two fields
+        query['$expr'] = {'$gt': ['$buy_price', '$detailed_analysis.technical.sma_20']}
+
+    return list(collection.find(query).sort('recommendation_date', -1))
+
 def init_app(app):
     """Register database functions with the Flask app."""
     app.teardown_appcontext(close_db)

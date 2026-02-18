@@ -158,6 +158,47 @@ def get_recommendations():
             "error": "Failed to fetch recommendations"
         }), 500
 
+@app.route('/screener', methods=['GET'])
+def screen_stocks_endpoint():
+    """
+    Filter stocks based on criteria.
+    Query Params:
+    - min_price, max_price
+    - min_volume
+    - min_rsi, max_rsi
+    - min_technical_score, min_fundamental_score, min_sentiment_score, min_combined_score
+    - sector
+    - above_sma_20 (true/false)
+    """
+    try:
+        from database import screen_stocks
+        
+        # Convert query params to dict
+        filters = request.args.to_dict()
+        
+        results = screen_stocks(filters)
+        
+        # Format results similar to recommendations
+        formatted_results = []
+        for rec in results:
+            rec_dict = dict(rec)
+            rec_dict.pop('_id', None)
+            formatted_results.append(rec_dict)
+            
+        return jsonify({
+            "status": "success",
+            "count": len(formatted_results),
+            "filters": filters,
+            "results": formatted_results
+        })
+        
+    except Exception as e:
+        app.logger.error(f"Error screening stocks: {e}")
+        return jsonify({
+            "status": "error",
+            "error": str(e)
+        }), 500
+
 @app.route('/test_db', methods=['GET'])
 def test_db():
     """Test database connection."""

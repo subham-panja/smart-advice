@@ -177,7 +177,13 @@ class BacktestEngine:
                     ret_pct = (profit_loss / buy_price) * 100
 
                     # Compute time-in-trade and MAE using lows between buy and sell
-                    time_in_trade = (sell_date - buy_date).days if isinstance(sell_date, pd.Timestamp) else 0
+                    # Ensure dates are proper datetime objects
+                    if isinstance(buy_date, str):
+                        buy_date = pd.to_datetime(buy_date)
+                    if isinstance(sell_date, str):
+                        sell_date = pd.to_datetime(sell_date)
+                    
+                    time_in_trade = (sell_date - buy_date).days if isinstance(sell_date, pd.Timestamp) and isinstance(buy_date, pd.Timestamp) else 0
                     mae_pct = 0.0
                     r_multiple = None
                     if prices_df is not None and buy_date in prices_df.index and sell_date in prices_df.index:
@@ -190,7 +196,7 @@ class BacktestEngine:
                             atr_at_buy = float(prices_df.loc[buy_date, 'ATR14']) if 'ATR14' in prices_df.columns else np.nan
                         except Exception:
                             atr_at_buy = np.nan
-                        if np.isnan(atr_at_buy) or atr_at_buy c= 0:
+                        if np.isnan(atr_at_buy) or atr_at_buy <= 0:
                             # fallback 4% stop
                             stop_loss = buy_price * 0.96
                         else:
@@ -199,8 +205,8 @@ class BacktestEngine:
                         r_multiple = (sell_price - buy_price) / risk_per_share
                     
                     buy_sell_pairs.append({
-                        'buy_date': buy_date,
-                        'sell_date': sell_date,
+                        'buy_date': str(buy_date) if isinstance(buy_date, pd.Timestamp) else str(buy_date),
+                        'sell_date': str(sell_date) if isinstance(sell_date, pd.Timestamp) else str(sell_date),
                         'buy_price': buy_price,
                         'sell_price': sell_price,
                         'profit_loss': profit_loss,
@@ -260,7 +266,7 @@ class BacktestEngine:
                 'winning_trades': winning_trades,
                 'losing_trades': total_trades - winning_trades,
                 'period_days': days_in_period,
-'avg_time_in_trade_days': round(avg_time_in_trade, 2),
+                'avg_time_in_trade_days': round(avg_time_in_trade, 2),
                 'avg_mae_pct': round(avg_mae, 2),
                 'avg_r_multiple': round(avg_r_multiple, 2),
                 'buy_sell_pairs': buy_sell_pairs

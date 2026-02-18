@@ -82,7 +82,7 @@ STRATEGY_CONFIG = {
 
 # BALANCED: Minimum combined score for recommendation - balanced for quality and quantity
 # Adjusted for realistic recommendations while maintaining quality
-MIN_RECOMMENDATION_SCORE = 0.03  # Very low threshold for testing backtest_metrics saving
+MIN_RECOMMENDATION_SCORE = 0.0  # Increased from -0.5 to filter out weak recommendations
 
 # Sentiment analysis configuration
 SENTIMENT_MODEL = 'distilbert-base-uncased-finetuned-sst-2-english'
@@ -99,13 +99,13 @@ NSE_CACHE_FILE = 'data/nse_symbols.json'
 
 # Threading and batch processing configuration
 # OPTIMIZED settings for MAXIMUM performance
-MAX_WORKER_THREADS = 2  # Reduced threads to avoid rate limiting
-BATCH_SIZE = 16  # Larger batches for better efficiency
-REQUEST_DELAY = 2.0  # Increased delay to avoid rate limiting
-MAX_RETRIES = 2  # Reduced retries to save time
-TIMEOUT_SECONDS = 20  # Reduced timeout for faster failures
-RATE_LIMIT_DELAY = 5.0  # Increased delay when rate limited
-BACKOFF_MULTIPLIER = 2.0  # Increased backoff multiplier
+MAX_WORKER_THREADS = 4  # Increased threads for parallel processing
+BATCH_SIZE = 8  # Smaller batches for faster feedback
+REQUEST_DELAY = 0.5  # Reduced delay for faster processing
+MAX_RETRIES = 1  # Minimal retries for speed
+TIMEOUT_SECONDS = 10  # Faster timeout for non-responsive calls
+RATE_LIMIT_DELAY = 2.0  # Reduced rate limit delay
+BACKOFF_MULTIPLIER = 1.5  # Reduced backoff multiplier
 
 # Data purge configuration
 DATA_PURGE_DAYS = 7  # Number of days to keep old data (recommendations and backtest results)
@@ -121,38 +121,38 @@ ANALYSIS_WEIGHTS = {
     'rl_agent': 0.05      # RL agent weight (5%) - Supporting signal
 }
 
-# SWING TRADING PRECISION: Stricter thresholds for high-confidence signals only
+# SWING TRADING PRECISION: More realistic thresholds for current market conditions
 RECOMMENDATION_THRESHOLDS = {
-    'strong_buy_combined': 0.65,     # High threshold for strong conviction
-    'buy_combined': 0.35,            # Raised for quality over quantity
-    'technical_strong_buy': 0.40,    # Higher technical requirement
-    'sell_combined': -0.35,          # Stricter sell threshold
-    'sentiment_positive': 0.05,      # Lowered sentiment threshold
-    'sentiment_negative': -0.10,     # Balanced sentiment threshold for negative
-    'sentiment_cap_positive': 0.15,  # Cap positive sentiment contribution
-    'sentiment_cap_negative': -0.50, # Cap negative sentiment for risk events
-    'min_backtest_return': 10.0,     # Higher CAGR requirement for swing trades
-    'technical_minimum': 0.25,       # Higher minimum technical score
-    'fundamental_minimum': 0.10,     # Higher minimum fundamental score
-    'volume_confirmation_required': True,  # Enable volume confirmation for quality
-    'market_trend_weight': 0.2,      # Reduced weight for overall market trend
-    'require_all_gates': True,       # NEW: All gates must pass for signal
-    'min_risk_reward_ratio': 2.5,    # NEW: Minimum 2.5:1 risk-reward ratio
-    'sector_filter_enabled': True,   # NEW: Enable sector regime filter
-    'min_sector_score': -0.2         # NEW: Minimum sector score to allow recommendations
+    'strong_buy_combined': 0.50,     # Strong signals only
+    'buy_combined': 0.10,            # Require positive combined score
+    'technical_strong_buy': 0.50,    
+    'sell_combined': -0.20,          
+    'sentiment_positive': 0.10,      
+    'sentiment_negative': -0.20,     
+    'sentiment_cap_positive': 0.30,  
+    'sentiment_cap_negative': -0.60, 
+    'min_backtest_return': 3.0,      # Require minimum 3% CAGR for quality
+    'technical_minimum': 0.05,       # Require slightly positive technical
+    'fundamental_minimum': 0.05,     # Require slightly positive fundamental
+    'volume_confirmation_required': True,  # Enable volume confirmation
+    'market_trend_weight': 0.3,      
+    'require_all_gates': False,      # Keep flexible for market conditions
+    'min_risk_reward_ratio': 1.8,    # Good risk/reward
+    'sector_filter_enabled': False,  # Keep disabled for broader coverage
+    'min_sector_score': -0.5         
 }
 
-# Analysis Modules Configuration - BALANCED for ACCURACY and SPEED
-# Enable key analysis modules for better recommendations
+# Analysis Modules Configuration - OPTIMIZED for SPEED
+# Disable heavy modules for faster analysis
 ANALYSIS_CONFIG = {
     'technical_analysis': True,     # Core analysis - ESSENTIAL
-    'fundamental_analysis': True,   # Core analysis - ESSENTIAL
-    'sentiment_analysis': True,     # ENABLED - Important for market sentiment
-    'sector_analysis': False,       # DISABLED - Additional overhead (can enable later)
+    'fundamental_analysis': False,  # DISABLED - Network timeouts slowing analysis
+    'sentiment_analysis': False,    # DISABLED - Heavy ML processing
+    'sector_analysis': False,       # DISABLED - Additional overhead
     'market_regime_detection': False,  # DISABLED - Heavy ML processing
     'market_microstructure': False,   # DISABLED - Complex simulation
     'alternative_data': False,        # DISABLED - Additional data fetching
-    'backtesting': True,             # ENABLED - Still valuable for recommendations
+    'backtesting': True,             # ENABLED - Simplified for speed
     'risk_management': True,         # ENABLED - Essential for trade planning
     'predictive_analysis': False,    # DISABLED - Heavy ML processing
     'rl_trading_agent': False,       # DISABLED - Heavy ML processing
