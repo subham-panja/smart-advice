@@ -111,7 +111,8 @@ BACKOFF_MULTIPLIER = 1.5  # Reduced backoff multiplier
 
 # Data purge configuration
 DATA_PURGE_DAYS = 7  # Number of days to keep old data (recommendations and backtest results)
-# WARNING: Setting to 0 will DELETE ALL DATA every time analysis runs!
+REMOVE_OLD_DATA_ON_EACH_RUN = True  # NEW: If True, purges old data before each analysis run
+# WARNING: Setting DATA_PURGE_DAYS to 0 will DELETE ALL DATA every time analysis runs!
 
 # Logging configuration
 PERSIST_LOGGING = False  # If False, app.log will be reset on each run
@@ -136,8 +137,8 @@ RECOMMENDATION_THRESHOLDS = {
     'sentiment_negative': -0.20,     
     'sentiment_cap_positive': 0.30,  
     'sentiment_cap_negative': -0.60, 
-    'min_backtest_return': 3.0,      # Require minimum 3% CAGR for quality
-    'technical_minimum': 0.05,       # Require slightly positive technical
+    'min_backtest_return': 1.2,      # Realistic threshold for consistent returns
+    'technical_minimum': 0.10,       # Require positive technical trend
     'fundamental_minimum': 0.05,     # Require slightly positive fundamental
     'volume_confirmation_required': True,  # Enable volume confirmation
     'market_trend_weight': 0.3,      
@@ -151,7 +152,7 @@ RECOMMENDATION_THRESHOLDS = {
 # Disable heavy modules for faster analysis
 ANALYSIS_CONFIG = {
     'technical_analysis': True,     # Core analysis - ESSENTIAL
-    'fundamental_analysis': False,  # DISABLED - Network timeouts slowing analysis
+    'fundamental_analysis': True,   # ENABLED - For comprehensive quality filtering
     'sentiment_analysis': False,    # DISABLED - Heavy ML processing
     'sector_analysis': False,       # DISABLED - Additional overhead
     'market_regime_detection': False,  # DISABLED - Heavy ML processing

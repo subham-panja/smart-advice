@@ -242,6 +242,10 @@ class BacktestingRunner:
                 'max_drawdown': metrics['max_drawdown'],
                 'sharpe_ratio': metrics['sharpe_ratio'],
                 'total_trades': metrics['total_trades'],
+                'winning_trades': metrics.get('winning_trades', 0),
+                'losing_trades': metrics.get('losing_trades', 0),
+                'avg_profit_per_trade': metrics.get('avg_profit_per_trade', 0),
+                'avg_loss_per_trade': metrics.get('avg_loss_per_trade', 0),
                 'avg_trade_return': metrics['avg_trade_return']
             }
             
@@ -361,12 +365,28 @@ class BacktestingRunner:
             # Average trade return
             avg_trade_return = total_return / max(1, estimated_trades)
             
+            # Estimated metrics based on win rate
+            winning_trades = int(estimated_trades * (win_rate / 100))
+            losing_trades = estimated_trades - winning_trades
+            
+            # Estimates for profit/loss per trade
+            if total_return > 0:
+                avg_profit = (total_return * initial_value / 100) / max(1, winning_trades)
+                avg_loss = (avg_profit * 0.7) # Heuristic
+            else:
+                avg_loss = (abs(total_return) * initial_value / 100) / max(1, losing_trades)
+                avg_profit = (avg_loss * 0.7) # Heuristic
+            
             return {
                 'cagr': round(cagr, 2),
                 'win_rate': round(win_rate, 2),
                 'max_drawdown': round(max_drawdown, 2),
                 'sharpe_ratio': round(sharpe_ratio, 2),
                 'total_trades': estimated_trades,
+                'winning_trades': winning_trades,
+                'losing_trades': losing_trades,
+                'avg_profit_per_trade': round(avg_profit, 2),
+                'avg_loss_per_trade': round(avg_loss, 2),
                 'avg_trade_return': round(avg_trade_return, 2)
             }
             
@@ -413,6 +433,16 @@ class BacktestingRunner:
             avg_max_drawdown = sum(r['max_drawdown'] for r in successful_results) / len(successful_results)
             avg_sharpe_ratio = sum(r['sharpe_ratio'] for r in successful_results) / len(successful_results)
             
+            # Add more aggregated metrics
+            total_trades = sum(r.get('total_trades', 0) for r in successful_results)
+            winning_trades = sum(r.get('winning_trades', 0) for r in successful_results)
+            losing_trades = sum(r.get('losing_trades', 0) for r in successful_results)
+            
+            avg_roi = sum(r.get('roi', 0) for r in successful_results) / len(successful_results)
+            avg_final_value = sum(r.get('final_value', 0) for r in successful_results) / len(successful_results)
+            avg_profit = sum(r.get('avg_profit_per_trade', 0) for r in successful_results) / len(successful_results)
+            avg_loss = sum(r.get('avg_loss_per_trade', 0) for r in successful_results) / len(successful_results)
+            
             # Find best and worst strategies
             best_strategy = max(successful_results, key=lambda x: x['cagr'])['strategy_name']
             worst_strategy = min(successful_results, key=lambda x: x['cagr'])['strategy_name']
@@ -422,6 +452,13 @@ class BacktestingRunner:
                 'avg_win_rate': round(avg_win_rate, 2),
                 'avg_max_drawdown': round(avg_max_drawdown, 2),
                 'avg_sharpe_ratio': round(avg_sharpe_ratio, 2),
+                'total_trades': total_trades,
+                'winning_trades': winning_trades,
+                'losing_trades': losing_trades,
+                'avg_roi': round(avg_roi, 2),
+                'avg_final_value': round(avg_final_value, 2),
+                'avg_profit_per_trade': round(avg_profit, 2),
+                'avg_loss_per_trade': round(avg_loss, 2),
                 'best_strategy': best_strategy,
                 'worst_strategy': worst_strategy,
                 'strategies_tested': len(successful_results)

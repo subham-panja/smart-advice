@@ -130,30 +130,39 @@ class StrategyEvaluator:
                 # Add timeout protection for problematic strategies
                 import signal
                 import time
+                import threading
+                
+                is_main_thread = threading.current_thread() is threading.main_thread()
                 
                 def strategy_timeout_handler(signum, frame):
                     raise TimeoutError(f"Strategy {strategy_name} import timed out")
                 
-                # Set timeout for strategy import (10 seconds)
-                old_handler = signal.signal(signal.SIGALRM, strategy_timeout_handler)
-                signal.alarm(10)
+                # Set timeout for strategy import (10 seconds) - ONLY if in main thread
+                old_handler = None
+                if is_main_thread:
+                    try:
+                        old_handler = signal.signal(signal.SIGALRM, strategy_timeout_handler)
+                        signal.alarm(10)
+                    except ValueError:
+                        is_main_thread = False # Fallback if signal not supported
                 
                 try:
                     module = importlib.import_module(module_path)
                     logger.debug(f"Successfully imported module for {strategy_name}")
-                except TimeoutError as te:
-                    logger.error(f"Timeout error importing {strategy_name}: {te}")
-                    continue
-                except ImportError as ie:
-                    logger.error(f"Import error for {strategy_name}: {ie}")
+                except (TimeoutError, ImportError) as e:
+                    logger.error(f"Known error importing {strategy_name}: {e}")
                     continue
                 except Exception as e:
                     logger.error(f"Unexpected error importing {strategy_name}: {e}")
                     continue
                 finally:
-                    # Clear the alarm
-                    signal.alarm(0)
-                    signal.signal(signal.SIGALRM, old_handler)
+                    # Clean up alarm
+                    if is_main_thread:
+                        try:
+                            signal.alarm(0)
+                            if old_handler:
+                                signal.signal(signal.SIGALRM, old_handler)
+                        except: pass
                 
                 # Get the strategy class - handle different class naming conventions
                 try:

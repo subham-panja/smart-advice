@@ -102,14 +102,19 @@ class PersistenceHandler:
             if not self._check_existing_backtest_result(symbol, 'Overall'):
                 insert_backtest_result(
                     symbol, 'Overall', 
-                    metrics.get('avg_cagr', 0) or metrics.get('average_cagr', 0),
-                    metrics.get('avg_win_rate', 0) or metrics.get('average_win_rate', 0),
-                    metrics.get('avg_max_drawdown', 0) or metrics.get('average_max_drawdown', 0),
+                    metrics.get('avg_cagr', 0),
+                    metrics.get('avg_win_rate', 0),
+                    metrics.get('avg_max_drawdown', 0),
                     total_trades=metrics.get('total_trades'),
-                    final_capital=metrics.get('final_capital'),
-                    total_return=metrics.get('total_return')
+                    winning_trades=metrics.get('winning_trades'),
+                    losing_trades=metrics.get('losing_trades'),
+                    avg_profit_per_trade=metrics.get('avg_profit_per_trade'),
+                    avg_loss_per_trade=metrics.get('avg_loss_per_trade'),
+                    final_capital=metrics.get('avg_final_value'),
+                    total_return=metrics.get('avg_roi'),
+                    sharpe_ratio=metrics.get('avg_sharpe_ratio')
                 )
-                logger.info(f"Saved backtest results for {symbol}")
+                logger.info(f"Saved detailed backtest results for {symbol}")
             return True
         except Exception as e:
             logger.error(f"Error saving backtest results: {e}")

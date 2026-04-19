@@ -310,14 +310,12 @@ class AutomatedStockAnalysis:
                         logger.info(f"Cleaned {cleaned_files} corrupted cache files")
                     logger.info("Cache cleaning completed")
                     
-                    # Get configurable threshold for data purge
-                    days_old = self.app.config.get('DATA_PURGE_DAYS', 7)
-                    logger.info(f"Data purge threshold: {days_old} days")
-                    
-                    # Clear old data (recommendations and backtest results) at the start
-                    logger.info("SKIPPING database purge operation temporarily for debugging...")
-                    # self.clear_old_data(days_old=days_old)
-                    logger.info("Database purge operation skipped")
+                    # Step 2: Purge old data if configured
+                    if self.app.config.get('REMOVE_OLD_DATA_ON_EACH_RUN', True):
+                        logger.info("Auto-purge enabled: clearing old data before run")
+                        self.clear_old_data(days_old=self.app.config.get('DATA_PURGE_DAYS', 7))
+                    else:
+                        logger.info("Auto-purge disabled: skipping data cleanup")
                 else:
                     logger.info("Fast mode enabled - skipping cache cleaning and database purge")
                 

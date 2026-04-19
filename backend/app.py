@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, Response
 from flask_cors import CORS
 from database import init_app, get_db, query_mongodb
 from scripts.analyzer import analyze_stock
@@ -303,10 +303,47 @@ def get_analysis_progress():
             "error": str(e)
         }), 500
 
+@app.route('/stream-logs')
+def stream_logs():
+    """Stream analysis logs via Server-Sent Events."""
+    def generate():
+        from utils.logger import log_queue
+        import queue
+        while True:
+            try:
+                # Use a small timeout to allow checking for connection closure
+                msg = log_queue.get(timeout=2.0)
+                yield f"data: {msg}\n\n"
+            except queue.Empty:
+                # Send a heartbeat/keep-alive
+                yield ": keep-alive\n\n"
+            except Exception as e:
+                app.logger.error(f"SSE Error: {e}")
+                break
+    
+    return Response(
+        generate(),
+        mimetype='text/event-stream',
+        headers={
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+            'X-Accel-Buffering': 'no'  # Disable buffering for Nginx
+        }
+    )
+
 @app.route('/trigger-analysis', methods=['POST'])
 def trigger_analysis():
     """Trigger stock analysis with configurable parameters."""
     try:
+        # Clear old logs from queue
+        from utils.logger import log_queue
+        import queue
+        while not log_queue.empty():
+            try:
+                log_queue.get_nowait()
+            except queue.Empty:
+                break
+
         # Get parameters from request body
         config = request.get_json() or {}
         
@@ -360,7 +397,7 @@ def trigger_analysis():
                     analyzer.run_analysis(
                         max_stocks=max_stocks,
                         use_all_symbols=use_all_symbols,
-                        offline_mode=offline_mode
+                        fast_mode=config.get('fast', test_mode) # Use fast mode by default in test mode
                     )
                     app.logger.info("Analysis completed successfully")
                     analysis_progress['status'] = 'completed'

@@ -1,5 +1,27 @@
 import logging
 import os
+import queue
+
+# Global thread-safe queue for SSE logs
+log_queue = queue.Queue(maxsize=1000)
+
+class SSEHandler(logging.Handler):
+    """Custom logging handler that pushes logs to a queue for SSE streaming."""
+    def emit(self, record):
+        try:
+            msg = self.format(record)
+            # Use non-blocking put with try-except to avoid stalling if queue is full
+            try:
+                log_queue.put_nowait(msg)
+            except queue.Full:
+                # Remove oldest message and try again if full
+                try:
+                    log_queue.get_nowait()
+                    log_queue.put_nowait(msg)
+                except (queue.Empty, queue.Full):
+                    pass
+        except Exception:
+            self.handleError(record)
 
 def setup_logging(log_level=logging.INFO, verbose=None):
     """Set up logging configuration.
@@ -13,7 +35,7 @@ def setup_logging(log_level=logging.INFO, verbose=None):
     
     # Override log_level based on verbose parameter
     if verbose is not None:
-        log_level = logging.INFO if verbose else logging.CRITICAL  # Use CRITICAL instead of ERROR to suppress more
+        log_level = logging.INFO if verbose else logging.CRITICAL
     
     # Configure root logger
     root_logger = logging.getLogger()
@@ -35,6 +57,11 @@ def setup_logging(log_level=logging.INFO, verbose=None):
     # Add file handler (always log to file)
     root_logger.addHandler(file_handler)
     
+    # Add SSE handler (always available for streaming)
+    sse_handler = SSEHandler()
+    sse_handler.setFormatter(formatter)
+    root_logger.addHandler(sse_handler)
+    
     # Only add stream handler in verbose mode
     if verbose:
         stream_handler = logging.StreamHandler()
@@ -45,13 +72,11 @@ def setup_logging(log_level=logging.INFO, verbose=None):
     for logger_name in logging.Logger.manager.loggerDict:
         logger = logging.getLogger(logger_name)
         logger.setLevel(log_level)
-        # Clear handlers to prevent duplicate logging
         logger.handlers = []
-        logger.propagate = True  # Ensure they propagate to root logger
+        logger.propagate = True
     
     # Configure specific noisy modules in non-verbose mode
     if not verbose:
-        # Suppress strategy-related logging
         logging.getLogger('utils.logger').setLevel(logging.CRITICAL)
         logging.getLogger('scripts.technical_analyzer').setLevel(logging.CRITICAL)
         logging.getLogger('scripts.strategy_evaluator').setLevel(logging.CRITICAL)
@@ -59,8 +84,6 @@ def setup_logging(log_level=logging.INFO, verbose=None):
         logging.getLogger('scripts.fundamental_analyzer').setLevel(logging.CRITICAL)
         logging.getLogger('scripts.sentiment_analyzer').setLevel(logging.CRITICAL)
         logging.getLogger('scripts.sector_analyzer').setLevel(logging.CRITICAL)
-        
-        # Suppress third-party logging
         logging.getLogger('yfinance').setLevel(logging.CRITICAL)
         logging.getLogger('urllib3').setLevel(logging.CRITICAL)
         logging.getLogger('requests').setLevel(logging.CRITICAL)

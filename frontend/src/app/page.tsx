@@ -8,24 +8,48 @@ import {
   ShieldCheckIcon,
   ClockIcon,
   CogIcon,
-  TrendingUpIcon,
   DocumentTextIcon,
   CpuChipIcon
 } from '@heroicons/react/24/outline';
 import { Bar, Line, Doughnut } from 'react-chartjs-2';
 import { useEffect, useState } from 'react';
-import { getRecommendations, StockRecommendation } from '@/lib/api';
+import { getRecommendations, StockRecommendation, triggerAnalysis } from '@/lib/api';
 import '../lib/chartConfig';
 import ApiTest from './components/ApiTest';
+import Terminal from './components/Terminal';
 
 export default function Home() {
   const [recommendations, setRecommendations] = useState<StockRecommendation[]>([]);
   const [topN, setTopN] = useState(10); // State for top N stocks selection
   const [isClient, setIsClient] = useState(false);
+  const [isTerminalOpen, setIsTerminalOpen] = useState(false);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+
+  const API_HOST = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:5001';
 
   useEffect(() => {
     setIsClient(true);
   }, []);
+
+  const handleStartAnalysis = async () => {
+    setIsTerminalOpen(true);
+    setIsAnalyzing(true);
+
+    try {
+      const response = await triggerAnalysis({
+        test: true, // For verification, we use test mode
+        verbose: true // We need verbose for streaming logs
+      });
+
+      if (response.status === 'error') {
+        alert(`Failed to start analysis: ${response.error}`);
+        setIsAnalyzing(false);
+      }
+    } catch (error) {
+      console.error('Error starting analysis:', error);
+      setIsAnalyzing(false);
+    }
+  };
 
   useEffect(() => {
     async function fetchData() {
@@ -153,12 +177,45 @@ export default function Home() {
         <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-gray-900 dark:text-gray-100 mb-4">
           Stock Advice Dashboard
         </h1>
-        <p className="text-lg sm:text-xl text-gray-600 dark:text-gray-300 max-w-3xl mx-auto px-4">
+        <p className="text-lg sm:text-xl text-gray-600 dark:text-gray-300 max-w-3xl mx-auto px-4 mb-8">
           AI-powered stock analysis and recommendations for smart investing.
           Advanced algorithms analyze market trends, technical indicators, and fundamental data
           to provide actionable investment insights.
         </p>
+
+        {/* Analysis Trigger Button */}
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+          <button
+            onClick={handleStartAnalysis}
+            disabled={isAnalyzing}
+            className={`
+              flex items-center space-x-2 px-6 py-3 rounded-lg font-semibold text-white shadow-lg transition-all
+              ${isAnalyzing
+                ? 'bg-blue-400 cursor-not-allowed opacity-70'
+                : 'bg-blue-600 hover:bg-blue-700 hover:scale-105 active:scale-95'}
+            `}
+          >
+            <PlayIcon className={`h-5 w-5 ${isAnalyzing ? 'animate-pulse' : ''}`} />
+            <span>{isAnalyzing ? 'Analysis in Progress...' : 'Start Full Analysis'}</span>
+          </button>
+
+          {isTerminalOpen && (
+            <button
+              onClick={() => setIsTerminalOpen(false)}
+              className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-sm font-medium underline"
+            >
+              Hide Terminal
+            </button>
+          )}
+        </div>
       </div>
+
+      {/* Terminal Component */}
+      <Terminal
+        isOpen={isTerminalOpen}
+        onClose={() => setIsTerminalOpen(false)}
+        apiHost={API_HOST}
+      />
 
       {/* Charts Section */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-4 sm:p-6 lg:p-8 border border-gray-200 dark:border-gray-700">
