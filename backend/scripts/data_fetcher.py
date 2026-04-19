@@ -836,75 +836,19 @@ def get_filtered_nse_symbols(max_stocks: int = None) -> Dict[str, str]:
         except Exception as e:
             logger.error(f"Error loading cached filtered symbols: {e}")
     
-    # FAST MODE: Skip expensive API filtering and use predefined liquid stocks
-    logger.info("FAST MODE: Using predefined liquid stocks to avoid API bottlenecks")
+    # Dynamic Mode: Scan all ~2000 NSE symbols and filter based on strict live volume/price criteria
+    logger.info("Executing live dynamic scanning over all NSE stocks...")
     
-    # Comprehensive list of liquid NSE stocks (sorted by market cap and liquidity)
-    liquid_stocks = {
-        'RELIANCE': 'Reliance Industries Limited',
-        'TCS': 'Tata Consultancy Services Limited',
-        'HDFCBANK': 'HDFC Bank Limited',
-        'INFY': 'Infosys Limited',
-        'HINDUNILVR': 'Hindustan Unilever Limited',
-        'ICICIBANK': 'ICICI Bank Limited',
-        'SBIN': 'State Bank of India',
-        'BHARTIARTL': 'Bharti Airtel Limited',
-        'ITC': 'ITC Limited',
-        'KOTAKBANK': 'Kotak Mahindra Bank Limited',
-        'LT': 'Larsen & Toubro Limited',
-        'ASIANPAINT': 'Asian Paints Limited',
-        'AXISBANK': 'Axis Bank Limited',
-        'MARUTI': 'Maruti Suzuki India Limited',
-        'SUNPHARMA': 'Sun Pharmaceutical Industries Limited',
-        'ULTRACEMCO': 'UltraTech Cement Limited',
-        'TITAN': 'Titan Company Limited',
-        'NESTLEIND': 'Nestle India Limited',
-        'POWERGRID': 'Power Grid Corporation of India Limited',
-        'NTPC': 'NTPC Limited',
-        'BAJFINANCE': 'Bajaj Finance Limited',
-        'ONGC': 'Oil & Natural Gas Corporation Limited',
-        'TECHM': 'Tech Mahindra Limited',
-        'BAJAJFINSV': 'Bajaj Finserv Limited',
-        'HCLTECH': 'HCL Technologies Limited',
-        'WIPRO': 'Wipro Limited',
-        'COALINDIA': 'Coal India Limited',
-        'DRREDDY': 'Dr. Reddys Laboratories Limited',
-        'JSWSTEEL': 'JSW Steel Limited',
-        'TATASTEEL': 'Tata Steel Limited',
-        'GRASIM': 'Grasim Industries Limited',
-        'HINDALCO': 'Hindalco Industries Limited',
-        'BRITANNIA': 'Britannia Industries Limited',
-        'DIVISLAB': 'Divis Laboratories Limited',
-        'EICHERMOT': 'Eicher Motors Limited',
-        'HEROMOTOCO': 'Hero MotoCorp Limited',
-        'BAJAJ-AUTO': 'Bajaj Auto Limited',
-        'ADANIPORTS': 'Adani Ports and Special Economic Zone Limited',
-        'BPCL': 'Bharat Petroleum Corporation Limited',
-        'CIPLA': 'Cipla Limited',
-        'SHREECEM': 'Shree Cement Limited',
-        'INDUSINDBK': 'IndusInd Bank Limited',
-        'APOLLOHOSP': 'Apollo Hospitals Enterprise Limited',
-        'PIDILITIND': 'Pidilite Industries Limited',
-        'GODREJCP': 'Godrej Consumer Products Limited',
-        'MCDOWELL-N': 'United Spirits Limited',
-        'IOC': 'Indian Oil Corporation Limited',
-        'TATACONSUM': 'Tata Consumer Products Limited',
-        'HDFCLIFE': 'HDFC Life Insurance Company Limited',
-        'SBILIFE': 'SBI Life Insurance Company Limited',
-        'ICICIPRULI': 'ICICI Prudential Life Insurance Company Limited',
-        'DABUR': 'Dabur India Limited',
-        'COLPAL': 'Colgate Palmolive (India) Limited',
-        'MARICO': 'Marico Limited',
-        'BERGEPAINT': 'Berger Paints India Limited'
-    }
+    # Fetch all raw symbols
+    all_symbols = get_all_nse_symbols()
     
-    # Apply max_stocks limit if specified
-    if max_stocks is not None:
-        filtered_symbols = dict(list(liquid_stocks.items())[:max_stocks])
-        logger.info(f"Selected {len(filtered_symbols)} liquid stocks from predefined list")
-    else:
-        filtered_symbols = liquid_stocks
-        logger.info(f"Using all {len(filtered_symbols)} predefined liquid stocks")
+    # If the NSE API or fallback fails to give us anything, return empty
+    if not all_symbols:
+        logger.warning("Could not fetch base NSE symbols for filtering.")
+        return {}
+        
+    # Process the entire list through filter_active_stocks to check live stats
+    filtered_symbols = filter_active_stocks(all_symbols, max_stocks)
     
     # Save to cache
     try:
