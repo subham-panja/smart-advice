@@ -1,4 +1,5 @@
 import os
+import logging
 
 # Flask configuration
 SECRET_KEY = 'your_super_secret_key_here'  # Change this for production!
@@ -95,11 +96,12 @@ NEWS_DATE_RANGE = '10d'
 
 # Data fetching parameters
 HISTORICAL_DATA_PERIOD = '5y'  # Extended for better regime coverage in swing trading
-NSE_CACHE_FILE = 'data/nse_symbols.json'
+BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
+NSE_CACHE_FILE = os.path.join(BACKEND_DIR, 'data', 'nse_symbols.json')
 
 # Threading and batch processing configuration
 # OPTIMIZED settings for MAXIMUM performance
-MAX_WORKER_THREADS = 4  # Increased threads for parallel processing
+MAX_WORKER_THREADS = 10  # Increased threads for parallel processing
 BATCH_SIZE = 8  # Smaller batches for faster feedback
 REQUEST_DELAY = 0.5  # Reduced delay for faster processing
 MAX_RETRIES = 1  # Minimal retries for speed
@@ -110,6 +112,9 @@ BACKOFF_MULTIPLIER = 1.5  # Reduced backoff multiplier
 # Data purge configuration
 DATA_PURGE_DAYS = 7  # Number of days to keep old data (recommendations and backtest results)
 # WARNING: Setting to 0 will DELETE ALL DATA every time analysis runs!
+
+# Logging configuration
+PERSIST_LOGGING = False  # If False, app.log will be reset on each run
 
 # SWING TRADING OPTIMIZED: Technical-heavy weightage for precision entries
 ANALYSIS_WEIGHTS = {

@@ -24,7 +24,9 @@ def setup_logging(log_level=logging.INFO, verbose=None):
         root_logger.removeHandler(handler)
     
     # Set up handlers
-    file_handler = logging.FileHandler("logs/app.log")
+    from config import PERSIST_LOGGING
+    log_mode = 'a' if PERSIST_LOGGING else 'w'
+    file_handler = logging.FileHandler("logs/app.log", mode=log_mode)
     
     # Set formatter
     formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
