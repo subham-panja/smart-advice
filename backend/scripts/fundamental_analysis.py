@@ -222,8 +222,8 @@ class FundamentalAnalysis:
             financial_data = FundamentalAnalysis.get_financial_data_from_yfinance(symbol)
             
             if not financial_data:
-                logger.warning(f"No financial data available for {symbol}, using default positive score")
-                return 0.1  # Default to slightly positive
+                logger.warning(f"No financial data available for {symbol}, using neutral score")
+                return 0.0  # Neutral when no data available
             
             # Calculate fundamental score
             fundamental_score = FundamentalAnalysis.calculate_fundamental_score(financial_data)
@@ -238,6 +238,4 @@ class FundamentalAnalysis:
             
         except Exception as e:
             logger.error(f"Error performing fundamental analysis for {symbol}: {e}")
-            return 0.1  # Return slightly positive score on error
-
-
+            return 0.0  # Neutral on error — don't inflate score

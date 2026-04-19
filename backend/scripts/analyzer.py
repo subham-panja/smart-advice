@@ -93,8 +93,10 @@ class StockAnalyzer:
                     tech_analysis = {'error': 'No data'}
                 else:
                     tech_analysis = self.strategy_evaluator.evaluate_strategies(symbol, historical_data)
+                    # Simplified linear mapping: Map 0-1 range to roughly -1 to 1 range
+                    # 0 signal -> -0.5, 0.5 signal -> 0.0, 1.0 signal -> 1.0
                     raw = tech_analysis['technical_score']
-                    result['technical_score'] = (raw * 1.4) - 0.3 if raw <= 0.5 else (raw - 0.5) * 1.2 + 0.4
+                    result['technical_score'] = (raw * 1.5) - 0.5
             except Exception as e:
                 logger.error(f"Tech error {symbol}: {e}")
                 result['technical_score'] = -1.0
@@ -102,18 +104,25 @@ class StockAnalyzer:
             result['detailed_analysis']['technical'] = tech_analysis
             
             # 2. Fundamental & Sentiment (Optional)
-            if not app_config.get('SKIP_FUNDAMENTAL'):
+            # Use top-level config or ANALYSIS_CONFIG nested values
+            skip_fundamental = (app_config.get('SKIP_FUNDAMENTAL') or 
+                              not app_config.get('ANALYSIS_CONFIG', {}).get('fundamental_analysis', True))
+            
+            if not skip_fundamental:
                 result['fundamental_score'] = self.fundamental_analyzer.perform_fundamental_analysis(symbol)
                 result['reason'].append("Fundamental signals included")
             else:
-                result['fundamental_score'] = 0.1
+                result['fundamental_score'] = 0.0  # Neutral when skipped
             
-            if not app_config.get('SKIP_SENTIMENT'):
+            skip_sentiment = (app_config.get('SKIP_SENTIMENT') or 
+                            not app_config.get('ANALYSIS_CONFIG', {}).get('sentiment_analysis', True))
+            
+            if not skip_sentiment:
                 if not self.sentiment_analyzer: self.sentiment_analyzer = SentimentAnalysis()
                 result['sentiment_score'] = self.sentiment_analyzer.perform_sentiment_analysis(company_name)
                 result['reason'].append("Sentiment signals included")
             else:
-                result['sentiment_score'] = 0.1
+                result['sentiment_score'] = 0.0  # Neutral when skipped
             
             # 3. Sector & Market Modules
             analysis_config = app_config.get('ANALYSIS_CONFIG', {})
@@ -167,6 +176,103 @@ class StockAnalyzer:
             logger.error(f"Error analyzing {symbol}: {e}")
             return {'symbol': symbol, 'is_recommended': False, 'error': str(e)}
     
+    def analyze_stock_with_data(self, symbol: str, company_name: str, 
+                                 historical_data: pd.DataFrame, app_config: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Analyze a stock using pre-fetched historical data.
+        Used by the multiprocessing pipeline where data is fetched in Phase 1.
+        
+        Args:
+            symbol: Stock symbol
+            company_name: Human-readable company name
+            historical_data: Pre-fetched DataFrame with OHLCV data
+            app_config: Application config dictionary
+        """
+        try:
+            logger.info(f"Analyzing {symbol} ({company_name}) [with pre-fetched data]")
+            
+            result = {
+                'symbol': symbol, 'company_name': company_name,
+                'technical_score': 0.0, 'fundamental_score': 0.0, 'sentiment_score': 0.0,
+                'is_recommended': False, 'reason': [], 'detailed_analysis': {}
+            }
+            
+            # 1. Technical Analysis
+            try:
+                if historical_data.empty:
+                    result['reason'].append("No historical data available")
+                    result['technical_score'] = -1.0
+                    tech_analysis = {'error': 'No data'}
+                else:
+                    tech_analysis = self.strategy_evaluator.evaluate_strategies(symbol, historical_data)
+                    raw = tech_analysis['technical_score']
+                    result['technical_score'] = (raw * 1.5) - 0.5
+            except Exception as e:
+                logger.error(f"Tech error {symbol}: {e}")
+                result['technical_score'] = -1.0
+                tech_analysis = {'error': str(e)}
+            result['detailed_analysis']['technical'] = tech_analysis
+            
+            # 2. Fundamental & Sentiment (Optional)
+            skip_fundamental = (app_config.get('SKIP_FUNDAMENTAL') or 
+                              not app_config.get('ANALYSIS_CONFIG', {}).get('fundamental_analysis', True))
+            if not skip_fundamental:
+                result['fundamental_score'] = self.fundamental_analyzer.perform_fundamental_analysis(symbol)
+                result['reason'].append("Fundamental signals included")
+            else:
+                result['fundamental_score'] = 0.0
+            
+            skip_sentiment = (app_config.get('SKIP_SENTIMENT') or 
+                            not app_config.get('ANALYSIS_CONFIG', {}).get('sentiment_analysis', True))
+            if not skip_sentiment:
+                if not self.sentiment_analyzer: self.sentiment_analyzer = SentimentAnalysis()
+                result['sentiment_score'] = self.sentiment_analyzer.perform_sentiment_analysis(company_name)
+                result['reason'].append("Sentiment signals included")
+            else:
+                result['sentiment_score'] = 0.0
+            
+            # 3. Preliminary Combination
+            result = self._combine_analysis_results(result, consider_backtest=False, keep_reason_as_list=True)
+            
+            # 4. Trade & Backtest
+            if not historical_data.empty:
+                trade_res = self.trade_logic.analyze(symbol, historical_data)
+                result['trade_plan'] = {
+                    'buy_price': trade_res.get('buy_price', 0.0),
+                    'sell_price': trade_res.get('sell_price', 0.0),
+                    'stop_loss': trade_res.get('stop_loss', 0.0),
+                    'days_to_target': trade_res.get('days_to_target', 0),
+                    'entry_timing': trade_res.get('entry_timing', 'WAIT'),
+                    'risk_reward_ratio': trade_res.get('risk_reward_ratio', 0.0),
+                    'confidence': trade_res.get('confidence', 0.0)
+                }
+                
+                bt_res = self.backtest_utils.perform_backtesting(symbol, historical_data)
+                result['backtest'] = bt_res
+                if bt_res.get('status') == 'completed':
+                    metrics = bt_res.get('combined_metrics', {})
+                    result['reason'].append(f"Backtest: CAGR={metrics.get('avg_cagr', 0)}%, Win={metrics.get('avg_win_rate', 0)}%")
+                
+                if result.get('is_recommended'):
+                    result = self._combine_analysis_results(result, consider_backtest=True, keep_reason_as_list=True)
+                
+                if result.get('is_recommended'):
+                    cp = historical_data['Close'].iloc[-1]
+                    sl = self.risk_manager.calculate_stop_loss(historical_data, cp)
+                    result['risk_management'] = {
+                        'current_price': cp, 'stop_loss': sl,
+                        'position_sizing': self.risk_manager.calculate_position_size(cp, sl['stop_loss']),
+                        'profit_targets': self.risk_manager.calculate_profit_targets(cp, sl['stop_loss']),
+                        'pivot_points': self.risk_manager.calculate_pivot_points(historical_data)
+                    }
+            
+            if isinstance(result['reason'], list): result['reason'] = " ".join(result['reason'])
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error analyzing {symbol} with pre-fetched data: {e}")
+            return {'symbol': symbol, 'is_recommended': False, 'error': str(e)}
+    
     def _combine_analysis_results(self, result: Dict[str, Any], consider_backtest: bool = True, keep_reason_as_list: bool = False) -> Dict[str, Any]:
         """
         Combine technical, fundamental, and sentiment analysis results.
@@ -183,17 +289,25 @@ class StockAnalyzer:
         fundamental_score = result['fundamental_score']
         sentiment_score = result['sentiment_score']
         
-        # Get configurable weights and thresholds
+        # Get configurable weights — only use non-zero (active) pillars
         technical_weight = ANALYSIS_WEIGHTS.get('technical', 0.5)
         fundamental_weight = ANALYSIS_WEIGHTS.get('fundamental', 0.3)
-        sentiment_weight = ANALYSIS_WEIGHTS.get('sentiment', 0.2)
+        sentiment_weight = ANALYSIS_WEIGHTS.get('sentiment', 0.0)
         
-        # Normalize weights to ensure they sum to 1
-        total_weight = technical_weight + fundamental_weight + sentiment_weight
-        if total_weight != 1.0:
-            technical_weight /= total_weight
-            fundamental_weight /= total_weight
-            sentiment_weight /= total_weight
+        # Normalize only active weights (non-zero) to sum to 1
+        active_weights = {}
+        if technical_weight > 0: active_weights['technical'] = technical_weight
+        if fundamental_weight > 0: active_weights['fundamental'] = fundamental_weight
+        if sentiment_weight > 0: active_weights['sentiment'] = sentiment_weight
+        
+        total_weight = sum(active_weights.values())
+        if total_weight > 0 and total_weight != 1.0:
+            for k in active_weights:
+                active_weights[k] /= total_weight
+        
+        technical_weight = active_weights.get('technical', 0.0)
+        fundamental_weight = active_weights.get('fundamental', 0.0)
+        sentiment_weight = active_weights.get('sentiment', 0.0)
         
         combined_score = (
             technical_score * technical_weight +
@@ -222,12 +336,9 @@ class StockAnalyzer:
             trade_plan = result.get('trade_plan', {})
             days_to_target = trade_plan.get('days_to_target', 0) if trade_plan else 0
             
-            # More flexible backtest requirements - allow strong analysis to override
+            # Strict override — both pillars must be strong
             strong_analysis_override = (
-                (technical_score > 0.3 and fundamental_score > 0.3) or  # Strong both
-                (combined_score > 0.3) or  # Very strong combined
-                (technical_score > 0.4) or  # Very strong technical
-                (fundamental_score > 0.5)   # Very strong fundamental
+                (technical_score > 0.3 and fundamental_score > 0.3)  # Both pillars strong
             )
             
             if strong_analysis_override:
@@ -253,47 +364,39 @@ class StockAnalyzer:
             min_backtest_return = 0
             threshold_reason = "Initial analysis - backtest not considered"
         
+        # Get gate toggle
+        require_all_gates = RECOMMENDATION_THRESHOLDS.get('require_all_gates', True)
+        
         # Enhanced recommendation logic - more flexible and nuanced
-        technical_minimum = RECOMMENDATION_THRESHOLDS.get('technical_minimum', -0.1)
-        fundamental_minimum = RECOMMENDATION_THRESHOLDS.get('fundamental_minimum', -0.2)
+        technical_minimum = RECOMMENDATION_THRESHOLDS.get('technical_minimum', 0.1)
+        fundamental_minimum = RECOMMENDATION_THRESHOLDS.get('fundamental_minimum', 0.0)
+        
+        # Core gates check
+        passes_gates = True
+        if require_all_gates:
+            if technical_score < technical_minimum:
+                passes_gates = False
+            if fundamental_score < fundamental_minimum:
+                passes_gates = False
         
         # Strong buy: Multiple positive indicators with good backtest
-        if ((technical_score > 0.1 and fundamental_score > 0.1 and sentiment_score > 0) or 
+        if passes_gates and ((technical_score > 0.3 and fundamental_score > 0.3 and sentiment_score > 0) or 
             (combined_score > strong_buy_threshold) or
-            (technical_score > 0.3 and fundamental_score > -0.1) or
-            (fundamental_score > 0.4 and technical_score > -0.1)) and backtest_condition:
+            (technical_score > 0.4 and fundamental_score > 0.1) or
+            (fundamental_score > 0.5 and technical_score > 0.1)) and backtest_condition:
             result['is_recommended'] = True
             result['recommendation_strength'] = 'STRONG_BUY'
-            if technical_score > 0.1 and fundamental_score > 0.1 and sentiment_score > 0:
-                result['reason'].append("All analysis types show positive signals")
+            if technical_score > 0.3 and fundamental_score > 0.3 and sentiment_score > 0:
+                result['reason'].append("All analysis types show strong positive signals")
             else:
-                result['reason'].append("High combined score indicates strong buy opportunity")
+                result['reason'].append("Superior combined score indicates strong buy opportunity")
         
-        # Regular buy: More flexible criteria with negative combined scores allowed
-        elif (combined_score >= buy_threshold and  # Allow negative scores based on threshold
-              ((technical_score > technical_minimum and fundamental_score > fundamental_minimum) or 
-               (fundamental_score > 0 and technical_score > technical_minimum) or 
-               (technical_score > 0.1 and sentiment_score > sentiment_positive_threshold) or 
-               (fundamental_score > 0.1 and sentiment_score > sentiment_positive_threshold) or 
-               (combined_score > buy_threshold))):
+        # Regular buy: Must pass gates
+        elif passes_gates and combined_score >= buy_threshold:
             result['is_recommended'] = True
             result['recommendation_strength'] = 'BUY'
             result['reason'].append("Analysis meets buy criteria with acceptable combined score")
         
-        # Technical-focused buy: Technical analysis is primary for swing trading
-        elif (combined_score >= -0.30 and  # More lenient negative tolerance
-              (technical_score > technical_strong_threshold or 
-               (technical_score > -0.20 and combined_score > -0.25)) and backtest_condition):
-            result['is_recommended'] = True
-            result['recommendation_strength'] = 'WEAK_BUY'
-            result['reason'].append("Technical analysis signals with acceptable risk profile")
-        
-        # Opportunistic buy: Reasonable combined score even with mixed individual scores
-        elif (combined_score > (buy_threshold * 0.5) and combined_score >= -0.25 and  # Allow some negative
-              backtest_condition and not consider_backtest):
-            result['is_recommended'] = True
-            result['recommendation_strength'] = 'OPPORTUNISTIC_BUY'
-            result['reason'].append("Moderate combined score suggests potential opportunity")
         
         else:
             result['is_recommended'] = False

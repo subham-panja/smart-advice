@@ -1,6 +1,16 @@
 import os
 import logging
 
+# Data Science Library Threading Limits
+# Essential for preventing lock contention during multiprocessing.
+# This MUST be set before importing numpy/scipy/sklearn/pandas.
+LIBRARY_MAX_THREADS = '1'
+os.environ['OMP_NUM_THREADS'] = LIBRARY_MAX_THREADS
+os.environ['OPENBLAS_NUM_THREADS'] = LIBRARY_MAX_THREADS
+os.environ['MKL_NUM_THREADS'] = LIBRARY_MAX_THREADS
+os.environ['VECLIB_MAXIMUM_THREADS'] = LIBRARY_MAX_THREADS
+os.environ['NUMEXPR_NUM_THREADS'] = LIBRARY_MAX_THREADS
+
 # Flask configuration
 SECRET_KEY = 'your_super_secret_key_here'  # Change this for production!
 
@@ -109,28 +119,36 @@ TIMEOUT_SECONDS = 10  # Faster timeout for non-responsive calls
 RATE_LIMIT_DELAY = 2.0  # Reduced rate limit delay
 BACKOFF_MULTIPLIER = 1.5  # Reduced backoff multiplier
 
+# Multiprocessing pipeline configuration
+# When enabled, uses a two-phase pipeline: threads for I/O, processes for CPU work
+USE_MULTIPROCESSING_PIPELINE = True   # Toggle: True = multiprocessing, False = legacy threading
+NUM_WORKER_PROCESSES = 8              # Optimized for Apple Silicon M1 (8 physical cores)
+THREADS_PER_PROCESS = 1               # Actual threading is locked to 1 via LIBRARY_MAX_THREADS above
+DATA_FETCH_THREADS = 16               # Efficient network I/O concurrency for Mac M1
+
 # Data purge configuration
 DATA_PURGE_DAYS = 7  # Number of days to keep old data (recommendations and backtest results)
 REMOVE_OLD_DATA_ON_EACH_RUN = True  # NEW: If True, purges old data before each analysis run
 # WARNING: Setting DATA_PURGE_DAYS to 0 will DELETE ALL DATA every time analysis runs!
 
 # Logging configuration
-PERSIST_LOGGING = False  # If False, app.log will be reset on each run
+PERSIST_LOGGING = True  # If False, app.log will be reset on each run
 
-# BALANCED: Weights spread across enabled pillars for quality filtering
+# SWING TRADING WEIGHTS: Only active pillars get weight.
+# If a module is disabled in ANALYSIS_CONFIG, set its weight to 0.0 here.
 ANALYSIS_WEIGHTS = {
-    'technical': 0.50,    # Technical weight (50%) - Primary for swing entry
-    'fundamental': 0.30,  # Fundamental weight (30%) - Raised to filter quality stocks
-    'sentiment': 0.10,    # Sentiment weight (10%) - Risk events only
-    'sector': 0.05,       # Sector weight (5%)
-    'predictive': 0.03,   # Predictive weight (3%)
-    'rl_agent': 0.02      # RL agent weight (2%)
+    'technical': 0.60,    # Technical weight (60%) - Primary for swing entry
+    'fundamental': 0.40,  # Fundamental weight (40%) - Quality stock filtering
+    'sentiment': 0.00,    # Sentiment weight (0%) - DISABLED in ANALYSIS_CONFIG
+    'sector': 0.00,       # Sector weight (0%) - DISABLED
+    'predictive': 0.00,   # Predictive weight (0%) - DISABLED
+    'rl_agent': 0.00      # RL agent weight (0%) - DISABLED
 }
 
-# REALISTIC 2024 MARKET CONDITIONS: Calibrated for Indian equity market
+# SWING TRADING THRESHOLDS: Calibrated for Indian equity market
 RECOMMENDATION_THRESHOLDS = {
-    'strong_buy_combined': 0.40,     # Lowered from 0.50 — fewer stocks pass 0.50 in bear phases
-    'buy_combined': 0.15,            # Moderate positive combined score is sufficient
+    'strong_buy_combined': 0.45,     # High bar for strong buy — multiple pillars must align
+    'buy_combined': 0.20,            # Raised to 0.20 — only recommend clearly positive setups
     'technical_strong_buy': 0.40,    # Threshold for a clean technical setup
     'sell_combined': -0.20,
     'sentiment_positive': 0.10,
@@ -138,11 +156,11 @@ RECOMMENDATION_THRESHOLDS = {
     'sentiment_cap_positive': 0.30,
     'sentiment_cap_negative': -0.60,
     'min_backtest_return': 0.5,      # Lowered to 0.5% CAGR — screens out truly losing strategies
-    'technical_minimum': 0.08,       # Require a mild positive technical signal
-    'fundamental_minimum': 0.05,     # Require slightly positive fundamentals
+    'technical_minimum': 0.15,       # Require a mild positive technical signal
+    'fundamental_minimum': 0.10,     # Require slightly positive fundamentals
     'volume_confirmation_required': True,
     'market_trend_weight': 0.3,
-    'require_all_gates': False,      # Keep flexible — not all pillars active
+    'require_all_gates': True,       # ENABLED: Ensure all core pillars pass minima
     'min_risk_reward_ratio': 1.8,
     'sector_filter_enabled': False,
     'min_sector_score': -0.5

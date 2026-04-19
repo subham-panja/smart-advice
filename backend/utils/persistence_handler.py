@@ -43,7 +43,7 @@ class PersistenceHandler:
                 logger.info(f"Skipping {recommendation_strength} for {analysis_result.get('symbol', 'UNKNOWN')}")
                 return True
             
-            valid_buy_recommendations = ['STRONG_BUY', 'BUY', 'WEAK_BUY', 'OPPORTUNISTIC_BUY']
+            valid_buy_recommendations = ['STRONG_BUY', 'BUY']
             if recommendation_strength not in valid_buy_recommendations:
                 return True
             

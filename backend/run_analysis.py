@@ -7,33 +7,32 @@ This script automatically analyzes all NSE stocks and saves recommendations to t
 Designed to be run via cron job every hour.
 """
 
-# Fix OpenMP/threading issues on macOS - MUST be set before importing numpy/scipy/sklearn
 import os
-os.environ['OMP_NUM_THREADS'] = '1'
-os.environ['OPENBLAS_NUM_THREADS'] = '1'
-os.environ['MKL_NUM_THREADS'] = '1'
-os.environ['VECLIB_MAXIMUM_THREADS'] = '1'
-os.environ['NUMEXPR_NUM_THREADS'] = '1'
+import sys
+
+# Add the project root to the Python path
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+# Load config to apply OpenMP/threading limits before importing other libraries
+import config
 
 import gc
-import sys
-import config
 import time
 from datetime import datetime
 from typing import Dict, List, Any
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
 
-# Add the project root to the Python path
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-
 from app import create_app
 from scripts.analyzer import StockAnalyzer
+from scripts.data_fetcher import get_historical_data, get_all_nse_symbols
 from utils.logger import setup_logging
 from utils.cache_manager import get_cache_manager
 from utils.persistence_handler import PersistenceHandler
 from utils.stock_scanner import StockScanner
-from config import MAX_WORKER_THREADS, BATCH_SIZE, REQUEST_DELAY
+from config import (MAX_WORKER_THREADS, BATCH_SIZE, REQUEST_DELAY,
+                    USE_MULTIPROCESSING_PIPELINE, NUM_WORKER_PROCESSES,
+                    DATA_FETCH_THREADS, HISTORICAL_DATA_PERIOD)
 
 # Initialize logger variable (will be configured based on verbose flag in AutomatedStockAnalysis)
 logger = None
@@ -152,22 +151,170 @@ class AutomatedStockAnalysis:
             logger.info(f"Found {total_stocks} {symbol_type} stocks to analyze")
         else:
             print(f"\rAnalyzing {total_stocks} {symbol_type} stocks...", flush=True)
-            
+        
+        # Branch: Multiprocessing pipeline vs legacy threading
+        use_mp = config.USE_MULTIPROCESSING_PIPELINE and not single_threaded
+        if use_mp:
+            self._run_multiprocessing_pipeline(symbols_list, filtered_symbols, total_stocks)
+        else:
+            self._run_legacy_threaded(symbols_list, total_stocks, batch_size, single_threaded)
+    
+    def _fetch_single_stock_data(self, symbol: str) -> Dict[str, Any]:
+        """Fetch historical data for one stock (used by Phase 1 threads)."""
+        try:
+            fresh = self.app.config.get('FRESH_DATA', False)
+            period = self.app.config.get('HISTORICAL_DATA_PERIOD', HISTORICAL_DATA_PERIOD)
+            data = get_historical_data(symbol, period, fresh=fresh)
+            return {'symbol': symbol, 'data': data, 'success': True}
+        except Exception as e:
+            logger.error(f"Failed to fetch data for {symbol}: {e}")
+            return {'symbol': symbol, 'data': None, 'success': False}
+    
+    def _run_multiprocessing_pipeline(self, symbols_list, symbol_names, total_stocks):
+        """
+        Two-phase pipeline:
+          Phase 1: Threaded I/O to fetch all historical data concurrently
+          Phase 2: Multiprocessing pool for CPU-heavy TA-Lib / backtest analysis
+          Phase 3: Main process saves results to MongoDB
+        """
+        import multiprocessing
+        from utils.parallel_worker import init_worker, analyze_stock_worker
+        
+        num_processes = config.NUM_WORKER_PROCESSES
+        fetch_threads = config.DATA_FETCH_THREADS
+        
+        logger.info(f"=== MULTIPROCESSING PIPELINE ===")
+        logger.info(f"Phase 1: {fetch_threads} threads for data fetching")
+        logger.info(f"Phase 2: {num_processes} processes for analysis")
+        
+        # ---- PHASE 1: Threaded data fetch ----
+        phase1_start = datetime.now()
+        fetched_data = {}  # symbol -> DataFrame
+        fetch_failed = 0
+        
+        if self.verbose:
+            logger.info(f"Phase 1: Fetching data for {total_stocks} stocks...")
+        else:
+            print(f"\rPhase 1: Fetching data for {total_stocks} stocks...", flush=True)
+        
+        with ThreadPoolExecutor(max_workers=fetch_threads) as executor:
+            future_map = {
+                executor.submit(self._fetch_single_stock_data, sym): sym 
+                for sym in symbols_list
+            }
+            for future in as_completed(future_map):
+                result = future.result()
+                sym = result['symbol']
+                if result['success'] and result['data'] is not None and not result['data'].empty:
+                    fetched_data[sym] = result['data']
+                else:
+                    fetch_failed += 1
+        
+        phase1_time = (datetime.now() - phase1_start).total_seconds()
+        logger.info(f"Phase 1 complete: {len(fetched_data)} fetched, {fetch_failed} failed in {phase1_time:.1f}s")
+        if not self.verbose:
+            print(f"\rPhase 1 done: {len(fetched_data)} stocks fetched in {phase1_time:.1f}s", flush=True)
+        
+        if not fetched_data:
+            logger.error("No data fetched. Aborting analysis.")
+            return
+        
+        # ---- PHASE 2: Multiprocessing analysis ----
+        phase2_start = datetime.now()
+        
+        # Build serializable config (exclude non-picklable Flask objects)
+        serializable_config = {
+            'ANALYSIS_CONFIG': dict(config.ANALYSIS_CONFIG),
+            'HISTORICAL_DATA_PERIOD': config.HISTORICAL_DATA_PERIOD,
+            'FRESH_DATA': self.app.config.get('FRESH_DATA', False),
+        }
+        
+        # Prepare work items: convert DataFrames to dicts for pickling
+        work_items = []
+        for sym, df in fetched_data.items():
+            company = symbol_names.get(sym, sym)
+            work_items.append((
+                sym,
+                company,
+                df.to_dict(),           # Serializable dict
+                df.index.strftime('%Y-%m-%d %H:%M:%S').tolist(),  # Index as strings
+                serializable_config
+            ))
+        
+        if self.verbose:
+            logger.info(f"Phase 2: Processing {len(work_items)} stocks across {num_processes} processes...")
+        else:
+            print(f"\rPhase 2: Analyzing {len(work_items)} stocks across {num_processes} processes...", flush=True)
+        
+        # Use 'spawn' to avoid fork-safety issues with TA-Lib/numpy on macOS
+        ctx = multiprocessing.get_context('spawn')
+        results = []
+        
+        with ctx.Pool(processes=num_processes, initializer=init_worker) as pool:
+            for i, result in enumerate(pool.imap_unordered(analyze_stock_worker, work_items)):
+                results.append(result)
+                if not self.verbose:
+                    pct = ((i + 1) / len(work_items)) * 100
+                    sym_name = result.get('symbol', '')
+                    bar_len = 30
+                    filled = int(bar_len * (i + 1) // len(work_items))
+                    bar = '█' * filled + '-' * (bar_len - filled)
+                    print(f"\rPhase 2: |{bar}| {pct:.1f}% ({i+1}/{len(work_items)}) | {sym_name}", end='', flush=True)
+        
+        phase2_time = (datetime.now() - phase2_start).total_seconds()
+        if not self.verbose:
+            print()  # Newline after progress bar
+        logger.info(f"Phase 2 complete: {len(results)} analyzed in {phase2_time:.1f}s")
+        
+        # ---- PHASE 3: Save results (main process) ----
+        phase3_start = datetime.now()
+        recommended_count = 0
+        failed_count = 0
+        
+        for r in results:
+            if r['success']:
+                self.save_backtest_results(r['result'])
+                if self.save_recommendation(r['result']):
+                    if r['recommended']:
+                        recommended_count += 1
+                else:
+                    failed_count += 1
+            else:
+                failed_count += 1
+        
+        phase3_time = (datetime.now() - phase3_start).total_seconds()
+        total_time = (datetime.now() - self.start_time).total_seconds()
+        
+        # Final summary
+        logger.info(f"=== PIPELINE COMPLETE ===")
+        logger.info(f"Phase 1 (fetch): {phase1_time:.1f}s | Phase 2 (analyze): {phase2_time:.1f}s | Phase 3 (save): {phase3_time:.1f}s")
+        logger.info(f"Total: {total_time/60:.1f} min | {len(results)} processed | {recommended_count} recommended | {failed_count} failed")
+        logger.info(f"Avg per stock: {total_time/len(results):.1f}s")
+        
+        try:
+            from database import get_mongodb
+            db = get_mongodb()
+            total_recs = db.recommended_shares.count_documents({})
+            logger.info(f"Total recommendations in MongoDB: {total_recs}")
+        except Exception as e:
+            logger.error(f"Error getting total recommendations count: {e}")
+    
+    def _run_legacy_threaded(self, symbols_list, total_stocks, batch_size, single_threaded):
+        """Original threaded approach (fallback when USE_MULTIPROCESSING_PIPELINE = False)."""
+        logger.info(f"Using LEGACY threaded pipeline")
+        
         processed_count = 0
         recommended_count = 0
         not_recommended_count = 0
         failed_count = 0
         
-        # Use batch size from config if not specified
         if batch_size is None:
             batch_size = BATCH_SIZE
         
-        # Use full thread pool for better performance
         effective_threads = MAX_WORKER_THREADS
         
         if self.verbose:
             logger.info(f"Using {effective_threads} threads for processing {total_stocks} stocks")
-            logger.info(f"Processing {total_stocks} stocks in batches of {batch_size} using {effective_threads} threads")
         
         # Process stocks in batches
         for i in range(0, total_stocks, batch_size):
@@ -266,7 +413,8 @@ class AutomatedStockAnalysis:
             else:
                 # Fallback progress display if no callback is set
                 progress_percent = (processed_count / total_stocks) * 100
-                print(f"\rProgress: {progress_percent:.1f}% ({processed_count}/{total_stocks}) - {recommended_count} recommendations", end='', flush=True)
+                current_stock_symbol = batch[-1] if batch else ''
+                print(f"\rProgress: {progress_percent:.1f}% ({processed_count}/{total_stocks}) | {current_stock_symbol} | {recommended_count} recs", end='', flush=True)
         
         # Final summary
         total_time = (datetime.now() - self.start_time).total_seconds()
@@ -412,14 +560,14 @@ def main():
             # Setup progress callback for non-verbose mode
             last_progress_update = [0]  # Use list to allow modification in nested function
             
-            def progress_callback(processed, total, recommendations):
+            def progress_callback(processed, total, recommendations, current_stock=''):
                 progress_percent = (processed / total) * 100
                 # Only update every 2% or when complete to show more frequent updates
                 if progress_percent - last_progress_update[0] >= 2 or processed == total:
                     bar_length = 30
                     filled_length = int(bar_length * processed // total)
                     bar = '█' * filled_length + '-' * (bar_length - filled_length)
-                    print(f"\rProgress: |{bar}| {progress_percent:.1f}% ({processed}/{total}) - {recommendations} recommendations", end='', flush=True)
+                    print(f"\rProgress: |{bar}| {progress_percent:.1f}% ({processed}/{total}) | {current_stock} | {recommendations} recs", end='', flush=True)
                     last_progress_update[0] = progress_percent
             
             analyzer.progress_callback = progress_callback
