@@ -17,6 +17,7 @@ os.environ['NUMEXPR_NUM_THREADS'] = '1'
 
 import gc
 import sys
+import config
 import time
 from datetime import datetime
 from typing import Dict, List, Any
@@ -975,6 +976,7 @@ def main():
     parser.add_argument('--verbose', action='store_true', help='Enable verbose logging with detailed output')
     parser.add_argument('--single-threaded', action='store_true', help='Use single-threaded mode for debugging (slower but more stable)')
     parser.add_argument('--disable-volume-filter', action='store_true', help='Disable volume-based filtering for analysis')
+    parser.add_argument('--fresh-data', action='store_true', help='Force fresh data fetch (no cache for today)')
     parser.add_argument('--fast', action='store_true', help='Enable fast mode - skip cache cleaning and database purge for maximum speed')
     
     args = parser.parse_args()
@@ -1016,6 +1018,19 @@ def main():
             analyzer.app.config['DATA_PURGE_DAYS'] = args.purge_days
             if args.verbose:
                 logger.info(f"Data purge days set to {args.purge_days} (from CLI argument)")
+        
+        # Override config if disable-volume-filter provided
+        if args.disable_volume_filter:
+            analyzer.app.config['ENABLE_VOLUME_FILTER'] = False
+            config.ENABLE_VOLUME_FILTER = False
+            if args.verbose:
+                logger.info("Volume filter disabled via CLI argument")
+        
+        # Set fresh data flag
+        if args.fresh_data:
+            analyzer.app.config['FRESH_DATA'] = True
+            if args.verbose:
+                logger.info("Fresh data mode enabled - bypassing cache")
         
         if args.verbose:
             # Verbose mode - logging already configured in constructor

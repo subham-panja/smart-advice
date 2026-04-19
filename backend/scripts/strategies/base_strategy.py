@@ -14,6 +14,7 @@ from typing import Dict, Any, Optional
 from utils.logger import setup_logging
 from utils.enhanced_volume_confirmation import volume_confirmator
 from utils.volume_analysis import get_enhanced_volume_confirmation
+import config
 
 logger = setup_logging()
 
@@ -70,6 +71,10 @@ class BaseStrategy(ABC):
             if raw_signal == 0 or len(data) < 20:
                 return raw_signal
             
+            # Skip volume filtering if disabled in config
+            if hasattr(config, 'ENABLE_VOLUME_FILTER') and not config.ENABLE_VOLUME_FILTER:
+                return raw_signal
+
             # Apply enhanced volume filtering using new system
             filtered_signal, filter_reason = volume_confirmator.filter_signal_by_volume(
                 raw_signal, data, require_confirmation=True

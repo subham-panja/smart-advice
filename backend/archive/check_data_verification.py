@@ -4,7 +4,11 @@ from datetime import datetime
 def check_mongodb():
     try:
         client = pymongo.MongoClient("mongodb://localhost:27017/")
+        print("Connected to MongoDB")
+        print("Databases:", client.list_database_names())
+        
         db = client["super_advice"]
+        print("Collections in super_advice:", db.list_collection_names())
         
         # Check recommended_shares collection
         rec_collection = db["recommended_shares"]

@@ -116,7 +116,8 @@ class StockAnalyzer:
             logger.debug(f"Starting technical analysis for {symbol}")
             
             try:
-                historical_data = get_historical_data(symbol, app_config.get('HISTORICAL_DATA_PERIOD', HISTORICAL_DATA_PERIOD))
+                fresh_data = app_config.get('FRESH_DATA', False)
+                historical_data = get_historical_data(symbol, app_config.get('HISTORICAL_DATA_PERIOD', HISTORICAL_DATA_PERIOD), fresh=fresh_data)
                 logger.debug(f"Retrieved {len(historical_data)} days of historical data for {symbol}")
                 
                 if historical_data.empty:
@@ -331,7 +332,7 @@ class StockAnalyzer:
                 logger.debug(f"Starting trade-level analysis for {symbol}")
                 
                 try:
-                    trade_analysis = self.analyze(symbol)
+                    trade_analysis = self.analyze(symbol, fresh=app_config.get('FRESH_DATA', False))
                     logger.debug(f"Trade-level analysis complete for {symbol}: {trade_analysis.get('recommendation', 'UNKNOWN')}")
                     
                     # Merge trade analysis into main result
@@ -654,7 +655,7 @@ class StockAnalyzer:
             'all_results': results
         }
     
-    def analyze(self, symbol: str) -> Dict[str, Any]:
+    def analyze(self, symbol: str, fresh: bool = False) -> Dict[str, Any]:
         """
         Compute buy/sell recommendations and timing for a stock.
         
@@ -674,7 +675,7 @@ class StockAnalyzer:
         """
         try:
             # Get historical data
-            historical_data = get_historical_data(symbol, HISTORICAL_DATA_PERIOD)
+            historical_data = get_historical_data(symbol, HISTORICAL_DATA_PERIOD, fresh=fresh)
             
             if historical_data.empty:
                 return {

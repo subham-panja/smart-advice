@@ -311,11 +311,17 @@ def _verify_checksum(path: str) -> bool:
         return False
 
 
-def get_historical_data(symbol: str, period: str = '1y', interval: str = '1d') -> pd.DataFrame:
+def get_historical_data(symbol: str, period: str = '1y', interval: str = '1d', fresh: bool = False) -> pd.DataFrame:
     """
     Fetch historical stock data using yfinance with caching.
     Supports multiple intervals ('1d', '1h', '4h').
     NSE symbols need '.NS' suffix for yfinance.
+    
+    Args:
+        symbol: Stock symbol
+        period: Data period (e.g. '1y')
+        interval: Data interval (e.g. '1d')
+        fresh: If True, force fresh data fetch (ignore cache unless it's from today)
     """
     # Use absolute path for cache directory
     backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -326,52 +332,76 @@ def get_historical_data(symbol: str, period: str = '1y', interval: str = '1d') -
         os.path.join(cache_dir, f"{symbol}_{period}_{interval}_yf.csv"),
     ]
 
-    # Load from the freshest valid cache if available
-    try:
-        freshest_path = None
-        freshest_mtime = -1
+    # Check if we can use cache
+    use_cache = True
+    if fresh:
+        use_cache = False
+        # If we have a cache file from TODAY, we can still use it even if fresh=True
+        # because it means we already fetched it today
         for path in provider_candidates:
             if os.path.exists(path):
-                if not _verify_checksum(path):
-                    logger.warning(f"Checksum mismatch for cache {path}; ignoring")
-                    continue
-                mtime = os.path.getmtime(path)
-                if mtime > freshest_mtime:
-                    freshest_mtime = mtime
-                    freshest_path = path
-        if freshest_path:
-            # Try to read with different possible index column names
-            for index_col in ['Datetime', 'Date', 0]:
                 try:
-                    data = pd.read_csv(freshest_path, index_col=index_col, parse_dates=True)
-                    logger.info(f"Loaded {len(data)} data points for {symbol} ({interval}) from cache: {os.path.basename(freshest_path)}")
-                    # Freshness check (<=3 days old)
-                    if not data.empty:
-                        try:
-                            last_ts = data.index[-1]
-                            if isinstance(last_ts, pd.Timestamp):
-                                age_days = (pd.Timestamp.now(tz=last_ts.tz) - last_ts).days if last_ts.tzinfo else (pd.Timestamp.now() - last_ts).days
-                                if age_days <= 3:
-                                    return data
+                    mtime = os.path.getmtime(path)
+                    file_date = datetime.fromtimestamp(mtime).date()
+                    today = datetime.now().date()
+                    if file_date == today:
+                        # Cache is from today, so it is fresh!
+                        use_cache = True
+                        logger.info(f"Cache for {symbol} is from today ({file_date}), using it despite fresh=True")
+                        break
+                except Exception:
+                    pass
+        
+        if not use_cache:
+            logger.info(f"Fresh data requested for {symbol}, bypassing cache")
+
+    # Load from the freshest valid cache if available and allowed
+    try:
+        if use_cache:
+            freshest_path = None
+            freshest_mtime = -1
+            for path in provider_candidates:
+                if os.path.exists(path):
+                    if not _verify_checksum(path):
+                        logger.warning(f"Checksum mismatch for cache {path}; ignoring")
+                        continue
+                    mtime = os.path.getmtime(path)
+                    if mtime > freshest_mtime:
+                        freshest_mtime = mtime
+                        freshest_path = path
+            if freshest_path:
+                # Try to read with different possible index column names
+                for index_col in ['Datetime', 'Date', 0]:
+                    try:
+                        data = pd.read_csv(freshest_path, index_col=index_col, parse_dates=True)
+                        logger.info(f"Loaded {len(data)} data points for {symbol} ({interval}) from cache: {os.path.basename(freshest_path)}")
+                        # Freshness check (<=3 days old)
+                        if not data.empty:
+                            try:
+                                last_ts = data.index[-1]
+                                if isinstance(last_ts, pd.Timestamp):
+                                    age_days = (pd.Timestamp.now(tz=last_ts.tz) - last_ts).days if last_ts.tzinfo else (pd.Timestamp.now() - last_ts).days
+                                    if age_days <= 3:
+                                        return data
+                                    else:
+                                        logger.info(f"Cache for {symbol} is stale ({age_days} days); will fetch fresh data")
                                 else:
-                                    logger.info(f"Cache for {symbol} is stale ({age_days} days); will fetch fresh data")
-                            else:
+                                    return data
+                            except Exception:
                                 return data
-                        except Exception:
+                    except (KeyError, ValueError):
+                        continue
+                # Fallback generic read
+                try:
+                    data = pd.read_csv(freshest_path, parse_dates=True)
+                    if not data.empty and len(data.columns) > 0:
+                        first_col = data.columns[0]
+                        if 'date' in first_col.lower():
+                            data.set_index(first_col, inplace=True)
                             return data
-                except (KeyError, ValueError):
-                    continue
-            # Fallback generic read
-            try:
-                data = pd.read_csv(freshest_path, parse_dates=True)
-                if not data.empty and len(data.columns) > 0:
-                    first_col = data.columns[0]
-                    if 'date' in first_col.lower():
-                        data.set_index(first_col, inplace=True)
-                        return data
-            except Exception:
-                pass
-            logger.warning(f"Could not properly load cached data for {symbol}, will fetch fresh data")
+                except Exception:
+                    pass
+                logger.warning(f"Could not properly load cached data for {symbol}, will fetch fresh data")
     except Exception as e:
         logger.error(f"Error loading cached data for {symbol}: {e}")
 

@@ -1,33 +1,37 @@
 Directory structure:
 └── smart_advice/
     ├── README.md
+    ├── COMMANDS.md
     ├── start.bat
     ├── start.sh
-    ├── todo.txt
     ├── backend/
-    │   ├── add_dummy_data.py
     │   ├── app.py
-    │   ├── check_mongodb_data.py
-    │   ├── check_recommendations.py
-    │   ├── check_results.py
-    │   ├── clean_cache.py
     │   ├── config.py
     │   ├── database.py
-    │   ├── debug_expected_return.py
-    │   ├── fix_alembic_analysis.py
-    │   ├── fix_backtest_data.py
-    │   ├── fix_memory_issue.py
-    │   ├── migrate_database.py
-    │   ├── PERFORMANCE_OPTIMIZATION.md
-    │   ├── PERFORMANCE_TEST_RESULTS.md
     │   ├── requirements.txt
     │   ├── run_analysis.py
-    │   ├── run_golden_report.py
-    │   ├── run_offline_analysis.py
-    │   ├── setup_cron.py
     │   ├── start-server.sh
-    │   ├── test_performance.py
-    │   ├── train_ml_models.py
+    │   ├── archive/
+    │   │   ├── add_dummy_data.py
+    │   │   ├── check_data_verification.py
+    │   │   ├── check_mongodb_data.py
+    │   │   ├── check_recommendations.py
+    │   │   ├── check_results.py
+    │   │   ├── clean_cache.py
+    │   │   ├── debug_expected_return.py
+    │   │   ├── debug_recommendation.py
+    │   │   ├── fix_alembic_analysis.py
+    │   │   ├── fix_backtest_data.py
+    │   │   ├── fix_memory_issue.py
+    │   │   ├── migrate_database.py
+    │   │   ├── PERFORMANCE_OPTIMIZATION.md
+    │   │   ├── PERFORMANCE_TEST_RESULTS.md
+    │   │   ├── run_golden_report.py
+    │   │   ├── run_offline_analysis.py
+    │   │   ├── setup_cron.py
+    │   │   ├── test_performance.py
+    │   │   ├── test_screener.py
+    │   │   └── train_ml_models.py
     │   ├── backend/
     │   │   └── offline_analyzer.py
     │   ├── core/
@@ -577,6 +581,181 @@ For enterprise support and custom implementations, please contact the developmen
 
 
 ================================================
+FILE: COMMANDS.md
+================================================
+# Smart Advice - Analysis Commands
+
+## Quick Start Commands
+
+### 1. Analyze ALL Stocks with Quality Recommendations
+```bash
+backend/venv/bin/python backend/run_analysis.py
+```
+- Uses all available NSE stocks
+- Shows progress bar with count
+- Quality thresholds: CAGR ≥ 3%, positive technical/fundamental
+- Saves only strong recommendations to database
+
+### 2. Analyze Limited Number of Stocks (Testing)
+```bash
+# Test with 50 stocks
+backend/venv/bin/python backend/run_analysis.py --max-stocks 50
+
+# Test with 100 stocks
+backend/venv/bin/python backend/run_analysis.py --max-stocks 100
+
+# Full 500 stocks
+backend/venv/bin/python backend/run_analysis.py --max-stocks 500
+```
+
+### 3. Verbose Mode (See Detailed Logs)
+```bash
+backend/venv/bin/python backend/run_analysis.py --max-stocks 50 --verbose
+```
+Shows detailed logs for debugging
+
+### 4. Check Saved Recommendations
+```bash
+backend/venv/bin/python backend/check_recommendations.py
+```
+
+## Current Threshold Settings
+
+**Quality Recommendations** (backend/config.py):
+```python
+'buy_combined': 0.10,              # Positive combined score required
+'min_backtest_return': 3.0,        # Minimum 3% CAGR
+'technical_minimum': 0.05,         # Slightly positive technical
+'fundamental_minimum': 0.05,       # Slightly positive fundamental
+'volume_confirmation_required': True,
+'strong_buy_combined': 0.50,       # Strong signals only
+```
+
+**What Gets Saved**:
+- ✅ Stocks with positive momentum (technical + fundamental)
+- ✅ Backtested strategies with ≥3% annual returns
+- ✅ Volume-confirmed signals (not just price action)
+- ❌ HOLD recommendations (filtered out)
+- ❌ Weak signals with 0% CAGR
+
+## Progress Display
+
+### Normal Mode (Non-Verbose)
+```
+Analyzing 55 actively traded stocks...
+Progress: 45.5% (25/55) - 3 recommendations
+```
+- Clean, single-line progress
+- Shows: percentage, count, recommendations found
+- Updates in real-time
+
+### Verbose Mode
+```
+2025-11-26 15:10:00 - Analyzing SBIN (1/55)
+2025-11-26 15:10:02 - Technical Score: -0.30
+2025-11-26 15:10:02 - Fundamental Score: 0.56
+...detailed logs...
+```
+- Full analysis logs
+- Useful for debugging
+
+## Understanding the Results
+
+### Empty Fields in Database
+Some fields will be empty if advanced analysis is disabled:
+- `alternative_data`: Requires external data sources
+- `market_regime`: Requires regime detection (disabled for speed)
+- `sector_analysis`: Disabled for speed
+- `rl_action`: Reinforcement learning (disabled)
+
+These can be enabled in `backend/config.py` line 147:
+```python
+ANALYSIS_CONFIG = {
+    'sector_analysis': True,        # Enable sector analysis
+    'market_regime_detection': True, # Enable market regime
+    ...
+}
+```
+**Warning**: Enabling these significantly increases analysis time.
+
+### Key Fields to Check
+- `combined_score`: Overall recommendation score
+- `backtest_metrics.cagr`: Historical performance (target: ≥3%)
+- `backtest_metrics.win_rate`: Percentage of winning trades
+- `technical_score`: Short-term momentum
+- `fundamental_score`: Company fundamentals
+- `expected_return_percent`: Target profit %
+- `est_time_to_target`: Expected holding period
+
+## Troubleshooting
+
+### No Recommendations Found
+If you run analysis and get 0 recommendations:
+1. **Normal market conditions**: Sometimes no stocks meet criteria
+2. **Too strict thresholds**: Lower `buy_combined` to 0.05 or `min_backtest_return` to 2.0
+3. **Check logs**: Use `--verbose` to see why stocks are rejected
+
+### Analysis Takes Too Long
+- Use `--max-stocks 50` for quick tests
+- Fundamental and sentiment analysis are slow
+- Each stock takes ~5-10 seconds with full analysis
+
+### MongoDB Connection Issues
+```bash
+# Check MongoDB is running
+cd backend && ../backend/venv/bin/python -c "from database import get_mongodb; print('Connected:', get_mongodb().name)"
+```
+
+## Recommended Workflow
+
+1. **Quick Test** (2-3 minutes):
+   ```bash
+   backend/venv/bin/python backend/run_analysis.py --max-stocks 25
+   ```
+
+2. **Check Results**:
+   ```bash
+   backend/venv/bin/python backend/check_recommendations.py
+   ```
+
+3. **Full Analysis** (30-60 minutes for all stocks):
+   ```bash
+   backend/venv/bin/python backend/run_analysis.py
+   ```
+
+4. **Review on Dashboard**:
+   - Open http://localhost:3000
+   - View recommendations with charts
+
+## Advanced Options
+
+### Clear Old Data First
+```bash
+# Run analysis with data purge (keeps last 7 days)
+backend/venv/bin/python backend/run_analysis.py --purge-days 7
+
+# Clear ALL data and start fresh
+backend/venv/bin/python backend/run_analysis.py --purge-days 0
+```
+
+### Use All Symbols (Not Just Actively Traded)
+```bash
+backend/venv/bin/python backend/run_analysis.py --all
+```
+Note: May include illiquid stocks
+
+## Expected Output
+
+With current quality settings, expect:
+- **50 stocks**: 1-3 recommendations
+- **500 stocks**: 5-15 recommendations  
+- **All stocks (~2000)**: 20-50 recommendations
+
+Quality over quantity! Better to have 10 strong signals than 100 weak ones.
+
+
+
+================================================
 FILE: start.bat
 ================================================
 @echo off
@@ -867,542 +1046,6 @@ wait
 
 
 ================================================
-FILE: todo.txt
-================================================
-Smart Advice - Missing Features & Improvements TODO
-===================================================
-
-Based on analysis of improvement.txt, digest.txt, and current codebase, here are the missing features that need to be implemented:
-
-## HIGH PRIORITY IMPROVEMENTS (Week 1-2)
-
-### Technical Indicators & Analysis
-□ **Add Stock Screener/Scanner Endpoint** ⭐⭐⭐
-  - Implement GET /screener endpoint with server-side filters
-  - Filter by volume spikes, RSI range, price rank, moving averages
-  - This addresses the largest UX gap compared to FinViz/TradingView
-  - Status: NOT IMPLEMENTED (no screener endpoint found in app.py)
-
-□ **Implement Ease of Movement (EoM) Indicator** ⭐⭐⭐
-  - Add EoM oscillator combining volume and price range
-  - Highly recommended in swing-trading guides but missing
-  - Status: NOT FOUND in technical analysis modules
-
-□ **Implement SuperTrend Indicator** ⭐⭐⭐
-  - Add for spotting trend breakouts in swing trading
-  - Include trend-based stops functionality
-  - Status: NOT FOUND in strategies or technical analysis
-
-□ **Add Donchian Channels Indicator** ⭐⭐⭐
-  - Implement for breakout entry strategies
-  - Useful for breakout strategies not currently covered
-  - Status: NOT FOUND in current indicator suite
-
-### Alternative Data Integration
-□ **Enable Google Trends API Integration** ⭐⭐⭐
-  - Activate and expand alternative data pipeline
-  - Flag surges in keyword interest for stocks
-  - Status: alternative_data_fetcher.py exists but lacks Google Trends
-
-□ **Add Social Media Sentiment Analysis** ⭐⭐⭐
-  - Ingest Twitter/Reddit/StockTwits sentiment
-  - Provides early signals for swing timing
-  - Status: Mentioned in digest but not implemented
-
-□ **Implement News Sentiment Feed** ⭐⭐⭐
-  - Use free news API to detect breaking news
-  - Critical for alternative data integration
-  - Status: NOT IMPLEMENTED
-
-## MEDIUM PRIORITY IMPROVEMENTS (Week 3-4)
-
-### Chart Patterns & Recognition
-□ **Add Cup-and-Handle Pattern Recognition** ⭐⭐
-  - Classic pattern in swing-trading tutorials
-  - Status: NOT FOUND in chart_patterns.py
-
-□ **Add Double-Top/Bottom Pattern Recognition** ⭐⭐
-  - Taught in swing-trading courses but missing
-  - Status: NOT FOUND in current pattern detection
-
-□ **Add Camarilla Pivot Point Strategy** ⭐⭐
-  - Pivot setups commonly discussed in forums
-  - Status: NOT FOUND in current pivot strategies
-
-### Visualization Enhancements
-□ **Enhance Charts with TradingView Widget** ⭐⭐
-  - Replace/augment Chart.js with interactive widgets
-  - Allow zooming, annotations, alternate chart types
-  - Status: Current implementation uses Chart.js only
-
-□ **Add Market/Sector Heatmap Visualization** ⭐⭐
-  - Visualize sector performance and correlations
-  - Status: NOT IMPLEMENTED
-
-□ **Add Renko/Heikin-Ashi Chart Types** ⭐⭐
-  - Alternative chart types for swing traders
-  - Status: NOT FOUND in visualization tools
-
-### Backtesting & Analytics
-□ **Enhance Backtesting Interface** ⭐⭐
-  - Portfolio-level testing and optimization
-  - Walk-forward analysis, parameter sweeps
-  - Status: Basic backtesting exists but needs enhancement
-
-□ **Add Walk-Forward Analysis** ⭐⭐
-  - Backtest visualization with equity curves
-  - Status: NOT FOUND in backtesting modules
-
-□ **Add Monte Carlo Risk Simulation** ⭐⭐
-  - Drawdown risk analysis
-  - Status: NOT IMPLEMENTED
-
-□ **Expose Performance Metrics in UI** ⭐⭐
-  - Display Sharpe, Sortino, drawdown clearly
-  - Status: Some metrics coded but may not appear in UI
-
-### Trading Utilities
-□ **Add Trading Journal Interface** ⭐⭐
-  - Record trades and review performance
-  - Essential for trading discipline
-  - Status: NOT IMPLEMENTED
-
-□ **Add Alert/Notification System** ⭐⭐
-  - Email/push notifications for triggers
-  - Status: NOT FOUND in current system
-
-□ **Add Position Sizing Calculator** ⭐⭐
-  - Kelly calculators and position sizing tools
-  - Status: NOT IMPLEMENTED
-
-## LOW PRIORITY IMPROVEMENTS (Week 5+)
-
-### Forecasting Models
-□ **Add ARIMA Forecasting Model** ⭐
-  - Classical statistical forecasting alternative
-  - Status: Current system uses ML/RL only
-
-□ **Add Facebook Prophet Forecasting** ⭐
-  - Time-series forecasting for price projection
-  - Status: NOT IMPLEMENTED
-
-□ **Add VIX Analysis Module** ⭐
-  - Volatility indices and options-derived metrics
-  - Status: NOT FOUND
-
-### Strategy Variations
-□ **Add Gap Trading Variations** ⭐
-  - Expand beyond basic gap strategy
-  - Status: Basic gap_trading.py exists, needs variations
-
-□ **Add Woodie Pivot Point Strategy** ⭐
-  - Additional pivot methods
-  - Status: NOT FOUND
-
-## WHAT'S ALREADY IMPLEMENTED ✅
-
-Based on codebase analysis, these features are ALREADY PRESENT:
-✅ Technical Analysis with TA-Lib (RSI, SMA, EMA, Bollinger Bands, etc.)
-✅ Williams %R, ADX, Aroon, Vortex Indicator strategies
-✅ On Balance Volume (OBV) analysis and divergence detection
-✅ Directional Indicator (DI) crossover strategies
-✅ Basic chart patterns recognition framework
-✅ Alternative data fetcher scaffolding (needs enhancement)
-✅ Backtesting engine (needs portfolio-level features)
-✅ MongoDB data storage and caching
-✅ Flask API with key endpoints (/recommendations, /trigger-analysis, etc.)
-✅ Next.js frontend with Chart.js visualization
-
-## IMMEDIATE ACTION ITEMS (Next 2 Weeks)
-
-1. **Week 1 Focus:**
-   - [ ] Implement stock screener MVP endpoint (highest impact)
-   - [ ] Add EoM and SuperTrend indicators  
-   - [ ] Enable Google Trends in alternative data pipeline
-
-2. **Week 2 Focus:**
-   - [ ] Add social sentiment ingestion
-   - [ ] Implement Donchian Channels
-   - [ ] Add news sentiment feed
-
-## NOTES
-
-- Priority levels: ⭐⭐⭐ = High, ⭐⭐ = Medium, ⭐ = Low
-- Items marked as "NOT IMPLEMENTED" were not found in the codebase
-- Some features may exist in basic form but need significant enhancement
-- Focus on high-impact features that improve user experience first
-- Alternative data pipeline exists but needs activation and expansion
-
-## REFERENCE FILES
-
-- improvement.txt: Detailed analysis of missing features
-- digest.txt: 3-week roadmap and action items
-- backend/scripts/strategies/: Current strategy implementations
-- backend/core/analysis/: Technical analysis modules
-- backend/app.py: Current API endpoints
-
-
-
-================================================
-FILE: backend/add_dummy_data.py
-================================================
-#!/usr/bin/env python3
-"""
-Add Dummy Data Script
-File: add_dummy_data.py
-
-This script adds dummy data to the database in the same format that run_analysis.py saves.
-It creates sample stock recommendations and backtest results for testing purposes.
-"""
-
-import sys
-import os
-from datetime import datetime, timedelta
-import random
-
-# Add the project root to the Python path
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-
-from app import create_app
-from database import get_mongodb, insert_backtest_result
-from utils.logger import setup_logging
-
-# Initialize logging
-logger = setup_logging()
-
-# Sample stock symbols and company names for dummy data
-SAMPLE_STOCKS = [
-    {'symbol': 'RELIANCE', 'company_name': 'Reliance Industries Limited'},
-    {'symbol': 'TCS', 'company_name': 'Tata Consultancy Services Limited'},
-    {'symbol': 'HDFCBANK', 'company_name': 'HDFC Bank Limited'},
-    {'symbol': 'INFY', 'company_name': 'Infosys Limited'},
-    {'symbol': 'ICICIBANK', 'company_name': 'ICICI Bank Limited'},
-    {'symbol': 'HINDUNILVR', 'company_name': 'Hindustan Unilever Limited'},
-    {'symbol': 'ITC', 'company_name': 'ITC Limited'},
-    {'symbol': 'SBIN', 'company_name': 'State Bank of India'},
-    {'symbol': 'BHARTIARTL', 'company_name': 'Bharti Airtel Limited'},
-    {'symbol': 'ASIANPAINT', 'company_name': 'Asian Paints Limited'},
-    {'symbol': 'MARUTI', 'company_name': 'Maruti Suzuki India Limited'},
-    {'symbol': 'LT', 'company_name': 'Larsen & Toubro Limited'},
-    {'symbol': 'AXISBANK', 'company_name': 'Axis Bank Limited'},
-    {'symbol': 'WIPRO', 'company_name': 'Wipro Limited'},
-    {'symbol': 'NESTLEIND', 'company_name': 'Nestle India Limited'}
-]
-
-RECOMMENDATION_STRENGTHS = ['STRONG_BUY', 'BUY', 'WEAK_BUY', 'OPPORTUNISTIC_BUY']
-EFFECTIVENESS_LEVELS = ['Excellent', 'Good', 'Moderate', 'Fair']
-
-def generate_technical_score():
-    """Generate a realistic technical score between 0.3 and 0.9"""
-    return round(random.uniform(0.3, 0.9), 4)
-
-def generate_fundamental_score():
-    """Generate a realistic fundamental score between 0.2 and 0.8"""
-    return round(random.uniform(0.2, 0.8), 4)
-
-def generate_sentiment_score():
-    """Generate a realistic sentiment score between 0.1 and 0.7"""
-    return round(random.uniform(0.1, 0.7), 4)
-
-def generate_combined_score(tech_score, fund_score, sent_score):
-    """Generate combined score based on individual scores"""
-    # Weighted average with some randomness
-    combined = (tech_score * 0.4 + fund_score * 0.4 + sent_score * 0.2)
-    return round(combined + random.uniform(-0.1, 0.1), 4)
-
-def generate_trade_plan():
-    """Generate realistic trade plan data"""
-    buy_price = round(random.uniform(100, 5000), 2)
-    sell_price = round(buy_price * random.uniform(1.05, 1.25), 2)  # 5-25% upside
-    days_to_target = random.randint(30, 180)
-    
-    return {
-        'buy_price': buy_price,
-        'sell_price': sell_price,
-        'days_to_target': days_to_target,
-        'expected_return_percent': round(((sell_price - buy_price) / buy_price) * 100, 2),
-        'est_time_to_target': f"{days_to_target} days"
-    }
-
-def generate_backtest_metrics():
-    """Generate realistic backtest metrics"""
-    cagr = round(random.uniform(5, 25), 2)
-    win_rate = round(random.uniform(45, 75), 2)
-    max_drawdown = round(random.uniform(8, 25), 2)
-    total_trades = random.randint(15, 50)
-    winning_trades = int((win_rate / 100) * total_trades)
-    losing_trades = total_trades - winning_trades
-    
-    # Generate sample transactions
-    transactions = []
-    for i in range(min(10, total_trades)):
-        action = random.choice(['BUY', 'SELL'])
-        price = round(random.uniform(100, 3000), 2)
-        shares = random.randint(10, 100)
-        date = (datetime.now() - timedelta(days=random.randint(1, 365))).strftime('%Y-%m-%d')
-        
-        transactions.append({
-            'strategy': random.choice(['RSI_Strategy', 'MACD_Strategy', 'MA_Strategy']),
-            'date': date,
-            'action': action,
-            'price': price,
-            'shares': shares,
-            'value': round(price * shares, 2)
-        })
-    
-    return {
-        'cagr': cagr,
-        'win_rate': win_rate,
-        'max_drawdown': max_drawdown,
-        'total_trades': total_trades,
-        'winning_trades': winning_trades,
-        'losing_trades': losing_trades,
-        'sharpe_ratio': round(random.uniform(0.8, 2.5), 2),
-        'effectiveness': random.choice(EFFECTIVENESS_LEVELS),
-        'buy_sell_transactions': transactions,
-        'strategy_breakdown': {
-            'RSI_Strategy': {
-                'cagr': round(random.uniform(3, 20), 2),
-                'win_rate': round(random.uniform(40, 70), 2),
-                'max_drawdown': round(random.uniform(5, 20), 2),
-                'total_trades': random.randint(5, 20),
-                'trades': []
-            },
-            'MACD_Strategy': {
-                'cagr': round(random.uniform(4, 22), 2),
-                'win_rate': round(random.uniform(42, 72), 2),
-                'max_drawdown': round(random.uniform(6, 22), 2),
-                'total_trades': random.randint(5, 20),
-                'trades': []
-            }
-        },
-        'date_range': {
-            'start_date': (datetime.now() - timedelta(days=730)).strftime('%Y-%m-%d'),
-            'end_date': datetime.now().strftime('%Y-%m-%d'),
-            'period_days': 730
-        },
-        'capital_info': {
-            'initial_capital': 100000,
-            'final_capital': round(100000 * (1 + cagr/100) ** 2, 2),
-            'total_return': round(((100000 * (1 + cagr/100) ** 2) - 100000) / 100000 * 100, 2)
-        }
-    }
-
-def generate_reason(symbol, recommendation_strength):
-    """Generate a realistic reason for the recommendation"""
-    reasons = [
-        f"{symbol} shows strong technical momentum with bullish indicators across multiple timeframes.",
-        f"Fundamental analysis reveals {symbol} is undervalued with strong growth prospects.",
-        f"{symbol} demonstrates excellent risk-adjusted returns with consistent outperformance.",
-        f"Technical breakout pattern identified in {symbol} with volume confirmation.",
-        f"{symbol} exhibits strong sector rotation momentum with institutional buying.",
-        f"Value opportunity in {symbol} with improving financial metrics and market position."
-    ]
-    
-    strength_modifiers = {
-        'STRONG_BUY': "Exceptional opportunity with high conviction across all metrics.",
-        'BUY': "Solid investment opportunity with favorable risk-reward profile.",
-        'WEAK_BUY': "Moderate opportunity with some upside potential identified.",
-        'OPPORTUNISTIC_BUY': "Tactical opportunity with specific entry conditions met."
-    }
-    
-    base_reason = random.choice(reasons)
-    modifier = strength_modifiers.get(recommendation_strength, "")
-    
-    return f"{base_reason} {modifier}".strip()
-
-def add_dummy_recommendations(count=10):
-    """Add dummy stock recommendations to the database"""
-    logger.info(f"Adding {count} dummy recommendations...")
-    
-    app = create_app()
-    with app.app_context():
-        db = get_mongodb()
-        
-        added_count = 0
-        for i in range(count):
-            # Select a random stock
-            stock = random.choice(SAMPLE_STOCKS)
-            symbol = stock['symbol']
-            company_name = stock['company_name']
-            
-            # Generate scores
-            tech_score = generate_technical_score()
-            fund_score = generate_fundamental_score()
-            sent_score = generate_sentiment_score()
-            combined_score = generate_combined_score(tech_score, fund_score, sent_score)
-            
-            # Generate trade plan
-            trade_plan = generate_trade_plan()
-            
-            # Generate backtest metrics
-            backtest_metrics = generate_backtest_metrics()
-            
-            # Select recommendation strength
-            recommendation_strength = random.choice(RECOMMENDATION_STRENGTHS)
-            
-            # Generate reason
-            reason = generate_reason(symbol, recommendation_strength)
-            
-            # Prepare document for MongoDB (same format as run_analysis.py)
-            doc = {
-                'symbol': symbol,
-                'company_name': company_name,
-                'technical_score': tech_score,
-                'fundamental_score': fund_score,
-                'sentiment_score': sent_score,
-                'combined_score': combined_score,
-                'is_recommended': True,
-                'recommendation_strength': recommendation_strength,
-                'reason': reason,
-                'buy_price': trade_plan['buy_price'],
-                'sell_price': trade_plan['sell_price'],
-                'est_time_to_target': trade_plan['est_time_to_target'],
-                'backtest_metrics': backtest_metrics,
-                'recommendation_date': datetime.utcnow(),
-                'expected_return_percent': trade_plan['expected_return_percent']
-            }
-            
-            try:
-                # Use upsert to insert or update (same as run_analysis.py)
-                result = db.recommended_shares.update_one(
-                    {'symbol': symbol},
-                    {'$set': doc},
-                    upsert=True
-                )
-                
-                if result.upserted_id:
-                    logger.info(f"Added new dummy recommendation: {symbol} - buy_price=${trade_plan['buy_price']:.2f}, sell_price=${trade_plan['sell_price']:.2f}, expected_return={trade_plan['expected_return_percent']:.2f}%")
-                else:
-                    logger.info(f"Updated existing dummy recommendation: {symbol}")
-                
-                added_count += 1
-                
-            except Exception as e:
-                logger.error(f"Error adding dummy recommendation for {symbol}: {e}")
-        
-        logger.info(f"Successfully added {added_count} dummy recommendations")
-
-def add_dummy_backtest_results(count=15):
-    """Add dummy backtest results to the database"""
-    logger.info(f"Adding {count} dummy backtest results...")
-    
-    app = create_app()
-    with app.app_context():
-        added_count = 0
-        
-        for i in range(count):
-            # Select a random stock
-            stock = random.choice(SAMPLE_STOCKS)
-            symbol = stock['symbol']
-            
-            # Generate backtest metrics
-            cagr = round(random.uniform(5, 25), 2)
-            win_rate = round(random.uniform(45, 75), 2)
-            max_drawdown = round(random.uniform(8, 25), 2)
-            total_trades = random.randint(15, 50)
-            winning_trades = int((win_rate / 100) * total_trades)
-            losing_trades = total_trades - winning_trades
-            
-            # Generate additional metrics
-            avg_trade_duration = random.randint(3, 15)
-            avg_profit_per_trade = round(random.uniform(500, 3000), 2)
-            avg_loss_per_trade = round(random.uniform(-2000, -300), 2)
-            largest_win = round(random.uniform(3000, 10000), 2)
-            largest_loss = round(random.uniform(-8000, -2000), 2)
-            sharpe_ratio = round(random.uniform(0.8, 2.5), 2)
-            volatility = round(random.uniform(15, 35), 2)
-            
-            # Date range
-            end_date = datetime.now().strftime('%Y-%m-%d')
-            start_date = (datetime.now() - timedelta(days=730)).strftime('%Y-%m-%d')
-            
-            # Capital info
-            initial_capital = 100000
-            final_capital = round(initial_capital * (1 + cagr/100) ** 2, 2)
-            total_return = round(((final_capital - initial_capital) / initial_capital) * 100, 2)
-            
-            try:
-                # Use the same function as run_analysis.py
-                insert_backtest_result(
-                    symbol=symbol,
-                    period='Overall',
-                    cagr=cagr,
-                    win_rate=win_rate,
-                    max_drawdown=max_drawdown,
-                    total_trades=total_trades,
-                    winning_trades=winning_trades,
-                    losing_trades=losing_trades,
-                    avg_trade_duration=avg_trade_duration,
-                    avg_profit_per_trade=avg_profit_per_trade,
-                    avg_loss_per_trade=avg_loss_per_trade,
-                    largest_win=largest_win,
-                    largest_loss=largest_loss,
-                    sharpe_ratio=sharpe_ratio,
-                    sortino_ratio=round(sharpe_ratio * 1.2, 2),
-                    calmar_ratio=round(cagr / max_drawdown, 2),
-                    volatility=volatility,
-                    start_date=start_date,
-                    end_date=end_date,
-                    initial_capital=initial_capital,
-                    final_capital=final_capital,
-                    total_return=total_return
-                )
-                
-                logger.info(f"Added backtest result for {symbol}: CAGR={cagr:.2f}%, Win Rate={win_rate:.2f}%, Max Drawdown={max_drawdown:.2f}%")
-                added_count += 1
-                
-            except Exception as e:
-                logger.error(f"Error adding dummy backtest result for {symbol}: {e}")
-        
-        logger.info(f"Successfully added {added_count} dummy backtest results")
-
-def main():
-    """Main entry point for the script."""
-    import argparse
-    
-    parser = argparse.ArgumentParser(description='Add dummy data to the database')
-    parser.add_argument('--recommendations', type=int, default=10, help='Number of dummy recommendations to add (default: 10)')
-    parser.add_argument('--backtest-results', type=int, default=15, help='Number of dummy backtest results to add (default: 15)')
-    parser.add_argument('--recommendations-only', action='store_true', help='Add only recommendations')
-    parser.add_argument('--backtest-only', action='store_true', help='Add only backtest results')
-    
-    args = parser.parse_args()
-    
-    try:
-        if args.backtest_only:
-            add_dummy_backtest_results(args.backtest_results)
-        elif args.recommendations_only:
-            add_dummy_recommendations(args.recommendations)
-        else:
-            # Add both by default
-            add_dummy_recommendations(args.recommendations)
-            add_dummy_backtest_results(args.backtest_results)
-        
-        logger.info("Dummy data addition completed successfully!")
-        
-        # Show summary
-        app = create_app()
-        with app.app_context():
-            db = get_mongodb()
-            total_recommendations = db.recommended_shares.count_documents({})
-            total_backtest_results = db.backtest_results.count_documents({})
-            
-            logger.info(f"Total recommendations in database: {total_recommendations}")
-            logger.info(f"Total backtest results in database: {total_backtest_results}")
-        
-        return 0
-        
-    except Exception as e:
-        logger.error(f"Script failed: {e}")
-        return 1
-
-if __name__ == "__main__":
-    sys.exit(main())
-
-
-
-================================================
 FILE: backend/app.py
 ================================================
 from flask import Flask, jsonify, request
@@ -1563,6 +1206,47 @@ def get_recommendations():
         return jsonify({
             "status": "error",
             "error": "Failed to fetch recommendations"
+        }), 500
+
+@app.route('/screener', methods=['GET'])
+def screen_stocks_endpoint():
+    """
+    Filter stocks based on criteria.
+    Query Params:
+    - min_price, max_price
+    - min_volume
+    - min_rsi, max_rsi
+    - min_technical_score, min_fundamental_score, min_sentiment_score, min_combined_score
+    - sector
+    - above_sma_20 (true/false)
+    """
+    try:
+        from database import screen_stocks
+        
+        # Convert query params to dict
+        filters = request.args.to_dict()
+        
+        results = screen_stocks(filters)
+        
+        # Format results similar to recommendations
+        formatted_results = []
+        for rec in results:
+            rec_dict = dict(rec)
+            rec_dict.pop('_id', None)
+            formatted_results.append(rec_dict)
+            
+        return jsonify({
+            "status": "success",
+            "count": len(formatted_results),
+            "filters": filters,
+            "results": formatted_results
+        })
+        
+    except Exception as e:
+        app.logger.error(f"Error screening stocks: {e}")
+        return jsonify({
+            "status": "error",
+            "error": str(e)
         }), 500
 
 @app.route('/test_db', methods=['GET'])
@@ -1767,353 +1451,6 @@ if __name__ == '__main__':
 
 
 ================================================
-FILE: backend/check_mongodb_data.py
-================================================
-#!/usr/bin/env python3
-"""
-Script to check the current state of data in MongoDB recommendations collection
-"""
-import json
-from database import get_mongodb
-import config
-
-def check_recommendation_data():
-    """Check what fields are currently stored in recommendations"""
-    try:
-        db = get_mongodb()
-        collection = db[config.MONGODB_COLLECTIONS['recommended_shares']]
-        
-        # Get the most recent recommendation to see its structure
-        recent_rec = collection.find_one(sort=[('recommendation_date', -1)])
-        
-        if recent_rec:
-            print("Most recent recommendation structure:")
-            print("=" * 50)
-            # Convert ObjectId to string for JSON serialization
-            if '_id' in recent_rec:
-                recent_rec['_id'] = str(recent_rec['_id'])
-            if 'recommendation_date' in recent_rec:
-                recent_rec['recommendation_date'] = recent_rec['recommendation_date'].isoformat()
-            
-            print(json.dumps(recent_rec, indent=2, default=str))
-            
-            print("\n" + "=" * 50)
-            print("Available fields in this document:")
-            for key in recent_rec.keys():
-                print(f"- {key}")
-                
-            # Check if backtest_metrics exists and what it contains
-            if 'backtest_metrics' in recent_rec and recent_rec['backtest_metrics']:
-                print("\nBacktest metrics structure:")
-                print(json.dumps(recent_rec['backtest_metrics'], indent=2, default=str))
-        else:
-            print("No recommendations found in the database")
-            
-        # Count total recommendations
-        total_count = collection.count_documents({})
-        print(f"\nTotal recommendations in database: {total_count}")
-        
-    except Exception as e:
-        print(f"Error checking MongoDB data: {e}")
-
-if __name__ == "__main__":
-    check_recommendation_data()
-
-
-
-================================================
-FILE: backend/check_recommendations.py
-================================================
-#!/usr/bin/env python3
-"""
-Script to check recommendations from the analysis
-"""
-
-import sys
-import os
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-
-from database import get_mongodb
-from datetime import datetime
-
-def main():
-    try:
-        db = get_mongodb()
-        recommendations = list(db.recommended_shares.find({}).sort('recommendation_date', -1))
-        
-        print(f'Total recommendations found: {len(recommendations)}')
-        print()
-        
-        if recommendations:
-            print('Top 10 Recent Recommendations:')
-            print('=' * 80)
-            
-            for i, rec in enumerate(recommendations[:10]):
-                print(f"{i+1}. {rec.get('symbol', 'N/A')} ({rec.get('company_name', 'N/A')})")
-                print(f"   Technical Score: {rec.get('technical_score', 0):.2f}")
-                print(f"   Fundamental Score: {rec.get('fundamental_score', 0):.2f}")
-                print(f"   Sentiment Score: {rec.get('sentiment_score', 0):.2f}")
-                print(f"   Buy Price: ${rec.get('buy_price', 0):.2f}")
-                print(f"   Sell Price: ${rec.get('sell_price', 0):.2f}")
-                print(f"   Est. Time to Target: {rec.get('est_time_to_target', 'N/A')}")
-                
-                backtest = rec.get('backtest_metrics', {})
-                if backtest:
-                    print(f"   Backtest CAGR: {backtest.get('cagr', 0):.2f}%")
-                    print(f"   Backtest Win Rate: {backtest.get('win_rate', 0):.2f}%")
-                    print(f"   Backtest Max Drawdown: {backtest.get('max_drawdown', 0):.2f}%")
-                    print(f"   Effectiveness: {backtest.get('effectiveness', 'Unknown')}")
-                    print(f"   Total Trades: {backtest.get('total_trades', 0)}")
-                
-                print(f"   Reason: {rec.get('reason', 'N/A')}")
-                
-                rec_date = rec.get('recommendation_date')
-                if rec_date:
-                    print(f"   Date: {rec_date.strftime('%Y-%m-%d %H:%M')}")
-                print()
-        else:
-            print('No recommendations found in the database.')
-            
-        # Also check backtest results
-        print("=" * 80)
-        print("BACKTEST RESULTS SUMMARY:")
-        print("=" * 80)
-        
-        backtest_results = list(db.backtest_results.find({}).sort('created_at', -1).limit(20))
-        print(f"Total backtest results: {len(backtest_results)}")
-        
-        if backtest_results:
-            print("\nTop 10 Backtest Results:")
-            for i, result in enumerate(backtest_results[:10]):
-                print(f"{i+1}. {result.get('symbol', 'N/A')} - {result.get('strategy', 'Overall')}")
-                print(f"   CAGR: {result.get('cagr', 0):.2f}%")
-                print(f"   Win Rate: {result.get('win_rate', 0):.2f}%")
-                print(f"   Max Drawdown: {result.get('max_drawdown', 0):.2f}%")
-                print()
-        
-    except Exception as e:
-        print(f"Error: {e}")
-        return 1
-    
-    return 0
-
-if __name__ == "__main__":
-    sys.exit(main())
-
-
-
-================================================
-FILE: backend/check_results.py
-================================================
-#!/usr/bin/env python3
-"""
-Check Analysis Results and System Status
-"""
-
-# Apply OpenMP fix
-import os
-os.environ['OMP_NUM_THREADS'] = '1'
-os.environ['OPENBLAS_NUM_THREADS'] = '1'
-os.environ['MKL_NUM_THREADS'] = '1'
-os.environ['VECLIB_MAXIMUM_THREADS'] = '1'
-os.environ['NUMEXPR_NUM_THREADS'] = '1'
-
-from database import get_mongodb
-from pymongo import MongoClient
-from datetime import datetime
-import json
-
-def check_system_status():
-    """Check system components status."""
-    print("🔍 System Status Check")
-    print("=" * 50)
-    
-    # Check MongoDB connection
-    try:
-        client = MongoClient('localhost', 27017, serverSelectionTimeoutMS=2000)
-        client.server_info()
-        print("✅ MongoDB: Connected")
-        
-        # Check database and collections
-        db = get_mongodb()
-        collections = db.list_collection_names()
-        print(f"✅ Database: super_advice (Collections: {collections})")
-        
-        # Check recommendations
-        recommendations = db.recommended_shares
-        total_recs = recommendations.count_documents({})
-        recent_recs = recommendations.count_documents({
-            'recommendation_date': {
-                '$gte': datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-            }
-        })
-        print(f"📊 Recommendations: {total_recs} total, {recent_recs} today")
-        
-        # Check backtest results
-        backtest = db.backtest_results
-        total_backtests = backtest.count_documents({})
-        print(f"📈 Backtest Results: {total_backtests} entries")
-        
-        return True, db
-        
-    except Exception as e:
-        print(f"❌ MongoDB: Connection failed - {e}")
-        return False, None
-
-def show_latest_recommendations(db, limit=5):
-    """Show latest stock recommendations."""
-    print(f"\n📋 Latest {limit} Recommendations")
-    print("=" * 50)
-    
-    try:
-        recommendations = db.recommended_shares.find(
-        ).sort('recommendation_date', -1).limit(limit)
-        
-        count = 0
-        for rec in recommendations:
-            count += 1
-            symbol = rec.get('symbol', 'Unknown')
-            company = rec.get('company_name', 'Unknown Company')
-            tech_score = rec.get('technical_score', 0)
-            fund_score = rec.get('fundamental_score', 0)
-            sent_score = rec.get('sentiment_score', 0)
-            combined = rec.get('combined_score', 0)
-            strength = rec.get('recommendation_strength', 'UNKNOWN')
-            
-            # Trade plan info
-            trade_plan = rec.get('trade_plan', {})
-            buy_price = trade_plan.get('buy_price', rec.get('buy_price', 0))
-            sell_price = trade_plan.get('sell_price', rec.get('sell_price', 0))
-            
-            # Backtest info
-            backtest = rec.get('backtest_metrics', {})
-            cagr = backtest.get('cagr', 0)
-            win_rate = backtest.get('win_rate', 0)
-            
-            print(f"\n{count}. {symbol} - {company[:30]}...")
-            print(f"   Strength: {strength}")
-            print(f"   Scores: Tech={tech_score:.2f}, Fund={fund_score:.2f}, Sent={sent_score:.2f}")
-            print(f"   Combined: {combined:.2f}")
-            print(f"   Trade: Buy@₹{buy_price:.2f} → Sell@₹{sell_price:.2f}")
-            if cagr:
-                print(f"   Backtest: CAGR={cagr:.1f}%, Win Rate={win_rate:.1f}%")
-            print(f"   Date: {rec.get('recommendation_date', 'Unknown').strftime('%Y-%m-%d %H:%M') if rec.get('recommendation_date') else 'Unknown'}")
-        
-        if count == 0:
-            print("No recommendations found.")
-            
-    except Exception as e:
-        print(f"Error fetching recommendations: {e}")
-
-def show_config_status():
-    """Show current configuration status."""
-    print(f"\n⚙️  Configuration Status")
-    print("=" * 50)
-    
-    try:
-        from config import MAX_WORKER_THREADS, ANALYSIS_CONFIG, STRATEGY_CONFIG
-        
-        print(f"🧵 Max Worker Threads: {MAX_WORKER_THREADS}")
-        
-        print(f"\n📊 Analysis Modules:")
-        enabled_modules = [k for k, v in ANALYSIS_CONFIG.items() if v]
-        disabled_modules = [k for k, v in ANALYSIS_CONFIG.items() if not v]
-        
-        print(f"   ✅ Enabled ({len(enabled_modules)}): {', '.join(enabled_modules)}")
-        print(f"   ❌ Disabled ({len(disabled_modules)}): {', '.join(disabled_modules)}")
-        
-        print(f"\n🎯 Trading Strategies:")
-        enabled_strategies = [k for k, v in STRATEGY_CONFIG.items() if v]
-        print(f"   ✅ Enabled: {len(enabled_strategies)} strategies")
-        
-    except Exception as e:
-        print(f"Error reading config: {e}")
-
-def main():
-    """Main function."""
-    print("🚀 Super Advice Analysis System")
-    print("=" * 50)
-    
-    # Check system status
-    mongodb_ok, db = check_system_status()
-    
-    if mongodb_ok:
-        show_latest_recommendations(db)
-    
-    show_config_status()
-    
-    print(f"\n✨ System Check Complete!")
-    
-    # Show next steps
-    print(f"\n🎯 Next Steps:")
-    print("1. Run test analysis: python run_analysis.py --test")
-    print("2. Run full analysis: python run_analysis.py --max-stocks 50")
-    print("3. View web interface: python app.py")
-    print("4. Check this status: python check_results.py")
-
-if __name__ == "__main__":
-    main()
-
-
-
-================================================
-FILE: backend/clean_cache.py
-================================================
-#!/usr/bin/env python3
-"""
-Cache Cleanup Script
-File: clean_cache.py
-
-A utility script to clean corrupted cache files that might be causing errors.
-"""
-
-import sys
-import os
-
-# Add the project root to the Python path
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-
-from utils.cache_manager import get_cache_manager
-from utils.logger import setup_logging
-
-def main():
-    """Clean corrupted cache files."""
-    logger = setup_logging()
-    
-    logger.info("Starting cache cleanup...")
-    
-    try:
-        cache_manager = get_cache_manager()
-        
-        # Clean corrupted cache files
-        cleaned_count = cache_manager.clean_corrupted_cache_files()
-        
-        if cleaned_count > 0:
-            logger.info(f"Successfully cleaned {cleaned_count} corrupted cache files")
-        else:
-            logger.info("No corrupted cache files found")
-        
-        # Get cache stats
-        stats = cache_manager.get_cache_stats()
-        
-        if stats:
-            logger.info(f"Cache stats after cleanup:")
-            logger.info(f"  Total files: {stats.get('total_files', 0)}")
-            logger.info(f"  Total size: {stats.get('total_size_mb', 0):.2f} MB")
-            logger.info(f"  File types: {stats.get('file_types', {})}")
-        
-        return 0
-        
-    except Exception as e:
-        logger.error(f"Error during cache cleanup: {e}")
-        return 1
-
-if __name__ == "__main__":
-    sys.exit(main())
-
-
-
-================================================
 FILE: backend/config.py
 ================================================
 import os
@@ -2200,7 +1537,7 @@ STRATEGY_CONFIG = {
 
 # BALANCED: Minimum combined score for recommendation - balanced for quality and quantity
 # Adjusted for realistic recommendations while maintaining quality
-MIN_RECOMMENDATION_SCORE = -0.5  # Very low threshold to test recommendation generation
+MIN_RECOMMENDATION_SCORE = 0.0  # Increased from -0.5 to filter out weak recommendations
 
 # Sentiment analysis configuration
 SENTIMENT_MODEL = 'distilbert-base-uncased-finetuned-sst-2-english'
@@ -2241,23 +1578,23 @@ ANALYSIS_WEIGHTS = {
 
 # SWING TRADING PRECISION: More realistic thresholds for current market conditions
 RECOMMENDATION_THRESHOLDS = {
-    'strong_buy_combined': 0.10,     # More realistic for strong buy
-    'buy_combined': -0.20,           # Allow negative combined scores for BUY
-    'technical_strong_buy': 0.10,    # More realistic technical threshold
-    'sell_combined': -0.35,          # Stricter sell threshold
-    'sentiment_positive': 0.05,      # Lowered sentiment threshold
-    'sentiment_negative': -0.10,     # Balanced sentiment threshold for negative
-    'sentiment_cap_positive': 0.15,  # Cap positive sentiment contribution
-    'sentiment_cap_negative': -0.50, # Cap negative sentiment for risk events
-    'min_backtest_return': 0.0,      # Accept any backtest return for testing
-    'technical_minimum': -0.50,      # Much lower minimum technical score
-    'fundamental_minimum': -0.10,    # Lower minimum fundamental score
-    'volume_confirmation_required': False,  # Disable volume confirmation for testing
-    'market_trend_weight': 0.2,      # Reduced weight for overall market trend
-    'require_all_gates': False,      # Disable all gates requirement for testing
-    'min_risk_reward_ratio': 1.0,    # Lower minimum risk-reward ratio
-    'sector_filter_enabled': False,  # Disable sector regime filter for testing
-    'min_sector_score': -1.0         # Much lower minimum sector score
+    'strong_buy_combined': 0.50,     # Strong signals only
+    'buy_combined': 0.10,            # Require positive combined score
+    'technical_strong_buy': 0.50,    
+    'sell_combined': -0.20,          
+    'sentiment_positive': 0.10,      
+    'sentiment_negative': -0.20,     
+    'sentiment_cap_positive': 0.30,  
+    'sentiment_cap_negative': -0.60, 
+    'min_backtest_return': 3.0,      # Require minimum 3% CAGR for quality
+    'technical_minimum': 0.05,       # Require slightly positive technical
+    'fundamental_minimum': 0.05,     # Require slightly positive fundamental
+    'volume_confirmation_required': True,  # Enable volume confirmation
+    'market_trend_weight': 0.3,      
+    'require_all_gates': False,      # Keep flexible for market conditions
+    'min_risk_reward_ratio': 1.8,    # Good risk/reward
+    'sector_filter_enabled': False,  # Keep disabled for broader coverage
+    'min_sector_score': -0.5         
 }
 
 # Analysis Modules Configuration - OPTIMIZED for SPEED
@@ -2568,6 +1905,75 @@ def get_recommended_shares_with_analytics():
     results = collection.find().sort('recommendation_date', -1)
     return list(results)
 
+def screen_stocks(filters=None):
+    """
+    Screen stocks based on provided filters.
+    
+    Args:
+        filters (dict): Dictionary of filters like min_price, max_price, min_volume, etc.
+        
+    Returns:
+        list: List of matching stock documents
+    """
+    db = get_db()
+    collection = db[current_app.config['MONGODB_COLLECTIONS']['recommended_shares']]
+    
+    query = {}
+    
+    if not filters:
+        return list(collection.find().sort('recommendation_date', -1))
+        
+    # Price filters
+    if 'min_price' in filters or 'max_price' in filters:
+        price_query = {}
+        if 'min_price' in filters:
+            price_query['$gte'] = float(filters['min_price'])
+        if 'max_price' in filters:
+            price_query['$lte'] = float(filters['max_price'])
+        # Check against buy_price (current recommended entry)
+        query['buy_price'] = price_query
+
+    # Score filters
+    if 'min_technical_score' in filters:
+        query['technical_score'] = {'$gte': float(filters['min_technical_score'])}
+        
+    if 'min_fundamental_score' in filters:
+        query['fundamental_score'] = {'$gte': float(filters['min_fundamental_score'])}
+        
+    if 'min_sentiment_score' in filters:
+        query['sentiment_score'] = {'$gte': float(filters['min_sentiment_score'])}
+        
+    if 'min_combined_score' in filters:
+        query['combined_score'] = {'$gte': float(filters['min_combined_score'])}
+
+    # Sector filter
+    if 'sector' in filters:
+        query['sector_analysis.sector'] = filters['sector']
+
+    # RSI filter (nested in detailed_analysis)
+    if 'min_rsi' in filters or 'max_rsi' in filters:
+        rsi_query = {}
+        if 'min_rsi' in filters:
+            rsi_query['$gte'] = float(filters['min_rsi'])
+        if 'max_rsi' in filters:
+            rsi_query['$lte'] = float(filters['max_rsi'])
+        query['detailed_analysis.technical.rsi'] = rsi_query
+        
+    # Volume filter (nested)
+    if 'min_volume' in filters:
+        # Note: Volume might be in 'detailed_analysis.technical.volume' or similar
+        # Depending on how it's stored. Assuming detailed_analysis structure.
+        query['detailed_analysis.technical.volume'] = {'$gte': float(filters['min_volume'])}
+
+    # Moving Average Logic (e.g., Price > SMA20)
+    # This is harder to query directly if not pre-calculated as a boolean.
+    # We'll assume the client filters this or we check against stored SMA values.
+    if 'above_sma_20' in filters and filters['above_sma_20'].lower() == 'true':
+        # Requires $expr to compare two fields
+        query['$expr'] = {'$gt': ['$buy_price', '$detailed_analysis.technical.sma_20']}
+
+    return list(collection.find(query).sort('recommendation_date', -1))
+
 def init_app(app):
     """Register database functions with the Flask app."""
     app.teardown_appcontext(close_db)
@@ -2626,976 +2032,11 @@ class DatabaseManager:
 
 
 ================================================
-FILE: backend/debug_expected_return.py
-================================================
-#!/usr/bin/env python3
-"""
-Debug script to understand why expected returns are similar
-"""
-
-def simulate_calculation(current_price):
-    """Simulate the calculation logic from analyzer.py"""
-    
-    print(f"\n=== DEBUGGING FOR CURRENT_PRICE = ₹{current_price} ===")
-    
-    # Initial values (from HOLD recommendation path)
-    buy_price = current_price * 0.95  # Wait for 5% dip
-    sell_price = current_price * 1.15  # Target 15% gain
-    stop_loss = current_price * 0.90   # 10% stop loss
-    
-    print(f"Initial values:")
-    print(f"  buy_price = {buy_price:.2f} (current * 0.95)")
-    print(f"  sell_price = {sell_price:.2f} (current * 1.15)")
-    print(f"  stop_loss = {stop_loss:.2f} (current * 0.90)")
-    
-    # Calculate initial risk-reward ratio
-    risk = abs(buy_price - stop_loss)
-    reward = abs(sell_price - buy_price)
-    risk_reward_ratio = reward / risk if risk > 0 else 0
-    
-    print(f"\nInitial risk-reward calculation:")
-    print(f"  risk = |{buy_price:.2f} - {stop_loss:.2f}| = {risk:.2f}")
-    print(f"  reward = |{sell_price:.2f} - {buy_price:.2f}| = {reward:.2f}")
-    print(f"  risk_reward_ratio = {risk_reward_ratio:.2f}")
-    
-    # Check if risk-reward enforcement kicks in
-    if risk_reward_ratio < 2.0:
-        print(f"\nRisk-reward ratio {risk_reward_ratio:.2f} < 2.0, enforcing 2.5:1 ratio...")
-        
-        # Adjust sell price to achieve minimum 2:1 ratio
-        risk = abs(buy_price - stop_loss)
-        new_sell_price = buy_price + (risk * 2.5)  # 2.5:1 ratio for good trades
-        
-        print(f"  risk = {risk:.2f}")
-        print(f"  new_sell_price = {buy_price:.2f} + ({risk:.2f} * 2.5) = {new_sell_price:.2f}")
-        
-        sell_price = new_sell_price
-        risk_reward_ratio = 2.5
-    
-    # Calculate expected return percentage
-    expected_return_percent = ((sell_price - buy_price) / buy_price) * 100
-    
-    print(f"\nFinal values:")
-    print(f"  buy_price = ₹{buy_price:.2f}")
-    print(f"  sell_price = ₹{sell_price:.2f}")
-    print(f"  expected_return = {expected_return_percent:.1f}%")
-    print(f"  risk_reward_ratio = {risk_reward_ratio:.2f}")
-    
-    return expected_return_percent
-
-# Test with different stock prices
-test_prices = [100, 500, 1000, 5000, 10000]
-
-for price in test_prices:
-    expected_return = simulate_calculation(price)
-
-
-
-================================================
-FILE: backend/fix_alembic_analysis.py
-================================================
-#!/usr/bin/env python3
-"""
-Quick fix script to regenerate ALEMBICLTD analysis with corrected strategies
-"""
-
-from scripts.analyzer import StockAnalyzer
-from database import get_mongodb
-import config
-import json
-
-def fix_alembic_analysis():
-    """Re-run analysis for ALEMBICLTD with fixed strategies"""
-    
-    # Initialize analyzer
-    analyzer = StockAnalyzer()
-    
-    # Analysis configuration
-    app_config = {
-        'HISTORICAL_DATA_PERIOD': '2y',
-        'SKIP_SENTIMENT': True  # Skip sentiment for faster testing
-    }
-    
-    print("Re-analyzing ALEMBICLTD with fixed strategies...")
-    
-    # Run fresh analysis
-    result = analyzer.analyze_stock('ALEMBICLTD', app_config)
-    
-    print("\nUpdated Analysis Results:")
-    print("=" * 60)
-    print(f"Symbol: {result['symbol']}")
-    print(f"Technical Score: {result['technical_score']:.4f}")
-    print(f"Fundamental Score: {result['fundamental_score']:.4f}")
-    print(f"Sentiment Score: {result['sentiment_score']:.4f}")
-    print(f"Combined Score: {result.get('combined_score', 'N/A')}")
-    print(f"Is Recommended: {result['is_recommended']}")
-    print(f"Reason: {result['reason']}")
-    
-    # Check backtest results
-    if 'backtest' in result:
-        backtest = result['backtest']
-        print(f"\nBacktest Status: {backtest.get('status', 'N/A')}")
-        if backtest.get('status') == 'completed':
-            combined_metrics = backtest.get('combined_metrics', {})
-            print(f"CAGR: {combined_metrics.get('avg_cagr', 0)}%")
-            print(f"Win Rate: {combined_metrics.get('avg_win_rate', 0)}%")
-            print(f"Max Drawdown: {combined_metrics.get('avg_max_drawdown', 0)}%")
-    
-    # Check trade plan
-    if 'trade_plan' in result:
-        trade_plan = result['trade_plan']
-        print(f"\nTrade Plan:")
-        print(f"Buy Price: {trade_plan.get('buy_price', 0)}")
-        print(f"Sell Price: {trade_plan.get('sell_price', 0)}")
-        print(f"Days to Target: {trade_plan.get('days_to_target', 0)}")
-        print(f"Risk/Reward: {trade_plan.get('risk_reward_ratio', 0)}")
-    
-    # Update database with fresh results
-    try:
-        db = get_mongodb()
-        collection = db[config.MONGODB_COLLECTIONS['recommended_shares']]
-        
-        # Remove old entry
-        collection.delete_one({'symbol': 'ALEMBICLTD'})
-        
-        # Insert updated entry if recommended
-        if result['is_recommended']:
-            from models.recommendation import RecommendedShare
-            from datetime import datetime
-            
-            # Create new recommendation object
-            recommendation = RecommendedShare(
-                symbol=result['symbol'],
-                company_name=result['company_name'],
-                technical_score=result['technical_score'],
-                fundamental_score=result['fundamental_score'],
-                sentiment_score=result['sentiment_score'],
-                reason=result['reason'],
-                buy_price=result.get('trade_plan', {}).get('buy_price', 0.0),
-                sell_price=result.get('trade_plan', {}).get('sell_price', 0.0),
-                est_time_to_target=f"{result.get('trade_plan', {}).get('days_to_target', 0)} days"
-            )
-            
-            # Add backtest metrics if available
-            if result.get('backtest', {}).get('status') == 'completed':
-                combined_metrics = result['backtest']['combined_metrics']
-                recommendation.backtest_metrics = {
-                    'cagr': combined_metrics.get('avg_cagr', 0),
-                    'win_rate': combined_metrics.get('avg_win_rate', 0),
-                    'max_drawdown': combined_metrics.get('avg_max_drawdown', 0),
-                    'total_trades': combined_metrics.get('strategies_tested', 0),
-                    'winning_trades': 0,
-                    'losing_trades': 0,
-                    'sharpe_ratio': combined_metrics.get('avg_sharpe_ratio', 0),
-                    'effectiveness': 'Good' if combined_metrics.get('avg_cagr', 0) > 5 else 'Poor',
-                    'buy_sell_transactions': [],
-                    'strategy_breakdown': {},
-                    'date_range': {
-                        'start_date': '',
-                        'end_date': '',
-                        'period_days': 0
-                    },
-                    'capital_info': {
-                        'initial_capital': 100000,
-                        'final_capital': 100000 * (1 + combined_metrics.get('avg_cagr', 0)/100),
-                        'total_return': combined_metrics.get('avg_cagr', 0)
-                    }
-                }
-            
-            # Save to database
-            recommendation.save()
-            print(f"\n✅ Updated ALEMBICLTD recommendation in database")
-        else:
-            print(f"\n❌ ALEMBICLTD not recommended after fixes")
-    
-    except Exception as e:
-        print(f"\n⚠️ Error updating database: {e}")
-    
-    return result
-
-
-if __name__ == "__main__":
-    result = fix_alembic_analysis()
-
-
-
-================================================
-FILE: backend/fix_backtest_data.py
-================================================
-#!/usr/bin/env python3
-"""
-Script to fix empty backtest_metrics data in existing MongoDB records
-This script will:
-1. Find records with incomplete backtest_metrics
-2. Re-calculate proper values from strategy_breakdown data
-3. Update the database with corrected values
-"""
-
-import sys
-import os
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-
-from database import get_mongodb
-import config
-from datetime import datetime, timedelta
-import json
-from utils.logger import setup_logging
-
-logger = setup_logging()
-
-def fix_backtest_metrics():
-    """Fix empty/incomplete backtest_metrics in existing records"""
-    try:
-        db = get_mongodb()
-        collection = db[config.MONGODB_COLLECTIONS['recommended_shares']]
-        
-        # Find all records that need fixing
-        cursor = collection.find({})
-        
-        fixed_count = 0
-        total_count = 0
-        
-        for record in cursor:
-            total_count += 1
-            symbol = record.get('symbol', 'UNKNOWN')
-            
-            logger.info(f"Processing {symbol}...")
-            
-            backtest_metrics = record.get('backtest_metrics', {})
-            if not backtest_metrics:
-                logger.info(f"  {symbol}: No backtest_metrics found, skipping")
-                continue
-            
-            # Check if metrics need fixing
-            needs_fixing = False
-            
-            # Check for empty/zero values in critical fields
-            if (backtest_metrics.get('total_trades', 0) == 0 and 
-                backtest_metrics.get('strategy_breakdown', {})):
-                needs_fixing = True
-                logger.info(f"  {symbol}: total_trades is 0 but has strategy_breakdown")
-            
-            if (not backtest_metrics.get('buy_sell_transactions', []) and 
-                backtest_metrics.get('strategy_breakdown', {})):
-                needs_fixing = True
-                logger.info(f"  {symbol}: buy_sell_transactions is empty")
-            
-            if (backtest_metrics.get('date_range', {}).get('start_date', '') == '' or
-                backtest_metrics.get('date_range', {}).get('period_days', 0) == 0):
-                needs_fixing = True
-                logger.info(f"  {symbol}: date_range is incomplete")
-            
-            if (backtest_metrics.get('capital_info', {}).get('final_capital', 0) == 100000 and
-                backtest_metrics.get('cagr', 0) != 0):
-                needs_fixing = True
-                logger.info(f"  {symbol}: capital_info needs recalculation")
-            
-            if not needs_fixing:
-                logger.info(f"  {symbol}: backtest_metrics looks good, skipping")
-                continue
-            
-            # Fix the metrics
-            fixed_metrics = fix_record_metrics(backtest_metrics, symbol)
-            
-            if fixed_metrics:
-                # Update the record
-                result = collection.update_one(
-                    {'_id': record['_id']},
-                    {'$set': {'backtest_metrics': fixed_metrics}}
-                )
-                
-                if result.modified_count > 0:
-                    fixed_count += 1
-                    logger.info(f"  ✅ {symbol}: Fixed backtest_metrics")
-                else:
-                    logger.warning(f"  ⚠️ {symbol}: Update failed")
-            else:
-                logger.warning(f"  ❌ {symbol}: Could not fix metrics")
-        
-        logger.info(f"\nSummary:")
-        logger.info(f"Total records processed: {total_count}")
-        logger.info(f"Records fixed: {fixed_count}")
-        
-    except Exception as e:
-        logger.error(f"Error fixing backtest data: {e}")
-        raise
-
-def fix_record_metrics(backtest_metrics, symbol):
-    """Fix individual record's backtest_metrics"""
-    try:
-        # Create a copy to modify
-        fixed_metrics = backtest_metrics.copy()
-        
-        # Extract strategy breakdown for calculations
-        strategy_breakdown = fixed_metrics.get('strategy_breakdown', {})
-        
-        if not strategy_breakdown:
-            logger.warning(f"  {symbol}: No strategy_breakdown found, cannot fix")
-            return None
-        
-        # Calculate aggregated values from strategy_breakdown
-        total_trades_sum = 0
-        winning_trades_sum = 0
-        losing_trades_sum = 0
-        valid_strategies = 0
-        all_transactions = []
-        
-        for strategy_name, strategy_data in strategy_breakdown.items():
-            if isinstance(strategy_data, dict):
-                valid_strategies += 1
-                strategy_trades = strategy_data.get('total_trades', 0)
-                strategy_win_rate = strategy_data.get('win_rate', 0)
-                
-                # Accumulate trade counts
-                total_trades_sum += strategy_trades
-                
-                # Calculate winning/losing trades from win rate and total trades
-                if strategy_trades > 0 and strategy_win_rate > 0:
-                    strategy_winning_trades = int((strategy_win_rate / 100) * strategy_trades)
-                    strategy_losing_trades = strategy_trades - strategy_winning_trades
-                    winning_trades_sum += strategy_winning_trades
-                    losing_trades_sum += strategy_losing_trades
-                
-                # Generate some mock transactions since we don't have real trade data
-                trades = strategy_data.get('trades', [])
-                if not trades and strategy_trades > 0:
-                    # Generate some sample transactions based on strategy performance
-                    sample_transactions = generate_sample_transactions(
-                        strategy_name, strategy_trades, strategy_data.get('cagr', 0)
-                    )
-                    all_transactions.extend(sample_transactions)
-        
-        # Update total_trades if it was 0
-        if fixed_metrics.get('total_trades', 0) == 0 and valid_strategies > 0:
-            fixed_metrics['total_trades'] = int(total_trades_sum / valid_strategies)
-            logger.info(f"    Fixed total_trades: {fixed_metrics['total_trades']}")
-        
-        # Update winning/losing trades
-        if valid_strategies > 0:
-            fixed_metrics['winning_trades'] = int(winning_trades_sum / valid_strategies)
-            fixed_metrics['losing_trades'] = int(losing_trades_sum / valid_strategies)
-            logger.info(f"    Fixed winning_trades: {fixed_metrics['winning_trades']}, losing_trades: {fixed_metrics['losing_trades']}")
-        
-        # Fix buy_sell_transactions if empty
-        if not fixed_metrics.get('buy_sell_transactions', []) and all_transactions:
-            fixed_metrics['buy_sell_transactions'] = sorted(
-                all_transactions,
-                key=lambda x: x.get('date', ''),
-                reverse=True
-            )[:50]  # Limit to 50
-            logger.info(f"    Added {len(fixed_metrics['buy_sell_transactions'])} sample transactions")
-        
-        # Fix date_range if incomplete
-        date_range = fixed_metrics.get('date_range', {})
-        if (not date_range.get('start_date', '') or 
-            not date_range.get('end_date', '') or 
-            date_range.get('period_days', 0) == 0):
-            
-            # Set realistic date range (2 years for backtesting)
-            end_date = datetime.now()
-            start_date = end_date - timedelta(days=730)
-            
-            fixed_metrics['date_range'] = {
-                'start_date': start_date.strftime('%Y-%m-%d'),
-                'end_date': end_date.strftime('%Y-%m-%d'),
-                'period_days': 730
-            }
-            logger.info(f"    Fixed date_range: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
-        
-        # Fix capital_info
-        capital_info = fixed_metrics.get('capital_info', {})
-        initial_capital = capital_info.get('initial_capital', 100000)
-        cagr = fixed_metrics.get('cagr', 0)
-        
-        if cagr != 0:
-            # Calculate final_capital based on CAGR and period
-            period_days = fixed_metrics['date_range'].get('period_days', 730)
-            years = period_days / 365.25
-            final_capital = initial_capital * ((1 + cagr / 100) ** years)
-            total_return = ((final_capital - initial_capital) / initial_capital) * 100
-            
-            fixed_metrics['capital_info'] = {
-                'initial_capital': initial_capital,
-                'final_capital': round(final_capital, 2),
-                'total_return': round(total_return, 2)
-            }
-            logger.info(f"    Fixed capital_info: final_capital={final_capital:.2f}, total_return={total_return:.2f}%")
-        
-        return fixed_metrics
-        
-    except Exception as e:
-        logger.error(f"Error fixing metrics for {symbol}: {e}")
-        return None
-
-def generate_sample_transactions(strategy_name, total_trades, cagr):
-    """Generate sample transactions for demonstration purposes"""
-    transactions = []
-    
-    # Generate a few sample transactions based on the strategy performance
-    sample_count = min(5, total_trades // 10)  # Generate up to 5 samples
-    
-    for i in range(sample_count):
-        # Generate dates spread over the past 2 years
-        days_ago = (i + 1) * 60  # Spread transactions every ~2 months
-        trade_date = datetime.now() - timedelta(days=days_ago)
-        
-        # Alternate between BUY and SELL
-        action = 'BUY' if i % 2 == 0 else 'SELL'
-        
-        # Generate reasonable price and share values
-        base_price = 100 + (i * 10)  # Varying prices
-        shares = 100 + (i * 50)  # Varying share counts
-        
-        transaction = {
-            'strategy': strategy_name,
-            'date': trade_date.strftime('%Y-%m-%d'),
-            'action': action,
-            'price': base_price,
-            'shares': shares,
-            'value': base_price * shares
-        }
-        transactions.append(transaction)
-    
-    return transactions
-
-def main():
-    """Main entry point"""
-    logger.info("Starting backtest_metrics fix script...")
-    
-    try:
-        fix_backtest_metrics()
-        logger.info("✅ Backtest metrics fix completed successfully!")
-        
-    except Exception as e:
-        logger.error(f"❌ Script failed: {e}")
-        return 1
-    
-    return 0
-
-if __name__ == "__main__":
-    sys.exit(main())
-
-
-
-================================================
-FILE: backend/fix_memory_issue.py
-================================================
-#!/usr/bin/env python3
-"""
-Temporary fix for memory issues - Forces simplified mode to disable
-memory-intensive modules like sector analysis and market regime detection
-"""
-
-import sys
-import os
-import subprocess
-
-def main():
-    """Run analysis with memory-intensive modules disabled by setting environment variables"""
-    
-    # Set environment variables to force simplified mode behavior
-    env = os.environ.copy()
-    env['FORCE_SIMPLIFIED_MODE'] = '1'
-    env['SKIP_SECTOR_ANALYSIS'] = '1'
-    env['SKIP_MARKET_REGIME'] = '1'
-    env['SKIP_SENTIMENT'] = '1'
-    
-    # Get command line arguments
-    args = sys.argv[1:] if len(sys.argv) > 1 else ['--max-stocks', '1']
-    
-    # Run the analysis with modified environment
-    cmd = ['python', 'run_analysis.py'] + args
-    
-    print("🔧 Running analysis with memory-intensive modules disabled...")
-    print(f"Command: {' '.join(cmd)}")
-    print("Environment overrides:")
-    print("  - FORCE_SIMPLIFIED_MODE=1")
-    print("  - SKIP_SECTOR_ANALYSIS=1") 
-    print("  - SKIP_MARKET_REGIME=1")
-    print("  - SKIP_SENTIMENT=1")
-    print()
-    
-    try:
-        result = subprocess.run(cmd, env=env, check=False)
-        return result.returncode
-    except KeyboardInterrupt:
-        print("\n⚠️  Analysis interrupted by user")
-        return 130
-    except Exception as e:
-        print(f"❌ Error running analysis: {e}")
-        return 1
-
-if __name__ == "__main__":
-    sys.exit(main())
-
-
-
-================================================
-FILE: backend/migrate_database.py
-================================================
-#!/usr/bin/env python3
-"""
-Standalone database migration script.
-Run this script to update the database schema with new columns and tables.
-"""
-
-import sqlite3
-import os
-import sys
-import shutil
-from datetime import datetime
-
-def check_column_exists(cursor, table_name, column_name):
-    """Check if a column exists in a table."""
-    cursor.execute(f"PRAGMA table_info({table_name})")
-    columns = [column[1] for column in cursor.fetchall()]
-    return column_name in columns
-
-def check_table_exists(cursor, table_name):
-    """Check if a table exists."""
-    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?;", (table_name,))
-    return cursor.fetchone() is not None
-
-def check_index_exists(cursor, index_name):
-    """Check if an index exists."""
-    cursor.execute("SELECT name FROM sqlite_master WHERE type='index' AND name=?;", (index_name,))
-    return cursor.fetchone() is not None
-
-def migrate_database(db_path):
-    """Migrate database schema without data loss."""
-    
-    if not os.path.exists(db_path):
-        print(f"Error: Database file '{db_path}' does not exist.")
-        return False
-    
-    # Backup database before migration
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    backup_path = f"{db_path}.backup_{timestamp}"
-    shutil.copy2(db_path, backup_path)
-    print(f"Database backup created at {backup_path}")
-    
-    try:
-        with sqlite3.connect(db_path) as conn:
-            cursor = conn.cursor()
-            
-            # Check and add missing columns to recommended_shares
-            if not check_column_exists(cursor, 'recommended_shares', 'buy_price'):
-                cursor.execute("""
-                    ALTER TABLE recommended_shares
-                    ADD COLUMN buy_price REAL;
-                """)
-                print("✓ Added buy_price column to recommended_shares")
-            else:
-                print("✓ buy_price column already exists")
-                
-            if not check_column_exists(cursor, 'recommended_shares', 'sell_price'):
-                cursor.execute("""
-                    ALTER TABLE recommended_shares
-                    ADD COLUMN sell_price REAL;
-                """)
-                print("✓ Added sell_price column to recommended_shares")
-            else:
-                print("✓ sell_price column already exists")
-                
-            if not check_column_exists(cursor, 'recommended_shares', 'est_time_to_target'):
-                cursor.execute("""
-                    ALTER TABLE recommended_shares
-                    ADD COLUMN est_time_to_target TEXT;
-                """)
-                print("✓ Added est_time_to_target column to recommended_shares")
-            else:
-                print("✓ est_time_to_target column already exists")
-            
-            conn.commit()
-            
-            # Create backtest_results table if it doesn't exist
-            if not check_table_exists(cursor, 'backtest_results'):
-                cursor.execute("""
-                    CREATE TABLE backtest_results (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        symbol TEXT NOT NULL,
-                        period TEXT NOT NULL,
-                        CAGR REAL,
-                        win_rate REAL,
-                        max_drawdown REAL,
-                        created_at TEXT DEFAULT CURRENT_TIMESTAMP
-                    );
-                """)
-                print("✓ Created backtest_results table")
-            else:
-                print("✓ backtest_results table already exists")
-            
-            # Add index on recommendation_date for faster deletion of old rows
-            if not check_index_exists(cursor, 'idx_recommendation_date'):
-                cursor.execute("""
-                    CREATE INDEX idx_recommendation_date 
-                    ON recommended_shares (recommendation_date);
-                """)
-                print("✓ Created index on recommendation_date")
-            else:
-                print("✓ Index on recommendation_date already exists")
-            
-            conn.commit()
-        
-        print("\n🎉 Migration complete! Database schema is now up to date.")
-        return True
-        
-    except Exception as e:
-        print(f"\n❌ Migration failed: {str(e)}")
-        print(f"Database backup is available at: {backup_path}")
-        return False
-
-def main():
-    """Main function to run the migration."""
-    if len(sys.argv) > 1:
-        db_path = sys.argv[1]
-    else:
-        db_path = "database.db"
-    
-    print(f"Running database migration on: {db_path}")
-    print("=" * 50)
-    
-    success = migrate_database(db_path)
-    
-    if success:
-        print(f"\n✅ Database '{db_path}' has been successfully migrated!")
-        print("You can now use the new features:")
-        print("  - Buy/sell price tracking")
-        print("  - Estimated time to target")
-        print("  - Backtest results storage")
-        print("  - Optimized recommendation date queries")
-    else:
-        print(f"\n❌ Migration failed for database '{db_path}'")
-        sys.exit(1)
-
-if __name__ == "__main__":
-    main()
-
-
-
-================================================
-FILE: backend/PERFORMANCE_OPTIMIZATION.md
-================================================
-# Smart Advice Performance Optimization Summary
-
-## 🚀 Performance Improvements Made
-
-Your `run_analysis.py` script has been significantly optimized for much faster execution. Here's a comprehensive summary of all improvements:
-
-## ⚡ Key Performance Metrics
-
-**Before Optimization:**
-- Threading: 2 threads
-- Batch size: 16 stocks per batch
-- Request delay: 2.0s between stocks
-- Network timeouts: 20-30s
-- Memory management: Garbage collection after every stock
-- Cache cleaning: Always performed
-- Analysis modules: All enabled (including slow ones)
-
-**After Optimization:**
-- Threading: 4 threads (100% increase)
-- Batch size: 8 stocks per batch (50% reduction for faster feedback)
-- Request delay: 0.5s between stocks (75% reduction)
-- Network timeouts: 10-30s (50% reduction)
-- Memory management: Optimized garbage collection
-- Cache cleaning: Optional via fast mode
-- Analysis modules: Heavy modules disabled by default
-
-**Performance Result:**
-- **~0.1 seconds per stock** (from previous ~60+ seconds)
-- **99% faster execution time**
-
-## 🔧 Detailed Optimizations
-
-### 1. Threading & Concurrency Improvements
-- **Increased worker threads** from 2 to 4 for better parallelization
-- **Reduced batch size** from 16 to 8 for faster feedback loops
-- **Optimized timeout handling** with reduced timeouts (120s total, 30s per result)
-
-### 2. Network & API Optimizations
-- **Reduced request delays** from 2.0s to 0.5s (only for large datasets >500 stocks)
-- **Disabled slow network operations** by default:
-  - Fundamental analysis (causing 30s+ timeouts)
-  - Sentiment analysis (heavy ML model loading)
-- **Faster timeout settings** for non-responsive calls
-
-### 3. Memory Management Optimizations
-- **Smarter garbage collection**: Every 10 stocks instead of every stock
-- **Batch-level memory cleanup**: Every 2 batches instead of every batch
-- **Symbol caching**: Cache symbols for entire analysis session
-- **Reduced memory allocations** through optimized data structures
-
-### 4. Analysis Module Optimizations
-- **Fast mode configuration**: Skip heavy operations when `SKIP_SENTIMENT=True` and `SKIP_FUNDAMENTAL=True`
-- **Selective module loading**: Only essential modules (technical analysis) enabled by default
-- **Deferred initialization**: Heavy analyzers loaded only when needed
-
-### 5. I/O & Database Optimizations
-- **Fast mode option**: Skip cache cleaning and database purge with `--fast` flag
-- **Reduced database operations**: Optimized upsert operations
-- **Symbol data caching**: Avoid repeated API calls for symbol information
-
-## 🎯 New Command Line Options
-
-### Fast Mode (Recommended)
-```bash
-python run_analysis.py --max-stocks 10 --fast --verbose
-```
-
-### Test Mode with Fast Processing
-```bash
-python run_analysis.py --test --fast
-```
-
-### Production Mode with Optimizations
-```bash
-python run_analysis.py --max-stocks 100 --fast
-```
-
-## 📊 Configuration Changes Made
-
-### config.py Optimizations:
-```python
-# Threading optimized for performance
-MAX_WORKER_THREADS = 4      # Increased from 2
-BATCH_SIZE = 8              # Reduced from 16
-REQUEST_DELAY = 0.5         # Reduced from 2.0
-TIMEOUT_SECONDS = 10        # Reduced from 20
-
-# Analysis modules optimized for speed
-ANALYSIS_CONFIG = {
-    'fundamental_analysis': False,  # Disabled (network timeouts)
-    'sentiment_analysis': False,    # Disabled (heavy ML)
-    'technical_analysis': True,     # Essential - kept enabled
-    'backtesting': True,           # Essential - kept enabled
-}
-```
-
-## 🔍 Speed Comparison
-
-| Operation | Before | After | Improvement |
-|-----------|--------|--------|-------------|
-| Per Stock Analysis | ~60+ seconds | ~0.1 seconds | **99% faster** |
-| 10 Stocks | ~10+ minutes | ~1 second | **99.8% faster** |
-| 100 Stocks | ~100+ minutes | ~10 seconds | **99.9% faster** |
-| Threading | 2 threads | 4 threads | **100% more parallel** |
-| Memory Usage | High (GC every stock) | Optimized (GC every 10) | **90% less overhead** |
-
-## 🎉 Benefits Achieved
-
-1. **Massive Speed Improvement**: 99% faster execution
-2. **Better Resource Utilization**: More threads, smarter memory management
-3. **Reduced Network Dependencies**: Skip slow external API calls
-4. **Flexible Operation Modes**: Fast mode for development, full mode for production
-5. **Maintained Accuracy**: Core technical analysis preserved
-6. **Better Error Handling**: Faster timeouts prevent hanging
-7. **Scalability**: Can now analyze 100+ stocks in seconds instead of hours
-
-## 🛠️ Usage Recommendations
-
-### For Development/Testing:
-```bash
-python run_analysis.py --test --fast --verbose
-```
-
-### For Production (Small Dataset):
-```bash
-python run_analysis.py --max-stocks 50 --fast
-```
-
-### For Full Analysis (When Needed):
-```bash
-python run_analysis.py --max-stocks 100
-```
-
-## ⚠️ Trade-offs Made
-
-1. **Fundamental Analysis**: Disabled by default due to network timeouts
-2. **Sentiment Analysis**: Disabled by default due to heavy ML processing
-3. **Cache Cleaning**: Optional in fast mode
-4. **Database Purge**: Optional in fast mode
-
-These can be re-enabled by removing the `--fast` flag when full analysis is needed.
-
-## 🔄 Rollback Information
-
-If you need to revert to original settings:
-
-1. **Restore config.py**:
-   - Set `MAX_WORKER_THREADS = 2`
-   - Set `BATCH_SIZE = 16`
-   - Set `REQUEST_DELAY = 2.0`
-   - Enable all analysis modules
-
-2. **Remove fast mode logic** from run_analysis.py
-
-3. **Remove optimizations** from analyzer.py
-
-## 📈 Monitoring Performance
-
-To monitor performance, you can use the built-in timing:
-```bash
-time python run_analysis.py --test --fast
-```
-
-Or use the performance test script:
-```bash
-python test_performance.py
-```
-
-## 🎯 Next Steps
-
-1. **Test with your data**: Run `python run_analysis.py --test --fast` to verify
-2. **Scale up gradually**: Try `--max-stocks 20` then `--max-stocks 50`
-3. **Monitor results**: Check that recommendations are still accurate
-4. **Adjust if needed**: Fine-tune thread count or batch size based on your system
-
-Your analysis script is now **99% faster** and ready for production use! 🚀
-
-
-================================================
-FILE: backend/PERFORMANCE_TEST_RESULTS.md
-================================================
-# 🚀 Performance Test Results Summary
-
-## Test Execution: 100 Stocks Analysis
-
-**Command:** `python run_analysis.py --max-stocks 100 --fast --verbose`
-
-## 📊 Performance Results
-
-### ⚡ Speed Metrics
-- **Total Stocks Processed:** 55 (actively traded stocks from filtered list)
-- **Total Execution Time:** 4.9 minutes (294 seconds)
-- **Average Time per Stock:** 5.3 seconds
-- **Throughput:** ~11 stocks per minute
-- **Threading:** 4 threads processing in parallel
-
-### 🎯 Analysis Results
-- **Stocks Analyzed:** 55 stocks successfully processed
-- **Recommendations Generated:** 0 (due to strict thresholds)
-- **Analysis Failures:** 0 (100% success rate)
-- **Technical Analysis:** All stocks processed successfully
-- **Backtesting:** All stocks processed (with date format errors noted)
-
-### 🔧 Configuration Used
-- **Fast Mode:** Enabled (skipped cache cleaning and database purge)
-- **Fundamental Analysis:** Disabled (SKIP_FUNDAMENTAL=True)
-- **Sentiment Analysis:** Disabled (SKIP_SENTIMENT=True)
-- **Batch Size:** 8 stocks per batch
-- **Worker Threads:** 4 parallel processing threads
-- **Request Delay:** 0.5 seconds (minimal)
-
-## 📈 Performance Improvements Achieved
-
-### Before Optimization:
-- **Threads:** 2
-- **Delays:** 2.0s between stocks
-- **Heavy Operations:** Fundamental + Sentiment analysis enabled
-- **Cache Operations:** Always performed
-- **Estimated Time for 55 stocks:** ~110+ minutes (1.8+ hours)
-
-### After Optimization:
-- **Threads:** 4 (100% increase)
-- **Delays:** 0.5s between stocks (75% reduction)
-- **Heavy Operations:** Disabled by default in fast mode
-- **Cache Operations:** Skipped in fast mode
-- **Actual Time for 55 stocks:** 4.9 minutes
-
-### **Performance Improvement: 95.5% faster**
-
-## 🎉 Key Success Metrics
-
-1. **System Stability:** 100% success rate, no crashes or hangs
-2. **Memory Management:** Efficient garbage collection, no memory leaks
-3. **Threading Efficiency:** 4 threads working effectively in parallel
-4. **Error Handling:** Graceful handling of backtesting date format issues
-5. **Scalability:** Successfully processed 55 stocks without issues
-
-## 🔍 Technical Analysis Quality
-
-### Analysis Coverage per Stock:
-- ✅ **Technical Indicators:** 10 strategies evaluated per stock
-  - MA Crossover (50/200)
-  - RSI Overbought/Oversold
-  - MACD Signal Crossover
-  - Bollinger Band Breakout
-  - EMA Crossover (12/26)
-  - ADX Trend Strength
-  - On Balance Volume
-  - ATR Volatility
-  - SMA Crossover (20/50)
-  - Stochastic Overbought/Oversold
-
-- ✅ **Volume Analysis:** Volume confirmation checks performed
-- ✅ **Trade Planning:** Entry/exit price calculations
-- ✅ **Risk Assessment:** Risk-reward ratio calculations
-- ⚠️ **Backtesting:** Date format issues need resolution
-
-## 📋 Sample Stock Analysis Results
-
-### RELIANCE:
-- **Technical Score:** -0.30 (negative due to market conditions)
-- **Combined Score:** -0.10 (Technical: -0.30, Fundamental: 0.10, Sentiment: 0.10)
-- **Recommendation:** HOLD (not recommended for BUY)
-- **Target Price:** ₹1,427.96 (current: ₹1,373.80)
-- **Time to Target:** 22 days
-- **Processing Time:** ~2.5 seconds
-
-### TCS:
-- **Technical Score:** -0.30 (negative due to market conditions)
-- **Combined Score:** -0.10 (Technical: -0.30, Fundamental: 0.10, Sentiment: 0.10)
-- **Recommendation:** HOLD (not recommended for BUY)
-- **Target Price:** ₹3,180.34 (current: ₹3,022.30)
-- **Time to Target:** 34 days
-- **Processing Time:** ~2.5 seconds
-
-## 🎯 Recommendation System Status
-
-**Current Status:** No BUY recommendations generated due to:
-1. **Market Conditions:** Current bearish technical signals across most stocks
-2. **Strict Thresholds:** High quality thresholds filtering out marginal signals
-3. **Volume Filters:** Volume confirmation requirements eliminating weak signals
-
-**Note:** This is expected behavior in current market conditions where technical indicators are showing bearish/neutral signals.
-
-## 🔧 Areas for Further Optimization
-
-### Immediate Fixes Needed:
-1. **Backtesting Date Format:** Fix 'str' object has no attribute 'to_pydatetime' error
-2. **Cache Refresh:** Implement automatic cache refresh for stale data
-3. **Recommendation Thresholds:** Fine-tune for realistic recommendation generation
-
-### Future Enhancements:
-1. **Database Optimization:** Batch database operations
-2. **Cache Strategy:** Implement intelligent cache warming
-3. **Parallel Backtesting:** Run backtests in parallel threads
-4. **Data Pipeline:** Optimize data fetching with connection pooling
-
-## ✅ Conclusion
-
-The performance optimization has been **highly successful**:
-
-- **95.5% speed improvement** achieved
-- **System stability** maintained at 100%
-- **Scalability** proven with 55 stocks processed efficiently
-- **Resource utilization** optimized with 4-thread parallel processing
-- **Memory management** improved with optimized garbage collection
-
-The system is now capable of processing **hundreds of stocks in minutes** instead of hours, making it suitable for:
-- ✅ Real-time analysis workflows
-- ✅ Frequent market scanning
-- ✅ Development and testing iterations
-- ✅ Production deployment scenarios
-
-**Recommendation:** The optimized system is ready for production use with the fast mode for regular operations and full mode for comprehensive analysis when needed.
-
-
-================================================
 FILE: backend/requirements.txt
 ================================================
 flask
+flask-cors
+nsetools
 yfinance
 ta-lib
 backtrader
@@ -3652,6 +2093,7 @@ os.environ['NUMEXPR_NUM_THREADS'] = '1'
 
 import gc
 import sys
+import config
 import time
 from datetime import datetime
 from typing import Dict, List, Any
@@ -4326,9 +2768,9 @@ class AutomatedStockAnalysis:
             try:
                 # Create fast mode configuration to skip heavy operations
                 fast_config = dict(self.app.config)
-                fast_config['SKIP_SENTIMENT'] = True  # Skip sentiment for speed
-                fast_config['SKIP_FUNDAMENTAL'] = True  # Skip fundamental for speed
-                fast_config['FAST_MODE'] = True  # Enable fast mode
+                # fast_config['SKIP_SENTIMENT'] = True  # Skip sentiment for speed
+                # fast_config['SKIP_FUNDAMENTAL'] = True  # Skip fundamental for speed
+                # fast_config['FAST_MODE'] = True  # Enable fast mode
                 
                 analysis_result = self.analyzer.analyze_stock(symbol, fast_config)
                 
@@ -4610,6 +3052,7 @@ def main():
     parser.add_argument('--verbose', action='store_true', help='Enable verbose logging with detailed output')
     parser.add_argument('--single-threaded', action='store_true', help='Use single-threaded mode for debugging (slower but more stable)')
     parser.add_argument('--disable-volume-filter', action='store_true', help='Disable volume-based filtering for analysis')
+    parser.add_argument('--fresh-data', action='store_true', help='Force fresh data fetch (no cache for today)')
     parser.add_argument('--fast', action='store_true', help='Enable fast mode - skip cache cleaning and database purge for maximum speed')
     
     args = parser.parse_args()
@@ -4651,6 +3094,19 @@ def main():
             analyzer.app.config['DATA_PURGE_DAYS'] = args.purge_days
             if args.verbose:
                 logger.info(f"Data purge days set to {args.purge_days} (from CLI argument)")
+        
+        # Override config if disable-volume-filter provided
+        if args.disable_volume_filter:
+            analyzer.app.config['ENABLE_VOLUME_FILTER'] = False
+            config.ENABLE_VOLUME_FILTER = False
+            if args.verbose:
+                logger.info("Volume filter disabled via CLI argument")
+        
+        # Set fresh data flag
+        if args.fresh_data:
+            analyzer.app.config['FRESH_DATA'] = True
+            if args.verbose:
+                logger.info("Fresh data mode enabled - bypassing cache")
         
         if args.verbose:
             # Verbose mode - logging already configured in constructor
@@ -4704,7 +3160,1861 @@ if __name__ == "__main__":
 
 
 ================================================
-FILE: backend/run_golden_report.py
+FILE: backend/start-server.sh
+================================================
+#!/bin/bash
+
+echo "🚀 Starting Stock Advisor Backend Server..."
+
+# Check if virtual environment exists
+if [ ! -d "venv" ]; then
+    echo "❌ Virtual environment not found. Please create one first:"
+    echo "   python3 -m venv venv"
+    echo "   source venv/bin/activate"
+    echo "   pip install -r requirements.txt"
+    exit 1
+fi
+
+# Activate virtual environment
+echo "📦 Activating virtual environment..."
+source venv/bin/activate
+
+# Check if required packages are installed
+echo "🔍 Checking dependencies..."
+python -c "import flask" 2>/dev/null || {
+    echo "❌ Flask not found. Installing dependencies..."
+    pip install -r requirements.txt
+}
+
+# Set environment variables
+export FLASK_APP=app.py
+export FLASK_ENV=development
+export FLASK_DEBUG=1
+
+# Start the Flask server
+echo "🌟 Starting Flask server on http://127.0.0.1:5001"
+echo "   Press Ctrl+C to stop the server"
+echo ""
+
+# Run the Flask app
+flask run --host=127.0.0.1 --port=5001
+
+
+
+================================================
+FILE: backend/archive/add_dummy_data.py
+================================================
+#!/usr/bin/env python3
+"""
+Add Dummy Data Script
+File: add_dummy_data.py
+
+This script adds dummy data to the database in the same format that run_analysis.py saves.
+It creates sample stock recommendations and backtest results for testing purposes.
+"""
+
+import sys
+import os
+from datetime import datetime, timedelta
+import random
+
+# Add the project root to the Python path
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+from app import create_app
+from database import get_mongodb, insert_backtest_result
+from utils.logger import setup_logging
+
+# Initialize logging
+logger = setup_logging()
+
+# Sample stock symbols and company names for dummy data
+SAMPLE_STOCKS = [
+    {'symbol': 'RELIANCE', 'company_name': 'Reliance Industries Limited'},
+    {'symbol': 'TCS', 'company_name': 'Tata Consultancy Services Limited'},
+    {'symbol': 'HDFCBANK', 'company_name': 'HDFC Bank Limited'},
+    {'symbol': 'INFY', 'company_name': 'Infosys Limited'},
+    {'symbol': 'ICICIBANK', 'company_name': 'ICICI Bank Limited'},
+    {'symbol': 'HINDUNILVR', 'company_name': 'Hindustan Unilever Limited'},
+    {'symbol': 'ITC', 'company_name': 'ITC Limited'},
+    {'symbol': 'SBIN', 'company_name': 'State Bank of India'},
+    {'symbol': 'BHARTIARTL', 'company_name': 'Bharti Airtel Limited'},
+    {'symbol': 'ASIANPAINT', 'company_name': 'Asian Paints Limited'},
+    {'symbol': 'MARUTI', 'company_name': 'Maruti Suzuki India Limited'},
+    {'symbol': 'LT', 'company_name': 'Larsen & Toubro Limited'},
+    {'symbol': 'AXISBANK', 'company_name': 'Axis Bank Limited'},
+    {'symbol': 'WIPRO', 'company_name': 'Wipro Limited'},
+    {'symbol': 'NESTLEIND', 'company_name': 'Nestle India Limited'}
+]
+
+RECOMMENDATION_STRENGTHS = ['STRONG_BUY', 'BUY', 'WEAK_BUY', 'OPPORTUNISTIC_BUY']
+EFFECTIVENESS_LEVELS = ['Excellent', 'Good', 'Moderate', 'Fair']
+
+def generate_technical_score():
+    """Generate a realistic technical score between 0.3 and 0.9"""
+    return round(random.uniform(0.3, 0.9), 4)
+
+def generate_fundamental_score():
+    """Generate a realistic fundamental score between 0.2 and 0.8"""
+    return round(random.uniform(0.2, 0.8), 4)
+
+def generate_sentiment_score():
+    """Generate a realistic sentiment score between 0.1 and 0.7"""
+    return round(random.uniform(0.1, 0.7), 4)
+
+def generate_combined_score(tech_score, fund_score, sent_score):
+    """Generate combined score based on individual scores"""
+    # Weighted average with some randomness
+    combined = (tech_score * 0.4 + fund_score * 0.4 + sent_score * 0.2)
+    return round(combined + random.uniform(-0.1, 0.1), 4)
+
+def generate_trade_plan():
+    """Generate realistic trade plan data"""
+    buy_price = round(random.uniform(100, 5000), 2)
+    sell_price = round(buy_price * random.uniform(1.05, 1.25), 2)  # 5-25% upside
+    days_to_target = random.randint(30, 180)
+    
+    return {
+        'buy_price': buy_price,
+        'sell_price': sell_price,
+        'days_to_target': days_to_target,
+        'expected_return_percent': round(((sell_price - buy_price) / buy_price) * 100, 2),
+        'est_time_to_target': f"{days_to_target} days"
+    }
+
+def generate_backtest_metrics():
+    """Generate realistic backtest metrics"""
+    cagr = round(random.uniform(5, 25), 2)
+    win_rate = round(random.uniform(45, 75), 2)
+    max_drawdown = round(random.uniform(8, 25), 2)
+    total_trades = random.randint(15, 50)
+    winning_trades = int((win_rate / 100) * total_trades)
+    losing_trades = total_trades - winning_trades
+    
+    # Generate sample transactions
+    transactions = []
+    for i in range(min(10, total_trades)):
+        action = random.choice(['BUY', 'SELL'])
+        price = round(random.uniform(100, 3000), 2)
+        shares = random.randint(10, 100)
+        date = (datetime.now() - timedelta(days=random.randint(1, 365))).strftime('%Y-%m-%d')
+        
+        transactions.append({
+            'strategy': random.choice(['RSI_Strategy', 'MACD_Strategy', 'MA_Strategy']),
+            'date': date,
+            'action': action,
+            'price': price,
+            'shares': shares,
+            'value': round(price * shares, 2)
+        })
+    
+    return {
+        'cagr': cagr,
+        'win_rate': win_rate,
+        'max_drawdown': max_drawdown,
+        'total_trades': total_trades,
+        'winning_trades': winning_trades,
+        'losing_trades': losing_trades,
+        'sharpe_ratio': round(random.uniform(0.8, 2.5), 2),
+        'effectiveness': random.choice(EFFECTIVENESS_LEVELS),
+        'buy_sell_transactions': transactions,
+        'strategy_breakdown': {
+            'RSI_Strategy': {
+                'cagr': round(random.uniform(3, 20), 2),
+                'win_rate': round(random.uniform(40, 70), 2),
+                'max_drawdown': round(random.uniform(5, 20), 2),
+                'total_trades': random.randint(5, 20),
+                'trades': []
+            },
+            'MACD_Strategy': {
+                'cagr': round(random.uniform(4, 22), 2),
+                'win_rate': round(random.uniform(42, 72), 2),
+                'max_drawdown': round(random.uniform(6, 22), 2),
+                'total_trades': random.randint(5, 20),
+                'trades': []
+            }
+        },
+        'date_range': {
+            'start_date': (datetime.now() - timedelta(days=730)).strftime('%Y-%m-%d'),
+            'end_date': datetime.now().strftime('%Y-%m-%d'),
+            'period_days': 730
+        },
+        'capital_info': {
+            'initial_capital': 100000,
+            'final_capital': round(100000 * (1 + cagr/100) ** 2, 2),
+            'total_return': round(((100000 * (1 + cagr/100) ** 2) - 100000) / 100000 * 100, 2)
+        }
+    }
+
+def generate_reason(symbol, recommendation_strength):
+    """Generate a realistic reason for the recommendation"""
+    reasons = [
+        f"{symbol} shows strong technical momentum with bullish indicators across multiple timeframes.",
+        f"Fundamental analysis reveals {symbol} is undervalued with strong growth prospects.",
+        f"{symbol} demonstrates excellent risk-adjusted returns with consistent outperformance.",
+        f"Technical breakout pattern identified in {symbol} with volume confirmation.",
+        f"{symbol} exhibits strong sector rotation momentum with institutional buying.",
+        f"Value opportunity in {symbol} with improving financial metrics and market position."
+    ]
+    
+    strength_modifiers = {
+        'STRONG_BUY': "Exceptional opportunity with high conviction across all metrics.",
+        'BUY': "Solid investment opportunity with favorable risk-reward profile.",
+        'WEAK_BUY': "Moderate opportunity with some upside potential identified.",
+        'OPPORTUNISTIC_BUY': "Tactical opportunity with specific entry conditions met."
+    }
+    
+    base_reason = random.choice(reasons)
+    modifier = strength_modifiers.get(recommendation_strength, "")
+    
+    return f"{base_reason} {modifier}".strip()
+
+def add_dummy_recommendations(count=10):
+    """Add dummy stock recommendations to the database"""
+    logger.info(f"Adding {count} dummy recommendations...")
+    
+    app = create_app()
+    with app.app_context():
+        db = get_mongodb()
+        
+        added_count = 0
+        for i in range(count):
+            # Select a random stock
+            stock = random.choice(SAMPLE_STOCKS)
+            symbol = stock['symbol']
+            company_name = stock['company_name']
+            
+            # Generate scores
+            tech_score = generate_technical_score()
+            fund_score = generate_fundamental_score()
+            sent_score = generate_sentiment_score()
+            combined_score = generate_combined_score(tech_score, fund_score, sent_score)
+            
+            # Generate trade plan
+            trade_plan = generate_trade_plan()
+            
+            # Generate backtest metrics
+            backtest_metrics = generate_backtest_metrics()
+            
+            # Select recommendation strength
+            recommendation_strength = random.choice(RECOMMENDATION_STRENGTHS)
+            
+            # Generate reason
+            reason = generate_reason(symbol, recommendation_strength)
+            
+            # Prepare document for MongoDB (same format as run_analysis.py)
+            doc = {
+                'symbol': symbol,
+                'company_name': company_name,
+                'technical_score': tech_score,
+                'fundamental_score': fund_score,
+                'sentiment_score': sent_score,
+                'combined_score': combined_score,
+                'is_recommended': True,
+                'recommendation_strength': recommendation_strength,
+                'reason': reason,
+                'buy_price': trade_plan['buy_price'],
+                'sell_price': trade_plan['sell_price'],
+                'est_time_to_target': trade_plan['est_time_to_target'],
+                'backtest_metrics': backtest_metrics,
+                'recommendation_date': datetime.utcnow(),
+                'expected_return_percent': trade_plan['expected_return_percent']
+            }
+            
+            try:
+                # Use upsert to insert or update (same as run_analysis.py)
+                result = db.recommended_shares.update_one(
+                    {'symbol': symbol},
+                    {'$set': doc},
+                    upsert=True
+                )
+                
+                if result.upserted_id:
+                    logger.info(f"Added new dummy recommendation: {symbol} - buy_price=${trade_plan['buy_price']:.2f}, sell_price=${trade_plan['sell_price']:.2f}, expected_return={trade_plan['expected_return_percent']:.2f}%")
+                else:
+                    logger.info(f"Updated existing dummy recommendation: {symbol}")
+                
+                added_count += 1
+                
+            except Exception as e:
+                logger.error(f"Error adding dummy recommendation for {symbol}: {e}")
+        
+        logger.info(f"Successfully added {added_count} dummy recommendations")
+
+def add_dummy_backtest_results(count=15):
+    """Add dummy backtest results to the database"""
+    logger.info(f"Adding {count} dummy backtest results...")
+    
+    app = create_app()
+    with app.app_context():
+        added_count = 0
+        
+        for i in range(count):
+            # Select a random stock
+            stock = random.choice(SAMPLE_STOCKS)
+            symbol = stock['symbol']
+            
+            # Generate backtest metrics
+            cagr = round(random.uniform(5, 25), 2)
+            win_rate = round(random.uniform(45, 75), 2)
+            max_drawdown = round(random.uniform(8, 25), 2)
+            total_trades = random.randint(15, 50)
+            winning_trades = int((win_rate / 100) * total_trades)
+            losing_trades = total_trades - winning_trades
+            
+            # Generate additional metrics
+            avg_trade_duration = random.randint(3, 15)
+            avg_profit_per_trade = round(random.uniform(500, 3000), 2)
+            avg_loss_per_trade = round(random.uniform(-2000, -300), 2)
+            largest_win = round(random.uniform(3000, 10000), 2)
+            largest_loss = round(random.uniform(-8000, -2000), 2)
+            sharpe_ratio = round(random.uniform(0.8, 2.5), 2)
+            volatility = round(random.uniform(15, 35), 2)
+            
+            # Date range
+            end_date = datetime.now().strftime('%Y-%m-%d')
+            start_date = (datetime.now() - timedelta(days=730)).strftime('%Y-%m-%d')
+            
+            # Capital info
+            initial_capital = 100000
+            final_capital = round(initial_capital * (1 + cagr/100) ** 2, 2)
+            total_return = round(((final_capital - initial_capital) / initial_capital) * 100, 2)
+            
+            try:
+                # Use the same function as run_analysis.py
+                insert_backtest_result(
+                    symbol=symbol,
+                    period='Overall',
+                    cagr=cagr,
+                    win_rate=win_rate,
+                    max_drawdown=max_drawdown,
+                    total_trades=total_trades,
+                    winning_trades=winning_trades,
+                    losing_trades=losing_trades,
+                    avg_trade_duration=avg_trade_duration,
+                    avg_profit_per_trade=avg_profit_per_trade,
+                    avg_loss_per_trade=avg_loss_per_trade,
+                    largest_win=largest_win,
+                    largest_loss=largest_loss,
+                    sharpe_ratio=sharpe_ratio,
+                    sortino_ratio=round(sharpe_ratio * 1.2, 2),
+                    calmar_ratio=round(cagr / max_drawdown, 2),
+                    volatility=volatility,
+                    start_date=start_date,
+                    end_date=end_date,
+                    initial_capital=initial_capital,
+                    final_capital=final_capital,
+                    total_return=total_return
+                )
+                
+                logger.info(f"Added backtest result for {symbol}: CAGR={cagr:.2f}%, Win Rate={win_rate:.2f}%, Max Drawdown={max_drawdown:.2f}%")
+                added_count += 1
+                
+            except Exception as e:
+                logger.error(f"Error adding dummy backtest result for {symbol}: {e}")
+        
+        logger.info(f"Successfully added {added_count} dummy backtest results")
+
+def main():
+    """Main entry point for the script."""
+    import argparse
+    
+    parser = argparse.ArgumentParser(description='Add dummy data to the database')
+    parser.add_argument('--recommendations', type=int, default=10, help='Number of dummy recommendations to add (default: 10)')
+    parser.add_argument('--backtest-results', type=int, default=15, help='Number of dummy backtest results to add (default: 15)')
+    parser.add_argument('--recommendations-only', action='store_true', help='Add only recommendations')
+    parser.add_argument('--backtest-only', action='store_true', help='Add only backtest results')
+    
+    args = parser.parse_args()
+    
+    try:
+        if args.backtest_only:
+            add_dummy_backtest_results(args.backtest_results)
+        elif args.recommendations_only:
+            add_dummy_recommendations(args.recommendations)
+        else:
+            # Add both by default
+            add_dummy_recommendations(args.recommendations)
+            add_dummy_backtest_results(args.backtest_results)
+        
+        logger.info("Dummy data addition completed successfully!")
+        
+        # Show summary
+        app = create_app()
+        with app.app_context():
+            db = get_mongodb()
+            total_recommendations = db.recommended_shares.count_documents({})
+            total_backtest_results = db.backtest_results.count_documents({})
+            
+            logger.info(f"Total recommendations in database: {total_recommendations}")
+            logger.info(f"Total backtest results in database: {total_backtest_results}")
+        
+        return 0
+        
+    except Exception as e:
+        logger.error(f"Script failed: {e}")
+        return 1
+
+if __name__ == "__main__":
+    sys.exit(main())
+
+
+
+================================================
+FILE: backend/archive/check_data_verification.py
+================================================
+import pymongo
+from datetime import datetime
+
+def check_mongodb():
+    try:
+        client = pymongo.MongoClient("mongodb://localhost:27017/")
+        print("Connected to MongoDB")
+        print("Databases:", client.list_database_names())
+        
+        db = client["super_advice"]
+        print("Collections in super_advice:", db.list_collection_names())
+        
+        # Check recommended_shares collection
+        rec_collection = db["recommended_shares"]
+        rec_count = rec_collection.count_documents({})
+        print(f"Total documents in 'recommended_shares': {rec_count}")
+        
+        if rec_count > 0:
+            print("\nSample Recommendation:")
+            sample = rec_collection.find_one()
+            print(f"Symbol: {sample.get('symbol')}")
+            print(f"Date: {sample.get('recommendation_date')}")
+            print(f"Score: {sample.get('combined_score')}")
+        
+        # Check backtest_results collection
+        bt_collection = db["backtest_results"]
+        bt_count = bt_collection.count_documents({})
+        print(f"\nTotal documents in 'backtest_results': {bt_count}")
+        
+        if bt_count > 0:
+            print("\nSample Backtest Result:")
+            sample_bt = bt_collection.find_one()
+            print(f"Symbol: {sample_bt.get('symbol')}")
+            print(f"CAGR: {sample_bt.get('cagr')}")
+            
+    except Exception as e:
+        print(f"Error connecting to MongoDB: {e}")
+
+if __name__ == "__main__":
+    check_mongodb()
+
+
+
+================================================
+FILE: backend/archive/check_mongodb_data.py
+================================================
+#!/usr/bin/env python3
+"""
+Script to check the current state of data in MongoDB recommendations collection
+"""
+import json
+from database import get_mongodb
+import config
+
+def check_recommendation_data():
+    """Check what fields are currently stored in recommendations"""
+    try:
+        db = get_mongodb()
+        collection = db[config.MONGODB_COLLECTIONS['recommended_shares']]
+        
+        # Get the most recent recommendation to see its structure
+        recent_rec = collection.find_one(sort=[('recommendation_date', -1)])
+        
+        if recent_rec:
+            print("Most recent recommendation structure:")
+            print("=" * 50)
+            # Convert ObjectId to string for JSON serialization
+            if '_id' in recent_rec:
+                recent_rec['_id'] = str(recent_rec['_id'])
+            if 'recommendation_date' in recent_rec:
+                recent_rec['recommendation_date'] = recent_rec['recommendation_date'].isoformat()
+            
+            print(json.dumps(recent_rec, indent=2, default=str))
+            
+            print("\n" + "=" * 50)
+            print("Available fields in this document:")
+            for key in recent_rec.keys():
+                print(f"- {key}")
+                
+            # Check if backtest_metrics exists and what it contains
+            if 'backtest_metrics' in recent_rec and recent_rec['backtest_metrics']:
+                print("\nBacktest metrics structure:")
+                print(json.dumps(recent_rec['backtest_metrics'], indent=2, default=str))
+        else:
+            print("No recommendations found in the database")
+            
+        # Count total recommendations
+        total_count = collection.count_documents({})
+        print(f"\nTotal recommendations in database: {total_count}")
+        
+    except Exception as e:
+        print(f"Error checking MongoDB data: {e}")
+
+if __name__ == "__main__":
+    check_recommendation_data()
+
+
+
+================================================
+FILE: backend/archive/check_recommendations.py
+================================================
+#!/usr/bin/env python3
+"""
+Script to check recommendations from the analysis
+"""
+
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+from database import get_mongodb
+from datetime import datetime
+
+def main():
+    try:
+        db = get_mongodb()
+        recommendations = list(db.recommended_shares.find({}).sort('recommendation_date', -1))
+        
+        print(f'Total recommendations found: {len(recommendations)}')
+        print()
+        
+        if recommendations:
+            print('Top 10 Recent Recommendations:')
+            print('=' * 80)
+            
+            for i, rec in enumerate(recommendations[:10]):
+                print(f"{i+1}. {rec.get('symbol', 'N/A')} ({rec.get('company_name', 'N/A')})")
+                print(f"   Technical Score: {rec.get('technical_score', 0):.2f}")
+                print(f"   Fundamental Score: {rec.get('fundamental_score', 0):.2f}")
+                print(f"   Sentiment Score: {rec.get('sentiment_score', 0):.2f}")
+                print(f"   Buy Price: ${rec.get('buy_price', 0):.2f}")
+                print(f"   Sell Price: ${rec.get('sell_price', 0):.2f}")
+                print(f"   Est. Time to Target: {rec.get('est_time_to_target', 'N/A')}")
+                
+                backtest = rec.get('backtest_metrics', {})
+                if backtest:
+                    print(f"   Backtest CAGR: {backtest.get('cagr', 0):.2f}%")
+                    print(f"   Backtest Win Rate: {backtest.get('win_rate', 0):.2f}%")
+                    print(f"   Backtest Max Drawdown: {backtest.get('max_drawdown', 0):.2f}%")
+                    print(f"   Effectiveness: {backtest.get('effectiveness', 'Unknown')}")
+                    print(f"   Total Trades: {backtest.get('total_trades', 0)}")
+                
+                print(f"   Reason: {rec.get('reason', 'N/A')}")
+                
+                rec_date = rec.get('recommendation_date')
+                if rec_date:
+                    print(f"   Date: {rec_date.strftime('%Y-%m-%d %H:%M')}")
+                print()
+        else:
+            print('No recommendations found in the database.')
+            
+        # Also check backtest results
+        print("=" * 80)
+        print("BACKTEST RESULTS SUMMARY:")
+        print("=" * 80)
+        
+        backtest_results = list(db.backtest_results.find({}).sort('created_at', -1).limit(20))
+        print(f"Total backtest results: {len(backtest_results)}")
+        
+        if backtest_results:
+            print("\nTop 10 Backtest Results:")
+            for i, result in enumerate(backtest_results[:10]):
+                print(f"{i+1}. {result.get('symbol', 'N/A')} - {result.get('strategy', 'Overall')}")
+                print(f"   CAGR: {result.get('cagr', 0):.2f}%")
+                print(f"   Win Rate: {result.get('win_rate', 0):.2f}%")
+                print(f"   Max Drawdown: {result.get('max_drawdown', 0):.2f}%")
+                print()
+        
+    except Exception as e:
+        print(f"Error: {e}")
+        return 1
+    
+    return 0
+
+if __name__ == "__main__":
+    sys.exit(main())
+
+
+
+================================================
+FILE: backend/archive/check_results.py
+================================================
+#!/usr/bin/env python3
+"""
+Check Analysis Results and System Status
+"""
+
+# Apply OpenMP fix
+import os
+os.environ['OMP_NUM_THREADS'] = '1'
+os.environ['OPENBLAS_NUM_THREADS'] = '1'
+os.environ['MKL_NUM_THREADS'] = '1'
+os.environ['VECLIB_MAXIMUM_THREADS'] = '1'
+os.environ['NUMEXPR_NUM_THREADS'] = '1'
+
+from database import get_mongodb
+from pymongo import MongoClient
+from datetime import datetime
+import json
+
+def check_system_status():
+    """Check system components status."""
+    print("🔍 System Status Check")
+    print("=" * 50)
+    
+    # Check MongoDB connection
+    try:
+        client = MongoClient('localhost', 27017, serverSelectionTimeoutMS=2000)
+        client.server_info()
+        print("✅ MongoDB: Connected")
+        
+        # Check database and collections
+        db = get_mongodb()
+        collections = db.list_collection_names()
+        print(f"✅ Database: super_advice (Collections: {collections})")
+        
+        # Check recommendations
+        recommendations = db.recommended_shares
+        total_recs = recommendations.count_documents({})
+        recent_recs = recommendations.count_documents({
+            'recommendation_date': {
+                '$gte': datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+            }
+        })
+        print(f"📊 Recommendations: {total_recs} total, {recent_recs} today")
+        
+        # Check backtest results
+        backtest = db.backtest_results
+        total_backtests = backtest.count_documents({})
+        print(f"📈 Backtest Results: {total_backtests} entries")
+        
+        return True, db
+        
+    except Exception as e:
+        print(f"❌ MongoDB: Connection failed - {e}")
+        return False, None
+
+def show_latest_recommendations(db, limit=5):
+    """Show latest stock recommendations."""
+    print(f"\n📋 Latest {limit} Recommendations")
+    print("=" * 50)
+    
+    try:
+        recommendations = db.recommended_shares.find(
+        ).sort('recommendation_date', -1).limit(limit)
+        
+        count = 0
+        for rec in recommendations:
+            count += 1
+            symbol = rec.get('symbol', 'Unknown')
+            company = rec.get('company_name', 'Unknown Company')
+            tech_score = rec.get('technical_score', 0)
+            fund_score = rec.get('fundamental_score', 0)
+            sent_score = rec.get('sentiment_score', 0)
+            combined = rec.get('combined_score', 0)
+            strength = rec.get('recommendation_strength', 'UNKNOWN')
+            
+            # Trade plan info
+            trade_plan = rec.get('trade_plan', {})
+            buy_price = trade_plan.get('buy_price', rec.get('buy_price', 0))
+            sell_price = trade_plan.get('sell_price', rec.get('sell_price', 0))
+            
+            # Backtest info
+            backtest = rec.get('backtest_metrics', {})
+            cagr = backtest.get('cagr', 0)
+            win_rate = backtest.get('win_rate', 0)
+            
+            print(f"\n{count}. {symbol} - {company[:30]}...")
+            print(f"   Strength: {strength}")
+            print(f"   Scores: Tech={tech_score:.2f}, Fund={fund_score:.2f}, Sent={sent_score:.2f}")
+            print(f"   Combined: {combined:.2f}")
+            print(f"   Trade: Buy@₹{buy_price:.2f} → Sell@₹{sell_price:.2f}")
+            if cagr:
+                print(f"   Backtest: CAGR={cagr:.1f}%, Win Rate={win_rate:.1f}%")
+            print(f"   Date: {rec.get('recommendation_date', 'Unknown').strftime('%Y-%m-%d %H:%M') if rec.get('recommendation_date') else 'Unknown'}")
+        
+        if count == 0:
+            print("No recommendations found.")
+            
+    except Exception as e:
+        print(f"Error fetching recommendations: {e}")
+
+def show_config_status():
+    """Show current configuration status."""
+    print(f"\n⚙️  Configuration Status")
+    print("=" * 50)
+    
+    try:
+        from config import MAX_WORKER_THREADS, ANALYSIS_CONFIG, STRATEGY_CONFIG
+        
+        print(f"🧵 Max Worker Threads: {MAX_WORKER_THREADS}")
+        
+        print(f"\n📊 Analysis Modules:")
+        enabled_modules = [k for k, v in ANALYSIS_CONFIG.items() if v]
+        disabled_modules = [k for k, v in ANALYSIS_CONFIG.items() if not v]
+        
+        print(f"   ✅ Enabled ({len(enabled_modules)}): {', '.join(enabled_modules)}")
+        print(f"   ❌ Disabled ({len(disabled_modules)}): {', '.join(disabled_modules)}")
+        
+        print(f"\n🎯 Trading Strategies:")
+        enabled_strategies = [k for k, v in STRATEGY_CONFIG.items() if v]
+        print(f"   ✅ Enabled: {len(enabled_strategies)} strategies")
+        
+    except Exception as e:
+        print(f"Error reading config: {e}")
+
+def main():
+    """Main function."""
+    print("🚀 Super Advice Analysis System")
+    print("=" * 50)
+    
+    # Check system status
+    mongodb_ok, db = check_system_status()
+    
+    if mongodb_ok:
+        show_latest_recommendations(db)
+    
+    show_config_status()
+    
+    print(f"\n✨ System Check Complete!")
+    
+    # Show next steps
+    print(f"\n🎯 Next Steps:")
+    print("1. Run test analysis: python run_analysis.py --test")
+    print("2. Run full analysis: python run_analysis.py --max-stocks 50")
+    print("3. View web interface: python app.py")
+    print("4. Check this status: python check_results.py")
+
+if __name__ == "__main__":
+    main()
+
+
+
+================================================
+FILE: backend/archive/clean_cache.py
+================================================
+#!/usr/bin/env python3
+"""
+Cache Cleanup Script
+File: clean_cache.py
+
+A utility script to clean corrupted cache files that might be causing errors.
+"""
+
+import sys
+import os
+
+# Add the project root to the Python path
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+from utils.cache_manager import get_cache_manager
+from utils.logger import setup_logging
+
+def main():
+    """Clean corrupted cache files."""
+    logger = setup_logging()
+    
+    logger.info("Starting cache cleanup...")
+    
+    try:
+        cache_manager = get_cache_manager()
+        
+        # Clean corrupted cache files
+        cleaned_count = cache_manager.clean_corrupted_cache_files()
+        
+        if cleaned_count > 0:
+            logger.info(f"Successfully cleaned {cleaned_count} corrupted cache files")
+        else:
+            logger.info("No corrupted cache files found")
+        
+        # Get cache stats
+        stats = cache_manager.get_cache_stats()
+        
+        if stats:
+            logger.info(f"Cache stats after cleanup:")
+            logger.info(f"  Total files: {stats.get('total_files', 0)}")
+            logger.info(f"  Total size: {stats.get('total_size_mb', 0):.2f} MB")
+            logger.info(f"  File types: {stats.get('file_types', {})}")
+        
+        return 0
+        
+    except Exception as e:
+        logger.error(f"Error during cache cleanup: {e}")
+        return 1
+
+if __name__ == "__main__":
+    sys.exit(main())
+
+
+
+================================================
+FILE: backend/archive/debug_expected_return.py
+================================================
+#!/usr/bin/env python3
+"""
+Debug script to understand why expected returns are similar
+"""
+
+def simulate_calculation(current_price):
+    """Simulate the calculation logic from analyzer.py"""
+    
+    print(f"\n=== DEBUGGING FOR CURRENT_PRICE = ₹{current_price} ===")
+    
+    # Initial values (from HOLD recommendation path)
+    buy_price = current_price * 0.95  # Wait for 5% dip
+    sell_price = current_price * 1.15  # Target 15% gain
+    stop_loss = current_price * 0.90   # 10% stop loss
+    
+    print(f"Initial values:")
+    print(f"  buy_price = {buy_price:.2f} (current * 0.95)")
+    print(f"  sell_price = {sell_price:.2f} (current * 1.15)")
+    print(f"  stop_loss = {stop_loss:.2f} (current * 0.90)")
+    
+    # Calculate initial risk-reward ratio
+    risk = abs(buy_price - stop_loss)
+    reward = abs(sell_price - buy_price)
+    risk_reward_ratio = reward / risk if risk > 0 else 0
+    
+    print(f"\nInitial risk-reward calculation:")
+    print(f"  risk = |{buy_price:.2f} - {stop_loss:.2f}| = {risk:.2f}")
+    print(f"  reward = |{sell_price:.2f} - {buy_price:.2f}| = {reward:.2f}")
+    print(f"  risk_reward_ratio = {risk_reward_ratio:.2f}")
+    
+    # Check if risk-reward enforcement kicks in
+    if risk_reward_ratio < 2.0:
+        print(f"\nRisk-reward ratio {risk_reward_ratio:.2f} < 2.0, enforcing 2.5:1 ratio...")
+        
+        # Adjust sell price to achieve minimum 2:1 ratio
+        risk = abs(buy_price - stop_loss)
+        new_sell_price = buy_price + (risk * 2.5)  # 2.5:1 ratio for good trades
+        
+        print(f"  risk = {risk:.2f}")
+        print(f"  new_sell_price = {buy_price:.2f} + ({risk:.2f} * 2.5) = {new_sell_price:.2f}")
+        
+        sell_price = new_sell_price
+        risk_reward_ratio = 2.5
+    
+    # Calculate expected return percentage
+    expected_return_percent = ((sell_price - buy_price) / buy_price) * 100
+    
+    print(f"\nFinal values:")
+    print(f"  buy_price = ₹{buy_price:.2f}")
+    print(f"  sell_price = ₹{sell_price:.2f}")
+    print(f"  expected_return = {expected_return_percent:.1f}%")
+    print(f"  risk_reward_ratio = {risk_reward_ratio:.2f}")
+    
+    return expected_return_percent
+
+# Test with different stock prices
+test_prices = [100, 500, 1000, 5000, 10000]
+
+for price in test_prices:
+    expected_return = simulate_calculation(price)
+
+
+
+================================================
+FILE: backend/archive/debug_recommendation.py
+================================================
+
+import sys
+import os
+import logging
+from pprint import pprint
+
+# Add parent directory to path to import modules
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from core.analysis.recommendation_engine import RecommendationEngine
+from config import RECOMMENDATION_THRESHOLDS, ANALYSIS_WEIGHTS
+
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+def test_recommendation_logic():
+    engine = RecommendationEngine()
+    
+    print("\n=== Current Configuration ===")
+    print("THRESHOLDS:")
+    pprint(RECOMMENDATION_THRESHOLDS)
+    print("\nWEIGHTS:")
+    pprint(ANALYSIS_WEIGHTS)
+    
+    # Test Case 1: Weak Stock (Should be HOLD)
+    print("\n=== Test Case 1: Weak Stock ===")
+    weak_stock = {
+        'symbol': 'WEAK',
+        'technical_score': -0.2,
+        'fundamental_score': -0.1,
+        'sentiment_score': 0.0,
+        'backtest': {'combined_metrics': {'avg_cagr': -0.05}},
+        'volume_analysis': {'overall_signal': 'bearish', 'confidence': 0.8},
+        'sector_analysis': {'sector_score': -0.5, 'sector': 'Technology'},
+        'gates_passed': {'trend': False, 'volatility': True}
+    }
+    
+    result_weak = engine.combine_analysis_results(weak_stock.copy(), consider_backtest=True, keep_reason_as_list=True)
+    print(f"Result: {result_weak.get('recommendation_strength')} (Recommended: {result_weak.get('is_recommended')})")
+    print(f"Combined Score: {result_weak.get('combined_score')}")
+    print(f"Reasons: {result_weak.get('reason')}")
+
+    # Test Case 2: Strong Stock (Should be BUY/STRONG_BUY)
+    print("\n=== Test Case 2: Strong Stock ===")
+    strong_stock = {
+        'symbol': 'STRONG',
+        'technical_score': 0.6,
+        'fundamental_score': 0.4,
+        'sentiment_score': 0.2,
+        'backtest': {'combined_metrics': {'avg_cagr': 0.15}},
+        'volume_analysis': {'overall_signal': 'bullish', 'confidence': 0.7},
+        'sector_analysis': {'sector_score': 0.2, 'sector': 'Technology'},
+        'gates_passed': {'trend': True, 'volatility': True}
+    }
+    
+    result_strong = engine.combine_analysis_results(strong_stock.copy(), consider_backtest=True, keep_reason_as_list=True)
+    print(f"Result: {result_strong.get('recommendation_strength')} (Recommended: {result_strong.get('is_recommended')})")
+    print(f"Combined Score: {result_strong.get('combined_score')}")
+    print(f"Reasons: {result_strong.get('reason')}")
+
+    # Test Case 3: Borderline Stock (Should be BUY if fundamentals good, else HOLD)
+    print("\n=== Test Case 3: Borderline Stock ===")
+    borderline_stock = {
+        'symbol': 'BORDER',
+        'technical_score': 0.15, # Slightly below buy threshold usually
+        'fundamental_score': 0.3,
+        'sentiment_score': 0.1,
+        'backtest': {'combined_metrics': {'avg_cagr': 0.05}},
+        'volume_analysis': {'overall_signal': 'neutral', 'confidence': 0.5},
+        'sector_analysis': {'sector_score': 0.1, 'sector': 'Technology'},
+        'gates_passed': {'trend': True, 'volatility': True},
+        'fundamental_details': {
+            'eps_growth': 0.15,
+            'de_ratio': 0.4,
+            'profit_margins': 0.12,
+            'roe': 0.18
+        }
+    }
+    
+    result_borderline = engine.combine_analysis_results(borderline_stock.copy(), consider_backtest=True, keep_reason_as_list=True)
+    print(f"Result: {result_borderline.get('recommendation_strength')} (Recommended: {result_borderline.get('is_recommended')})")
+    print(f"Combined Score: {result_borderline.get('combined_score')}")
+    print(f"Reasons: {result_borderline.get('reason')}")
+
+if __name__ == "__main__":
+    test_recommendation_logic()
+
+
+
+================================================
+FILE: backend/archive/fix_alembic_analysis.py
+================================================
+#!/usr/bin/env python3
+"""
+Quick fix script to regenerate ALEMBICLTD analysis with corrected strategies
+"""
+
+from scripts.analyzer import StockAnalyzer
+from database import get_mongodb
+import config
+import json
+
+def fix_alembic_analysis():
+    """Re-run analysis for ALEMBICLTD with fixed strategies"""
+    
+    # Initialize analyzer
+    analyzer = StockAnalyzer()
+    
+    # Analysis configuration
+    app_config = {
+        'HISTORICAL_DATA_PERIOD': '2y',
+        'SKIP_SENTIMENT': True  # Skip sentiment for faster testing
+    }
+    
+    print("Re-analyzing ALEMBICLTD with fixed strategies...")
+    
+    # Run fresh analysis
+    result = analyzer.analyze_stock('ALEMBICLTD', app_config)
+    
+    print("\nUpdated Analysis Results:")
+    print("=" * 60)
+    print(f"Symbol: {result['symbol']}")
+    print(f"Technical Score: {result['technical_score']:.4f}")
+    print(f"Fundamental Score: {result['fundamental_score']:.4f}")
+    print(f"Sentiment Score: {result['sentiment_score']:.4f}")
+    print(f"Combined Score: {result.get('combined_score', 'N/A')}")
+    print(f"Is Recommended: {result['is_recommended']}")
+    print(f"Reason: {result['reason']}")
+    
+    # Check backtest results
+    if 'backtest' in result:
+        backtest = result['backtest']
+        print(f"\nBacktest Status: {backtest.get('status', 'N/A')}")
+        if backtest.get('status') == 'completed':
+            combined_metrics = backtest.get('combined_metrics', {})
+            print(f"CAGR: {combined_metrics.get('avg_cagr', 0)}%")
+            print(f"Win Rate: {combined_metrics.get('avg_win_rate', 0)}%")
+            print(f"Max Drawdown: {combined_metrics.get('avg_max_drawdown', 0)}%")
+    
+    # Check trade plan
+    if 'trade_plan' in result:
+        trade_plan = result['trade_plan']
+        print(f"\nTrade Plan:")
+        print(f"Buy Price: {trade_plan.get('buy_price', 0)}")
+        print(f"Sell Price: {trade_plan.get('sell_price', 0)}")
+        print(f"Days to Target: {trade_plan.get('days_to_target', 0)}")
+        print(f"Risk/Reward: {trade_plan.get('risk_reward_ratio', 0)}")
+    
+    # Update database with fresh results
+    try:
+        db = get_mongodb()
+        collection = db[config.MONGODB_COLLECTIONS['recommended_shares']]
+        
+        # Remove old entry
+        collection.delete_one({'symbol': 'ALEMBICLTD'})
+        
+        # Insert updated entry if recommended
+        if result['is_recommended']:
+            from models.recommendation import RecommendedShare
+            from datetime import datetime
+            
+            # Create new recommendation object
+            recommendation = RecommendedShare(
+                symbol=result['symbol'],
+                company_name=result['company_name'],
+                technical_score=result['technical_score'],
+                fundamental_score=result['fundamental_score'],
+                sentiment_score=result['sentiment_score'],
+                reason=result['reason'],
+                buy_price=result.get('trade_plan', {}).get('buy_price', 0.0),
+                sell_price=result.get('trade_plan', {}).get('sell_price', 0.0),
+                est_time_to_target=f"{result.get('trade_plan', {}).get('days_to_target', 0)} days"
+            )
+            
+            # Add backtest metrics if available
+            if result.get('backtest', {}).get('status') == 'completed':
+                combined_metrics = result['backtest']['combined_metrics']
+                recommendation.backtest_metrics = {
+                    'cagr': combined_metrics.get('avg_cagr', 0),
+                    'win_rate': combined_metrics.get('avg_win_rate', 0),
+                    'max_drawdown': combined_metrics.get('avg_max_drawdown', 0),
+                    'total_trades': combined_metrics.get('strategies_tested', 0),
+                    'winning_trades': 0,
+                    'losing_trades': 0,
+                    'sharpe_ratio': combined_metrics.get('avg_sharpe_ratio', 0),
+                    'effectiveness': 'Good' if combined_metrics.get('avg_cagr', 0) > 5 else 'Poor',
+                    'buy_sell_transactions': [],
+                    'strategy_breakdown': {},
+                    'date_range': {
+                        'start_date': '',
+                        'end_date': '',
+                        'period_days': 0
+                    },
+                    'capital_info': {
+                        'initial_capital': 100000,
+                        'final_capital': 100000 * (1 + combined_metrics.get('avg_cagr', 0)/100),
+                        'total_return': combined_metrics.get('avg_cagr', 0)
+                    }
+                }
+            
+            # Save to database
+            recommendation.save()
+            print(f"\n✅ Updated ALEMBICLTD recommendation in database")
+        else:
+            print(f"\n❌ ALEMBICLTD not recommended after fixes")
+    
+    except Exception as e:
+        print(f"\n⚠️ Error updating database: {e}")
+    
+    return result
+
+
+if __name__ == "__main__":
+    result = fix_alembic_analysis()
+
+
+
+================================================
+FILE: backend/archive/fix_backtest_data.py
+================================================
+#!/usr/bin/env python3
+"""
+Script to fix empty backtest_metrics data in existing MongoDB records
+This script will:
+1. Find records with incomplete backtest_metrics
+2. Re-calculate proper values from strategy_breakdown data
+3. Update the database with corrected values
+"""
+
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+from database import get_mongodb
+import config
+from datetime import datetime, timedelta
+import json
+from utils.logger import setup_logging
+
+logger = setup_logging()
+
+def fix_backtest_metrics():
+    """Fix empty/incomplete backtest_metrics in existing records"""
+    try:
+        db = get_mongodb()
+        collection = db[config.MONGODB_COLLECTIONS['recommended_shares']]
+        
+        # Find all records that need fixing
+        cursor = collection.find({})
+        
+        fixed_count = 0
+        total_count = 0
+        
+        for record in cursor:
+            total_count += 1
+            symbol = record.get('symbol', 'UNKNOWN')
+            
+            logger.info(f"Processing {symbol}...")
+            
+            backtest_metrics = record.get('backtest_metrics', {})
+            if not backtest_metrics:
+                logger.info(f"  {symbol}: No backtest_metrics found, skipping")
+                continue
+            
+            # Check if metrics need fixing
+            needs_fixing = False
+            
+            # Check for empty/zero values in critical fields
+            if (backtest_metrics.get('total_trades', 0) == 0 and 
+                backtest_metrics.get('strategy_breakdown', {})):
+                needs_fixing = True
+                logger.info(f"  {symbol}: total_trades is 0 but has strategy_breakdown")
+            
+            if (not backtest_metrics.get('buy_sell_transactions', []) and 
+                backtest_metrics.get('strategy_breakdown', {})):
+                needs_fixing = True
+                logger.info(f"  {symbol}: buy_sell_transactions is empty")
+            
+            if (backtest_metrics.get('date_range', {}).get('start_date', '') == '' or
+                backtest_metrics.get('date_range', {}).get('period_days', 0) == 0):
+                needs_fixing = True
+                logger.info(f"  {symbol}: date_range is incomplete")
+            
+            if (backtest_metrics.get('capital_info', {}).get('final_capital', 0) == 100000 and
+                backtest_metrics.get('cagr', 0) != 0):
+                needs_fixing = True
+                logger.info(f"  {symbol}: capital_info needs recalculation")
+            
+            if not needs_fixing:
+                logger.info(f"  {symbol}: backtest_metrics looks good, skipping")
+                continue
+            
+            # Fix the metrics
+            fixed_metrics = fix_record_metrics(backtest_metrics, symbol)
+            
+            if fixed_metrics:
+                # Update the record
+                result = collection.update_one(
+                    {'_id': record['_id']},
+                    {'$set': {'backtest_metrics': fixed_metrics}}
+                )
+                
+                if result.modified_count > 0:
+                    fixed_count += 1
+                    logger.info(f"  ✅ {symbol}: Fixed backtest_metrics")
+                else:
+                    logger.warning(f"  ⚠️ {symbol}: Update failed")
+            else:
+                logger.warning(f"  ❌ {symbol}: Could not fix metrics")
+        
+        logger.info(f"\nSummary:")
+        logger.info(f"Total records processed: {total_count}")
+        logger.info(f"Records fixed: {fixed_count}")
+        
+    except Exception as e:
+        logger.error(f"Error fixing backtest data: {e}")
+        raise
+
+def fix_record_metrics(backtest_metrics, symbol):
+    """Fix individual record's backtest_metrics"""
+    try:
+        # Create a copy to modify
+        fixed_metrics = backtest_metrics.copy()
+        
+        # Extract strategy breakdown for calculations
+        strategy_breakdown = fixed_metrics.get('strategy_breakdown', {})
+        
+        if not strategy_breakdown:
+            logger.warning(f"  {symbol}: No strategy_breakdown found, cannot fix")
+            return None
+        
+        # Calculate aggregated values from strategy_breakdown
+        total_trades_sum = 0
+        winning_trades_sum = 0
+        losing_trades_sum = 0
+        valid_strategies = 0
+        all_transactions = []
+        
+        for strategy_name, strategy_data in strategy_breakdown.items():
+            if isinstance(strategy_data, dict):
+                valid_strategies += 1
+                strategy_trades = strategy_data.get('total_trades', 0)
+                strategy_win_rate = strategy_data.get('win_rate', 0)
+                
+                # Accumulate trade counts
+                total_trades_sum += strategy_trades
+                
+                # Calculate winning/losing trades from win rate and total trades
+                if strategy_trades > 0 and strategy_win_rate > 0:
+                    strategy_winning_trades = int((strategy_win_rate / 100) * strategy_trades)
+                    strategy_losing_trades = strategy_trades - strategy_winning_trades
+                    winning_trades_sum += strategy_winning_trades
+                    losing_trades_sum += strategy_losing_trades
+                
+                # Generate some mock transactions since we don't have real trade data
+                trades = strategy_data.get('trades', [])
+                if not trades and strategy_trades > 0:
+                    # Generate some sample transactions based on strategy performance
+                    sample_transactions = generate_sample_transactions(
+                        strategy_name, strategy_trades, strategy_data.get('cagr', 0)
+                    )
+                    all_transactions.extend(sample_transactions)
+        
+        # Update total_trades if it was 0
+        if fixed_metrics.get('total_trades', 0) == 0 and valid_strategies > 0:
+            fixed_metrics['total_trades'] = int(total_trades_sum / valid_strategies)
+            logger.info(f"    Fixed total_trades: {fixed_metrics['total_trades']}")
+        
+        # Update winning/losing trades
+        if valid_strategies > 0:
+            fixed_metrics['winning_trades'] = int(winning_trades_sum / valid_strategies)
+            fixed_metrics['losing_trades'] = int(losing_trades_sum / valid_strategies)
+            logger.info(f"    Fixed winning_trades: {fixed_metrics['winning_trades']}, losing_trades: {fixed_metrics['losing_trades']}")
+        
+        # Fix buy_sell_transactions if empty
+        if not fixed_metrics.get('buy_sell_transactions', []) and all_transactions:
+            fixed_metrics['buy_sell_transactions'] = sorted(
+                all_transactions,
+                key=lambda x: x.get('date', ''),
+                reverse=True
+            )[:50]  # Limit to 50
+            logger.info(f"    Added {len(fixed_metrics['buy_sell_transactions'])} sample transactions")
+        
+        # Fix date_range if incomplete
+        date_range = fixed_metrics.get('date_range', {})
+        if (not date_range.get('start_date', '') or 
+            not date_range.get('end_date', '') or 
+            date_range.get('period_days', 0) == 0):
+            
+            # Set realistic date range (2 years for backtesting)
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=730)
+            
+            fixed_metrics['date_range'] = {
+                'start_date': start_date.strftime('%Y-%m-%d'),
+                'end_date': end_date.strftime('%Y-%m-%d'),
+                'period_days': 730
+            }
+            logger.info(f"    Fixed date_range: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
+        
+        # Fix capital_info
+        capital_info = fixed_metrics.get('capital_info', {})
+        initial_capital = capital_info.get('initial_capital', 100000)
+        cagr = fixed_metrics.get('cagr', 0)
+        
+        if cagr != 0:
+            # Calculate final_capital based on CAGR and period
+            period_days = fixed_metrics['date_range'].get('period_days', 730)
+            years = period_days / 365.25
+            final_capital = initial_capital * ((1 + cagr / 100) ** years)
+            total_return = ((final_capital - initial_capital) / initial_capital) * 100
+            
+            fixed_metrics['capital_info'] = {
+                'initial_capital': initial_capital,
+                'final_capital': round(final_capital, 2),
+                'total_return': round(total_return, 2)
+            }
+            logger.info(f"    Fixed capital_info: final_capital={final_capital:.2f}, total_return={total_return:.2f}%")
+        
+        return fixed_metrics
+        
+    except Exception as e:
+        logger.error(f"Error fixing metrics for {symbol}: {e}")
+        return None
+
+def generate_sample_transactions(strategy_name, total_trades, cagr):
+    """Generate sample transactions for demonstration purposes"""
+    transactions = []
+    
+    # Generate a few sample transactions based on the strategy performance
+    sample_count = min(5, total_trades // 10)  # Generate up to 5 samples
+    
+    for i in range(sample_count):
+        # Generate dates spread over the past 2 years
+        days_ago = (i + 1) * 60  # Spread transactions every ~2 months
+        trade_date = datetime.now() - timedelta(days=days_ago)
+        
+        # Alternate between BUY and SELL
+        action = 'BUY' if i % 2 == 0 else 'SELL'
+        
+        # Generate reasonable price and share values
+        base_price = 100 + (i * 10)  # Varying prices
+        shares = 100 + (i * 50)  # Varying share counts
+        
+        transaction = {
+            'strategy': strategy_name,
+            'date': trade_date.strftime('%Y-%m-%d'),
+            'action': action,
+            'price': base_price,
+            'shares': shares,
+            'value': base_price * shares
+        }
+        transactions.append(transaction)
+    
+    return transactions
+
+def main():
+    """Main entry point"""
+    logger.info("Starting backtest_metrics fix script...")
+    
+    try:
+        fix_backtest_metrics()
+        logger.info("✅ Backtest metrics fix completed successfully!")
+        
+    except Exception as e:
+        logger.error(f"❌ Script failed: {e}")
+        return 1
+    
+    return 0
+
+if __name__ == "__main__":
+    sys.exit(main())
+
+
+
+================================================
+FILE: backend/archive/fix_memory_issue.py
+================================================
+#!/usr/bin/env python3
+"""
+Temporary fix for memory issues - Forces simplified mode to disable
+memory-intensive modules like sector analysis and market regime detection
+"""
+
+import sys
+import os
+import subprocess
+
+def main():
+    """Run analysis with memory-intensive modules disabled by setting environment variables"""
+    
+    # Set environment variables to force simplified mode behavior
+    env = os.environ.copy()
+    env['FORCE_SIMPLIFIED_MODE'] = '1'
+    env['SKIP_SECTOR_ANALYSIS'] = '1'
+    env['SKIP_MARKET_REGIME'] = '1'
+    env['SKIP_SENTIMENT'] = '1'
+    
+    # Get command line arguments
+    args = sys.argv[1:] if len(sys.argv) > 1 else ['--max-stocks', '1']
+    
+    # Run the analysis with modified environment
+    cmd = ['python', 'run_analysis.py'] + args
+    
+    print("🔧 Running analysis with memory-intensive modules disabled...")
+    print(f"Command: {' '.join(cmd)}")
+    print("Environment overrides:")
+    print("  - FORCE_SIMPLIFIED_MODE=1")
+    print("  - SKIP_SECTOR_ANALYSIS=1") 
+    print("  - SKIP_MARKET_REGIME=1")
+    print("  - SKIP_SENTIMENT=1")
+    print()
+    
+    try:
+        result = subprocess.run(cmd, env=env, check=False)
+        return result.returncode
+    except KeyboardInterrupt:
+        print("\n⚠️  Analysis interrupted by user")
+        return 130
+    except Exception as e:
+        print(f"❌ Error running analysis: {e}")
+        return 1
+
+if __name__ == "__main__":
+    sys.exit(main())
+
+
+
+================================================
+FILE: backend/archive/migrate_database.py
+================================================
+#!/usr/bin/env python3
+"""
+Standalone database migration script.
+Run this script to update the database schema with new columns and tables.
+"""
+
+import sqlite3
+import os
+import sys
+import shutil
+from datetime import datetime
+
+def check_column_exists(cursor, table_name, column_name):
+    """Check if a column exists in a table."""
+    cursor.execute(f"PRAGMA table_info({table_name})")
+    columns = [column[1] for column in cursor.fetchall()]
+    return column_name in columns
+
+def check_table_exists(cursor, table_name):
+    """Check if a table exists."""
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?;", (table_name,))
+    return cursor.fetchone() is not None
+
+def check_index_exists(cursor, index_name):
+    """Check if an index exists."""
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='index' AND name=?;", (index_name,))
+    return cursor.fetchone() is not None
+
+def migrate_database(db_path):
+    """Migrate database schema without data loss."""
+    
+    if not os.path.exists(db_path):
+        print(f"Error: Database file '{db_path}' does not exist.")
+        return False
+    
+    # Backup database before migration
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_path = f"{db_path}.backup_{timestamp}"
+    shutil.copy2(db_path, backup_path)
+    print(f"Database backup created at {backup_path}")
+    
+    try:
+        with sqlite3.connect(db_path) as conn:
+            cursor = conn.cursor()
+            
+            # Check and add missing columns to recommended_shares
+            if not check_column_exists(cursor, 'recommended_shares', 'buy_price'):
+                cursor.execute("""
+                    ALTER TABLE recommended_shares
+                    ADD COLUMN buy_price REAL;
+                """)
+                print("✓ Added buy_price column to recommended_shares")
+            else:
+                print("✓ buy_price column already exists")
+                
+            if not check_column_exists(cursor, 'recommended_shares', 'sell_price'):
+                cursor.execute("""
+                    ALTER TABLE recommended_shares
+                    ADD COLUMN sell_price REAL;
+                """)
+                print("✓ Added sell_price column to recommended_shares")
+            else:
+                print("✓ sell_price column already exists")
+                
+            if not check_column_exists(cursor, 'recommended_shares', 'est_time_to_target'):
+                cursor.execute("""
+                    ALTER TABLE recommended_shares
+                    ADD COLUMN est_time_to_target TEXT;
+                """)
+                print("✓ Added est_time_to_target column to recommended_shares")
+            else:
+                print("✓ est_time_to_target column already exists")
+            
+            conn.commit()
+            
+            # Create backtest_results table if it doesn't exist
+            if not check_table_exists(cursor, 'backtest_results'):
+                cursor.execute("""
+                    CREATE TABLE backtest_results (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        symbol TEXT NOT NULL,
+                        period TEXT NOT NULL,
+                        CAGR REAL,
+                        win_rate REAL,
+                        max_drawdown REAL,
+                        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                    );
+                """)
+                print("✓ Created backtest_results table")
+            else:
+                print("✓ backtest_results table already exists")
+            
+            # Add index on recommendation_date for faster deletion of old rows
+            if not check_index_exists(cursor, 'idx_recommendation_date'):
+                cursor.execute("""
+                    CREATE INDEX idx_recommendation_date 
+                    ON recommended_shares (recommendation_date);
+                """)
+                print("✓ Created index on recommendation_date")
+            else:
+                print("✓ Index on recommendation_date already exists")
+            
+            conn.commit()
+        
+        print("\n🎉 Migration complete! Database schema is now up to date.")
+        return True
+        
+    except Exception as e:
+        print(f"\n❌ Migration failed: {str(e)}")
+        print(f"Database backup is available at: {backup_path}")
+        return False
+
+def main():
+    """Main function to run the migration."""
+    if len(sys.argv) > 1:
+        db_path = sys.argv[1]
+    else:
+        db_path = "database.db"
+    
+    print(f"Running database migration on: {db_path}")
+    print("=" * 50)
+    
+    success = migrate_database(db_path)
+    
+    if success:
+        print(f"\n✅ Database '{db_path}' has been successfully migrated!")
+        print("You can now use the new features:")
+        print("  - Buy/sell price tracking")
+        print("  - Estimated time to target")
+        print("  - Backtest results storage")
+        print("  - Optimized recommendation date queries")
+    else:
+        print(f"\n❌ Migration failed for database '{db_path}'")
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()
+
+
+
+================================================
+FILE: backend/archive/PERFORMANCE_OPTIMIZATION.md
+================================================
+# Smart Advice Performance Optimization Summary
+
+## 🚀 Performance Improvements Made
+
+Your `run_analysis.py` script has been significantly optimized for much faster execution. Here's a comprehensive summary of all improvements:
+
+## ⚡ Key Performance Metrics
+
+**Before Optimization:**
+- Threading: 2 threads
+- Batch size: 16 stocks per batch
+- Request delay: 2.0s between stocks
+- Network timeouts: 20-30s
+- Memory management: Garbage collection after every stock
+- Cache cleaning: Always performed
+- Analysis modules: All enabled (including slow ones)
+
+**After Optimization:**
+- Threading: 4 threads (100% increase)
+- Batch size: 8 stocks per batch (50% reduction for faster feedback)
+- Request delay: 0.5s between stocks (75% reduction)
+- Network timeouts: 10-30s (50% reduction)
+- Memory management: Optimized garbage collection
+- Cache cleaning: Optional via fast mode
+- Analysis modules: Heavy modules disabled by default
+
+**Performance Result:**
+- **~0.1 seconds per stock** (from previous ~60+ seconds)
+- **99% faster execution time**
+
+## 🔧 Detailed Optimizations
+
+### 1. Threading & Concurrency Improvements
+- **Increased worker threads** from 2 to 4 for better parallelization
+- **Reduced batch size** from 16 to 8 for faster feedback loops
+- **Optimized timeout handling** with reduced timeouts (120s total, 30s per result)
+
+### 2. Network & API Optimizations
+- **Reduced request delays** from 2.0s to 0.5s (only for large datasets >500 stocks)
+- **Disabled slow network operations** by default:
+  - Fundamental analysis (causing 30s+ timeouts)
+  - Sentiment analysis (heavy ML model loading)
+- **Faster timeout settings** for non-responsive calls
+
+### 3. Memory Management Optimizations
+- **Smarter garbage collection**: Every 10 stocks instead of every stock
+- **Batch-level memory cleanup**: Every 2 batches instead of every batch
+- **Symbol caching**: Cache symbols for entire analysis session
+- **Reduced memory allocations** through optimized data structures
+
+### 4. Analysis Module Optimizations
+- **Fast mode configuration**: Skip heavy operations when `SKIP_SENTIMENT=True` and `SKIP_FUNDAMENTAL=True`
+- **Selective module loading**: Only essential modules (technical analysis) enabled by default
+- **Deferred initialization**: Heavy analyzers loaded only when needed
+
+### 5. I/O & Database Optimizations
+- **Fast mode option**: Skip cache cleaning and database purge with `--fast` flag
+- **Reduced database operations**: Optimized upsert operations
+- **Symbol data caching**: Avoid repeated API calls for symbol information
+
+## 🎯 New Command Line Options
+
+### Fast Mode (Recommended)
+```bash
+python run_analysis.py --max-stocks 10 --fast --verbose
+```
+
+### Test Mode with Fast Processing
+```bash
+python run_analysis.py --test --fast
+```
+
+### Production Mode with Optimizations
+```bash
+python run_analysis.py --max-stocks 100 --fast
+```
+
+## 📊 Configuration Changes Made
+
+### config.py Optimizations:
+```python
+# Threading optimized for performance
+MAX_WORKER_THREADS = 4      # Increased from 2
+BATCH_SIZE = 8              # Reduced from 16
+REQUEST_DELAY = 0.5         # Reduced from 2.0
+TIMEOUT_SECONDS = 10        # Reduced from 20
+
+# Analysis modules optimized for speed
+ANALYSIS_CONFIG = {
+    'fundamental_analysis': False,  # Disabled (network timeouts)
+    'sentiment_analysis': False,    # Disabled (heavy ML)
+    'technical_analysis': True,     # Essential - kept enabled
+    'backtesting': True,           # Essential - kept enabled
+}
+```
+
+## 🔍 Speed Comparison
+
+| Operation | Before | After | Improvement |
+|-----------|--------|--------|-------------|
+| Per Stock Analysis | ~60+ seconds | ~0.1 seconds | **99% faster** |
+| 10 Stocks | ~10+ minutes | ~1 second | **99.8% faster** |
+| 100 Stocks | ~100+ minutes | ~10 seconds | **99.9% faster** |
+| Threading | 2 threads | 4 threads | **100% more parallel** |
+| Memory Usage | High (GC every stock) | Optimized (GC every 10) | **90% less overhead** |
+
+## 🎉 Benefits Achieved
+
+1. **Massive Speed Improvement**: 99% faster execution
+2. **Better Resource Utilization**: More threads, smarter memory management
+3. **Reduced Network Dependencies**: Skip slow external API calls
+4. **Flexible Operation Modes**: Fast mode for development, full mode for production
+5. **Maintained Accuracy**: Core technical analysis preserved
+6. **Better Error Handling**: Faster timeouts prevent hanging
+7. **Scalability**: Can now analyze 100+ stocks in seconds instead of hours
+
+## 🛠️ Usage Recommendations
+
+### For Development/Testing:
+```bash
+python run_analysis.py --test --fast --verbose
+```
+
+### For Production (Small Dataset):
+```bash
+python run_analysis.py --max-stocks 50 --fast
+```
+
+### For Full Analysis (When Needed):
+```bash
+python run_analysis.py --max-stocks 100
+```
+
+## ⚠️ Trade-offs Made
+
+1. **Fundamental Analysis**: Disabled by default due to network timeouts
+2. **Sentiment Analysis**: Disabled by default due to heavy ML processing
+3. **Cache Cleaning**: Optional in fast mode
+4. **Database Purge**: Optional in fast mode
+
+These can be re-enabled by removing the `--fast` flag when full analysis is needed.
+
+## 🔄 Rollback Information
+
+If you need to revert to original settings:
+
+1. **Restore config.py**:
+   - Set `MAX_WORKER_THREADS = 2`
+   - Set `BATCH_SIZE = 16`
+   - Set `REQUEST_DELAY = 2.0`
+   - Enable all analysis modules
+
+2. **Remove fast mode logic** from run_analysis.py
+
+3. **Remove optimizations** from analyzer.py
+
+## 📈 Monitoring Performance
+
+To monitor performance, you can use the built-in timing:
+```bash
+time python run_analysis.py --test --fast
+```
+
+Or use the performance test script:
+```bash
+python test_performance.py
+```
+
+## 🎯 Next Steps
+
+1. **Test with your data**: Run `python run_analysis.py --test --fast` to verify
+2. **Scale up gradually**: Try `--max-stocks 20` then `--max-stocks 50`
+3. **Monitor results**: Check that recommendations are still accurate
+4. **Adjust if needed**: Fine-tune thread count or batch size based on your system
+
+Your analysis script is now **99% faster** and ready for production use! 🚀
+
+
+================================================
+FILE: backend/archive/PERFORMANCE_TEST_RESULTS.md
+================================================
+# 🚀 Performance Test Results Summary
+
+## Test Execution: 100 Stocks Analysis
+
+**Command:** `python run_analysis.py --max-stocks 100 --fast --verbose`
+
+## 📊 Performance Results
+
+### ⚡ Speed Metrics
+- **Total Stocks Processed:** 55 (actively traded stocks from filtered list)
+- **Total Execution Time:** 4.9 minutes (294 seconds)
+- **Average Time per Stock:** 5.3 seconds
+- **Throughput:** ~11 stocks per minute
+- **Threading:** 4 threads processing in parallel
+
+### 🎯 Analysis Results
+- **Stocks Analyzed:** 55 stocks successfully processed
+- **Recommendations Generated:** 0 (due to strict thresholds)
+- **Analysis Failures:** 0 (100% success rate)
+- **Technical Analysis:** All stocks processed successfully
+- **Backtesting:** All stocks processed (with date format errors noted)
+
+### 🔧 Configuration Used
+- **Fast Mode:** Enabled (skipped cache cleaning and database purge)
+- **Fundamental Analysis:** Disabled (SKIP_FUNDAMENTAL=True)
+- **Sentiment Analysis:** Disabled (SKIP_SENTIMENT=True)
+- **Batch Size:** 8 stocks per batch
+- **Worker Threads:** 4 parallel processing threads
+- **Request Delay:** 0.5 seconds (minimal)
+
+## 📈 Performance Improvements Achieved
+
+### Before Optimization:
+- **Threads:** 2
+- **Delays:** 2.0s between stocks
+- **Heavy Operations:** Fundamental + Sentiment analysis enabled
+- **Cache Operations:** Always performed
+- **Estimated Time for 55 stocks:** ~110+ minutes (1.8+ hours)
+
+### After Optimization:
+- **Threads:** 4 (100% increase)
+- **Delays:** 0.5s between stocks (75% reduction)
+- **Heavy Operations:** Disabled by default in fast mode
+- **Cache Operations:** Skipped in fast mode
+- **Actual Time for 55 stocks:** 4.9 minutes
+
+### **Performance Improvement: 95.5% faster**
+
+## 🎉 Key Success Metrics
+
+1. **System Stability:** 100% success rate, no crashes or hangs
+2. **Memory Management:** Efficient garbage collection, no memory leaks
+3. **Threading Efficiency:** 4 threads working effectively in parallel
+4. **Error Handling:** Graceful handling of backtesting date format issues
+5. **Scalability:** Successfully processed 55 stocks without issues
+
+## 🔍 Technical Analysis Quality
+
+### Analysis Coverage per Stock:
+- ✅ **Technical Indicators:** 10 strategies evaluated per stock
+  - MA Crossover (50/200)
+  - RSI Overbought/Oversold
+  - MACD Signal Crossover
+  - Bollinger Band Breakout
+  - EMA Crossover (12/26)
+  - ADX Trend Strength
+  - On Balance Volume
+  - ATR Volatility
+  - SMA Crossover (20/50)
+  - Stochastic Overbought/Oversold
+
+- ✅ **Volume Analysis:** Volume confirmation checks performed
+- ✅ **Trade Planning:** Entry/exit price calculations
+- ✅ **Risk Assessment:** Risk-reward ratio calculations
+- ⚠️ **Backtesting:** Date format issues need resolution
+
+## 📋 Sample Stock Analysis Results
+
+### RELIANCE:
+- **Technical Score:** -0.30 (negative due to market conditions)
+- **Combined Score:** -0.10 (Technical: -0.30, Fundamental: 0.10, Sentiment: 0.10)
+- **Recommendation:** HOLD (not recommended for BUY)
+- **Target Price:** ₹1,427.96 (current: ₹1,373.80)
+- **Time to Target:** 22 days
+- **Processing Time:** ~2.5 seconds
+
+### TCS:
+- **Technical Score:** -0.30 (negative due to market conditions)
+- **Combined Score:** -0.10 (Technical: -0.30, Fundamental: 0.10, Sentiment: 0.10)
+- **Recommendation:** HOLD (not recommended for BUY)
+- **Target Price:** ₹3,180.34 (current: ₹3,022.30)
+- **Time to Target:** 34 days
+- **Processing Time:** ~2.5 seconds
+
+## 🎯 Recommendation System Status
+
+**Current Status:** No BUY recommendations generated due to:
+1. **Market Conditions:** Current bearish technical signals across most stocks
+2. **Strict Thresholds:** High quality thresholds filtering out marginal signals
+3. **Volume Filters:** Volume confirmation requirements eliminating weak signals
+
+**Note:** This is expected behavior in current market conditions where technical indicators are showing bearish/neutral signals.
+
+## 🔧 Areas for Further Optimization
+
+### Immediate Fixes Needed:
+1. **Backtesting Date Format:** Fix 'str' object has no attribute 'to_pydatetime' error
+2. **Cache Refresh:** Implement automatic cache refresh for stale data
+3. **Recommendation Thresholds:** Fine-tune for realistic recommendation generation
+
+### Future Enhancements:
+1. **Database Optimization:** Batch database operations
+2. **Cache Strategy:** Implement intelligent cache warming
+3. **Parallel Backtesting:** Run backtests in parallel threads
+4. **Data Pipeline:** Optimize data fetching with connection pooling
+
+## ✅ Conclusion
+
+The performance optimization has been **highly successful**:
+
+- **95.5% speed improvement** achieved
+- **System stability** maintained at 100%
+- **Scalability** proven with 55 stocks processed efficiently
+- **Resource utilization** optimized with 4-thread parallel processing
+- **Memory management** improved with optimized garbage collection
+
+The system is now capable of processing **hundreds of stocks in minutes** instead of hours, making it suitable for:
+- ✅ Real-time analysis workflows
+- ✅ Frequent market scanning
+- ✅ Development and testing iterations
+- ✅ Production deployment scenarios
+
+**Recommendation:** The optimized system is ready for production use with the fast mode for regular operations and full mode for comprehensive analysis when needed.
+
+
+================================================
+FILE: backend/archive/run_golden_report.py
 ================================================
 #!/usr/bin/env python3
 """
@@ -4816,7 +5126,7 @@ if __name__ == "__main__":
 
 
 ================================================
-FILE: backend/run_offline_analysis.py
+FILE: backend/archive/run_offline_analysis.py
 ================================================
 #!/usr/bin/env python3
 """
@@ -5146,7 +5456,7 @@ if __name__ == '__main__':
 
 
 ================================================
-FILE: backend/setup_cron.py
+FILE: backend/archive/setup_cron.py
 ================================================
 #!/usr/bin/env python3
 """
@@ -5350,49 +5660,7 @@ if __name__ == "__main__":
 
 
 ================================================
-FILE: backend/start-server.sh
-================================================
-#!/bin/bash
-
-echo "🚀 Starting Stock Advisor Backend Server..."
-
-# Check if virtual environment exists
-if [ ! -d "venv" ]; then
-    echo "❌ Virtual environment not found. Please create one first:"
-    echo "   python3 -m venv venv"
-    echo "   source venv/bin/activate"
-    echo "   pip install -r requirements.txt"
-    exit 1
-fi
-
-# Activate virtual environment
-echo "📦 Activating virtual environment..."
-source venv/bin/activate
-
-# Check if required packages are installed
-echo "🔍 Checking dependencies..."
-python -c "import flask" 2>/dev/null || {
-    echo "❌ Flask not found. Installing dependencies..."
-    pip install -r requirements.txt
-}
-
-# Set environment variables
-export FLASK_APP=app.py
-export FLASK_ENV=development
-export FLASK_DEBUG=1
-
-# Start the Flask server
-echo "🌟 Starting Flask server on http://127.0.0.1:5001"
-echo "   Press Ctrl+C to stop the server"
-echo ""
-
-# Run the Flask app
-flask run --host=127.0.0.1 --port=5001
-
-
-
-================================================
-FILE: backend/test_performance.py
+FILE: backend/archive/test_performance.py
 ================================================
 #!/usr/bin/env python3
 """
@@ -5507,7 +5775,73 @@ if __name__ == "__main__":
 
 
 ================================================
-FILE: backend/train_ml_models.py
+FILE: backend/archive/test_screener.py
+================================================
+
+import requests
+import json
+import sys
+
+BASE_URL = "http://localhost:5001"
+
+def test_screener():
+    print("Testing Stock Screener Endpoint...")
+    
+    # Test 1: No filters (should return all recommendations)
+    print("\n1. Testing no filters...")
+    try:
+        response = requests.get(f"{BASE_URL}/screener")
+        if response.status_code == 200:
+            data = response.json()
+            print(f"Success! Found {data['count']} stocks.")
+        else:
+            print(f"Failed: {response.status_code} - {response.text}")
+    except Exception as e:
+        print(f"Error: {e}")
+
+    # Test 2: Price filter
+    print("\n2. Testing price filter (min_price=100)...")
+    try:
+        response = requests.get(f"{BASE_URL}/screener?min_price=100")
+        if response.status_code == 200:
+            data = response.json()
+            print(f"Success! Found {data['count']} stocks with price >= 100.")
+        else:
+            print(f"Failed: {response.status_code} - {response.text}")
+    except Exception as e:
+        print(f"Error: {e}")
+
+    # Test 3: Score filter
+    print("\n3. Testing score filter (min_technical_score=0.1)...")
+    try:
+        response = requests.get(f"{BASE_URL}/screener?min_technical_score=0.1")
+        if response.status_code == 200:
+            data = response.json()
+            print(f"Success! Found {data['count']} stocks with technical_score >= 0.1.")
+        else:
+            print(f"Failed: {response.status_code} - {response.text}")
+    except Exception as e:
+        print(f"Error: {e}")
+
+    # Test 4: Combined filters
+    print("\n4. Testing combined filters (min_price=100 & min_technical_score=0.1)...")
+    try:
+        response = requests.get(f"{BASE_URL}/screener?min_price=100&min_technical_score=0.1")
+        if response.status_code == 200:
+            data = response.json()
+            print(f"Success! Found {data['count']} stocks matching criteria.")
+        else:
+            print(f"Failed: {response.status_code} - {response.text}")
+    except Exception as e:
+        print(f"Error: {e}")
+
+if __name__ == "__main__":
+    test_screener()
+
+
+
+================================================
+FILE: backend/archive/train_ml_models.py
 ================================================
 #!/usr/bin/env python3
 """
@@ -13247,7 +13581,8 @@ class StockAnalyzer:
             logger.debug(f"Starting technical analysis for {symbol}")
             
             try:
-                historical_data = get_historical_data(symbol, app_config.get('HISTORICAL_DATA_PERIOD', HISTORICAL_DATA_PERIOD))
+                fresh_data = app_config.get('FRESH_DATA', False)
+                historical_data = get_historical_data(symbol, app_config.get('HISTORICAL_DATA_PERIOD', HISTORICAL_DATA_PERIOD), fresh=fresh_data)
                 logger.debug(f"Retrieved {len(historical_data)} days of historical data for {symbol}")
                 
                 if historical_data.empty:
@@ -13462,7 +13797,7 @@ class StockAnalyzer:
                 logger.debug(f"Starting trade-level analysis for {symbol}")
                 
                 try:
-                    trade_analysis = self.analyze(symbol)
+                    trade_analysis = self.analyze(symbol, fresh=app_config.get('FRESH_DATA', False))
                     logger.debug(f"Trade-level analysis complete for {symbol}: {trade_analysis.get('recommendation', 'UNKNOWN')}")
                     
                     # Merge trade analysis into main result
@@ -13785,7 +14120,7 @@ class StockAnalyzer:
             'all_results': results
         }
     
-    def analyze(self, symbol: str) -> Dict[str, Any]:
+    def analyze(self, symbol: str, fresh: bool = False) -> Dict[str, Any]:
         """
         Compute buy/sell recommendations and timing for a stock.
         
@@ -13805,7 +14140,7 @@ class StockAnalyzer:
         """
         try:
             # Get historical data
-            historical_data = get_historical_data(symbol, HISTORICAL_DATA_PERIOD)
+            historical_data = get_historical_data(symbol, HISTORICAL_DATA_PERIOD, fresh=fresh)
             
             if historical_data.empty:
                 return {
@@ -16245,11 +16580,17 @@ def _verify_checksum(path: str) -> bool:
         return False
 
 
-def get_historical_data(symbol: str, period: str = '1y', interval: str = '1d') -> pd.DataFrame:
+def get_historical_data(symbol: str, period: str = '1y', interval: str = '1d', fresh: bool = False) -> pd.DataFrame:
     """
     Fetch historical stock data using yfinance with caching.
     Supports multiple intervals ('1d', '1h', '4h').
     NSE symbols need '.NS' suffix for yfinance.
+    
+    Args:
+        symbol: Stock symbol
+        period: Data period (e.g. '1y')
+        interval: Data interval (e.g. '1d')
+        fresh: If True, force fresh data fetch (ignore cache unless it's from today)
     """
     # Use absolute path for cache directory
     backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -16260,52 +16601,76 @@ def get_historical_data(symbol: str, period: str = '1y', interval: str = '1d') -
         os.path.join(cache_dir, f"{symbol}_{period}_{interval}_yf.csv"),
     ]
 
-    # Load from the freshest valid cache if available
-    try:
-        freshest_path = None
-        freshest_mtime = -1
+    # Check if we can use cache
+    use_cache = True
+    if fresh:
+        use_cache = False
+        # If we have a cache file from TODAY, we can still use it even if fresh=True
+        # because it means we already fetched it today
         for path in provider_candidates:
             if os.path.exists(path):
-                if not _verify_checksum(path):
-                    logger.warning(f"Checksum mismatch for cache {path}; ignoring")
-                    continue
-                mtime = os.path.getmtime(path)
-                if mtime > freshest_mtime:
-                    freshest_mtime = mtime
-                    freshest_path = path
-        if freshest_path:
-            # Try to read with different possible index column names
-            for index_col in ['Datetime', 'Date', 0]:
                 try:
-                    data = pd.read_csv(freshest_path, index_col=index_col, parse_dates=True)
-                    logger.info(f"Loaded {len(data)} data points for {symbol} ({interval}) from cache: {os.path.basename(freshest_path)}")
-                    # Freshness check (<=3 days old)
-                    if not data.empty:
-                        try:
-                            last_ts = data.index[-1]
-                            if isinstance(last_ts, pd.Timestamp):
-                                age_days = (pd.Timestamp.now(tz=last_ts.tz) - last_ts).days if last_ts.tzinfo else (pd.Timestamp.now() - last_ts).days
-                                if age_days <= 3:
-                                    return data
+                    mtime = os.path.getmtime(path)
+                    file_date = datetime.fromtimestamp(mtime).date()
+                    today = datetime.now().date()
+                    if file_date == today:
+                        # Cache is from today, so it is fresh!
+                        use_cache = True
+                        logger.info(f"Cache for {symbol} is from today ({file_date}), using it despite fresh=True")
+                        break
+                except Exception:
+                    pass
+        
+        if not use_cache:
+            logger.info(f"Fresh data requested for {symbol}, bypassing cache")
+
+    # Load from the freshest valid cache if available and allowed
+    try:
+        if use_cache:
+            freshest_path = None
+            freshest_mtime = -1
+            for path in provider_candidates:
+                if os.path.exists(path):
+                    if not _verify_checksum(path):
+                        logger.warning(f"Checksum mismatch for cache {path}; ignoring")
+                        continue
+                    mtime = os.path.getmtime(path)
+                    if mtime > freshest_mtime:
+                        freshest_mtime = mtime
+                        freshest_path = path
+            if freshest_path:
+                # Try to read with different possible index column names
+                for index_col in ['Datetime', 'Date', 0]:
+                    try:
+                        data = pd.read_csv(freshest_path, index_col=index_col, parse_dates=True)
+                        logger.info(f"Loaded {len(data)} data points for {symbol} ({interval}) from cache: {os.path.basename(freshest_path)}")
+                        # Freshness check (<=3 days old)
+                        if not data.empty:
+                            try:
+                                last_ts = data.index[-1]
+                                if isinstance(last_ts, pd.Timestamp):
+                                    age_days = (pd.Timestamp.now(tz=last_ts.tz) - last_ts).days if last_ts.tzinfo else (pd.Timestamp.now() - last_ts).days
+                                    if age_days <= 3:
+                                        return data
+                                    else:
+                                        logger.info(f"Cache for {symbol} is stale ({age_days} days); will fetch fresh data")
                                 else:
-                                    logger.info(f"Cache for {symbol} is stale ({age_days} days); will fetch fresh data")
-                            else:
+                                    return data
+                            except Exception:
                                 return data
-                        except Exception:
+                    except (KeyError, ValueError):
+                        continue
+                # Fallback generic read
+                try:
+                    data = pd.read_csv(freshest_path, parse_dates=True)
+                    if not data.empty and len(data.columns) > 0:
+                        first_col = data.columns[0]
+                        if 'date' in first_col.lower():
+                            data.set_index(first_col, inplace=True)
                             return data
-                except (KeyError, ValueError):
-                    continue
-            # Fallback generic read
-            try:
-                data = pd.read_csv(freshest_path, parse_dates=True)
-                if not data.empty and len(data.columns) > 0:
-                    first_col = data.columns[0]
-                    if 'date' in first_col.lower():
-                        data.set_index(first_col, inplace=True)
-                        return data
-            except Exception:
-                pass
-            logger.warning(f"Could not properly load cached data for {symbol}, will fetch fresh data")
+                except Exception:
+                    pass
+                logger.warning(f"Could not properly load cached data for {symbol}, will fetch fresh data")
     except Exception as e:
         logger.error(f"Error loading cached data for {symbol}: {e}")
 
@@ -22566,6 +22931,7 @@ from typing import Dict, Any, Optional
 from utils.logger import setup_logging
 from utils.enhanced_volume_confirmation import volume_confirmator
 from utils.volume_analysis import get_enhanced_volume_confirmation
+import config
 
 logger = setup_logging()
 
@@ -22622,6 +22988,10 @@ class BaseStrategy(ABC):
             if raw_signal == 0 or len(data) < 20:
                 return raw_signal
             
+            # Skip volume filtering if disabled in config
+            if hasattr(config, 'ENABLE_VOLUME_FILTER') and not config.ENABLE_VOLUME_FILTER:
+                return raw_signal
+
             # Apply enhanced volume filtering using new system
             filtered_signal, filter_reason = volume_confirmator.filter_signal_by_volume(
                 raw_signal, data, require_confirmation=True
@@ -34290,9 +34660,9 @@ def optimize_dataframe_memory(df: pd.DataFrame) -> pd.DataFrame:
         for col in df.select_dtypes(include=['int64']).columns:
             df[col] = pd.to_numeric(df[col], downcast='integer')
         
-        # Downcast float columns
-        for col in df.select_dtypes(include=['float64']).columns:
-            df[col] = pd.to_numeric(df[col], downcast='float')
+        # Downcast float columns - DISABLED to prevent TA-Lib errors (needs float64)
+        # for col in df.select_dtypes(include=['float64']).columns:
+        #     df[col] = pd.to_numeric(df[col], downcast='float')
         
         # Log memory savings
         final_memory = df.memory_usage(deep=True).sum()
@@ -35394,10 +35764,10 @@ FILE: frontend/src/app/page.tsx
 ================================================
 'use client';
 
-import { 
-  ChartBarIcon, 
-  PlayIcon, 
-  ArrowTrendingUpIcon, 
+import {
+  ChartBarIcon,
+  PlayIcon,
+  ArrowTrendingUpIcon,
   SparklesIcon,
   ShieldCheckIcon,
   ClockIcon,
@@ -35415,20 +35785,39 @@ import ApiTest from './components/ApiTest';
 export default function Home() {
   const [recommendations, setRecommendations] = useState<StockRecommendation[]>([]);
   const [topN, setTopN] = useState(10); // State for top N stocks selection
+  const [isClient, setIsClient] = useState(false);
+
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
 
   useEffect(() => {
     async function fetchData() {
+      console.log('Fetching recommendations...');
       const response = await getRecommendations();
+      console.log('API Response:', response);
+      console.log('Response status:', response.status);
+      console.log('Recommendations:', response.recommendations);
+      console.log('Recommendations length:', response.recommendations?.length);
       if (response.status === 'success' && response.recommendations) {
+        console.log('Setting recommendations:', response.recommendations);
         setRecommendations(response.recommendations);
+      } else {
+        console.log('NOT setting recommendations - status:', response.status);
       }
     }
     fetchData();
   }, []);
 
+  if (!isClient) {
+    return <div className="flex items-center justify-center min-h-screen">
+      <div className="text-xl text-gray-600 dark:text-gray-300">Loading...</div>
+    </div>;
+  }
+
   // Chart data preparation
   const topStocks = recommendations.slice(0, topN); // Show top N stocks in charts
-  
+
   // Chart 1: Top stocks by backtest returns
   const backtestReturnsData = {
     labels: topStocks.map(rec => rec.symbol),
@@ -35511,7 +35900,7 @@ export default function Home() {
   // Statistics
   const stats = {
     totalStocks: recommendations.length,
-    avgTechnicalScore: recommendations.length > 0 ? 
+    avgTechnicalScore: recommendations.length > 0 ?
       (recommendations.reduce((sum, rec) => sum + rec.technical_score, 0) / recommendations.length).toFixed(2) : '0',
     avgFundamentalScore: recommendations.length > 0 ?
       (recommendations.reduce((sum, rec) => sum + rec.fundamental_score, 0) / recommendations.length).toFixed(2) : '0',
@@ -35529,8 +35918,8 @@ export default function Home() {
           Stock Advice Dashboard
         </h1>
         <p className="text-lg sm:text-xl text-gray-600 dark:text-gray-300 max-w-3xl mx-auto px-4">
-          AI-powered stock analysis and recommendations for smart investing. 
-          Advanced algorithms analyze market trends, technical indicators, and fundamental data 
+          AI-powered stock analysis and recommendations for smart investing.
+          Advanced algorithms analyze market trends, technical indicators, and fundamental data
           to provide actionable investment insights.
         </p>
       </div>
@@ -35541,7 +35930,7 @@ export default function Home() {
           <h3 className="text-2xl font-semibold text-gray-900 dark:text-gray-100 mb-4 sm:mb-0">
             Top Stocks Analysis
           </h3>
-          
+
           {/* Top N Dropdown */}
           <div className="flex items-center space-x-2">
             <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -35559,7 +35948,7 @@ export default function Home() {
             <span className="text-sm text-gray-500 dark:text-gray-400">stocks</span>
           </div>
         </div>
-        
+
         {/* 2x2 Grid of Charts */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Chart 1: Top Stocks by Backtest Returns */}
@@ -35568,8 +35957,8 @@ export default function Home() {
               Best Backtest Returns (CAGR %)
             </h4>
             <div className="h-64">
-              <Bar 
-                data={backtestReturnsData} 
+              <Bar
+                data={backtestReturnsData}
                 options={{
                   responsive: true,
                   maintainAspectRatio: false,
@@ -35587,14 +35976,14 @@ export default function Home() {
               />
             </div>
           </div>
-          
+
           {/* Chart 2: Combined Scores */}
           <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-4">
             <h4 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4 text-center">
               Combined Scores
             </h4>
             <div className="h-64">
-              <Bar 
+              <Bar
                 data={profitPercentageData}
                 options={{
                   responsive: true,
@@ -35613,14 +36002,14 @@ export default function Home() {
               />
             </div>
           </div>
-          
+
           {/* Chart 3: Technical vs Fundamental Scores */}
           <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-4">
             <h4 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4 text-center">
               Technical vs Fundamental Scores
             </h4>
             <div className="h-64">
-              <Bar 
+              <Bar
                 data={scoresComparisonData}
                 options={{
                   responsive: true,
@@ -35634,7 +36023,7 @@ export default function Home() {
               />
             </div>
           </div>
-          
+
           {/* Chart 4: Recommendation Strength Distribution */}
           <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-4">
             <h4 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4 text-center">
@@ -35642,7 +36031,7 @@ export default function Home() {
             </h4>
             <div className="h-64 flex items-center justify-center">
               <div className="w-48 h-48">
-                <Doughnut 
+                <Doughnut
                   data={doughnutData}
                   options={{
                     responsive: true,
@@ -35678,8 +36067,8 @@ export default function Home() {
             <h3 className="text-xl sm:text-2xl font-semibold text-gray-900 dark:text-gray-100 ml-4">What We Do</h3>
           </div>
           <p className="text-gray-600 dark:text-gray-300 leading-relaxed">
-            Our platform combines machine learning algorithms with traditional financial analysis 
-            to evaluate stocks across multiple dimensions including technical patterns, 
+            Our platform combines machine learning algorithms with traditional financial analysis
+            to evaluate stocks across multiple dimensions including technical patterns,
             fundamental metrics, and market sentiment.
           </p>
         </div>
@@ -35693,8 +36082,8 @@ export default function Home() {
             <h3 className="text-2xl font-semibold text-gray-900 dark:text-gray-100 ml-4">How It Works</h3>
           </div>
           <p className="text-gray-600 dark:text-gray-300 leading-relaxed">
-            Generate comprehensive analysis by configuring parameters, analyzing market data, 
-            and receiving scored recommendations. View detailed insights including risk assessments, 
+            Generate comprehensive analysis by configuring parameters, analyzing market data,
+            and receiving scored recommendations. View detailed insights including risk assessments,
             price targets, and technical indicators.
           </p>
         </div>
@@ -35708,7 +36097,7 @@ export default function Home() {
             <h3 className="text-2xl font-semibold text-gray-900 dark:text-gray-100 ml-4">Key Benefits</h3>
           </div>
           <p className="text-gray-600 dark:text-gray-300 leading-relaxed">
-            Data-driven decisions backed by comprehensive analysis, real-time market data integration, 
+            Data-driven decisions backed by comprehensive analysis, real-time market data integration,
             and systematic evaluation processes that remove emotional bias from investment choices.
           </p>
         </div>
@@ -36400,9 +36789,9 @@ interface DataTableProps<T> {
   showDateFilter?: boolean;
 }
 
-function DataTable<T>({ 
-  data, 
-  columns, 
+function DataTable<T>({
+  data,
+  columns,
   searchPlaceholder = "Search...",
   pageSize = 10,
   dateColumn = 'recommendation_date',
@@ -36418,17 +36807,17 @@ function DataTable<T>({
     if (!showDateFilter || (!dateFilter.start && !dateFilter.end)) {
       return data;
     }
-    
+
     return data.filter((item: any) => {
       if (!item[dateColumn]) return true;
-      
+
       const itemDate = new Date(item[dateColumn]);
       const startDate = dateFilter.start ? new Date(dateFilter.start) : null;
       const endDate = dateFilter.end ? new Date(dateFilter.end) : null;
-      
+
       if (startDate && itemDate < startDate) return false;
       if (endDate && itemDate > endDate) return false;
-      
+
       return true;
     });
   }, [data, dateFilter, dateColumn, showDateFilter]);
@@ -36498,7 +36887,7 @@ function DataTable<T>({
               <CalendarIcon className="h-5 w-5 text-gray-400" />
               <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Date Range:</span>
             </div>
-            
+
             <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
               <div>
                 <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">From</label>
@@ -36509,7 +36898,7 @@ function DataTable<T>({
                   className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
               </div>
-              
+
               <div>
                 <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">To</label>
                 <input
@@ -36519,7 +36908,7 @@ function DataTable<T>({
                   className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
               </div>
-              
+
               <button
                 onClick={() => setDateFilter({ start: '', end: '' })}
                 className="px-3 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 underline focus:outline-none"
@@ -36533,57 +36922,57 @@ function DataTable<T>({
 
       {/* Table */}
       <div className="overflow-hidden shadow ring-1 ring-black ring-opacity-5 rounded-lg">
-        <div className="overflow-x-auto max-w-full">
+        <div className="overflow-x-auto overflow-y-auto max-h-[600px] max-w-full">
           <table className="min-w-full divide-y divide-gray-300 dark:divide-gray-600">
-          <thead className="bg-gray-50 dark:bg-gray-700">
-            {table.getHeaderGroups().map((headerGroup) => (
-              <tr key={headerGroup.id}>
-                {headerGroup.headers.map((header) => (
-                  <th
-                    key={header.id}
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors"
-                    onClick={header.column.getToggleSortingHandler()}
-                  >
-                    <div className="flex items-center space-x-1">
-                      <span>
-                        {header.isPlaceholder
-                          ? null
-                          : flexRender(
+            <thead className="bg-gray-50 dark:bg-gray-700 sticky top-0 z-10">
+              {table.getHeaderGroups().map((headerGroup) => (
+                <tr key={headerGroup.id}>
+                  {headerGroup.headers.map((header) => (
+                    <th
+                      key={header.id}
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors"
+                      onClick={header.column.getToggleSortingHandler()}
+                    >
+                      <div className="flex items-center space-x-1">
+                        <span>
+                          {header.isPlaceholder
+                            ? null
+                            : flexRender(
                               header.column.columnDef.header,
                               header.getContext()
                             )}
-                      </span>
-                      {header.column.getCanSort() && (
-                        <span className="flex flex-col">
-                          {header.column.getIsSorted() === 'asc' ? (
-                            <ChevronUpIcon className="h-4 w-4" />
-                          ) : header.column.getIsSorted() === 'desc' ? (
-                            <ChevronDownIcon className="h-4 w-4" />
-                          ) : (
-                            <div className="flex flex-col">
-                              <ChevronUpIcon className="h-3 w-3 text-gray-300" />
-                              <ChevronDownIcon className="h-3 w-3 text-gray-300 -mt-1" />
-                            </div>
-                          )}
                         </span>
-                      )}
-                    </div>
-                  </th>
-                ))}
-              </tr>
-            ))}
-          </thead>
-          <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-            {table.getRowModel().rows.map((row) => (
-              <tr key={row.id} className="hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
-                {row.getVisibleCells().map((cell) => (
-                  <td key={cell.id} className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
+                        {header.column.getCanSort() && (
+                          <span className="flex flex-col">
+                            {header.column.getIsSorted() === 'asc' ? (
+                              <ChevronUpIcon className="h-4 w-4" />
+                            ) : header.column.getIsSorted() === 'desc' ? (
+                              <ChevronDownIcon className="h-4 w-4" />
+                            ) : (
+                              <div className="flex flex-col">
+                                <ChevronUpIcon className="h-3 w-3 text-gray-300" />
+                                <ChevronDownIcon className="h-3 w-3 text-gray-300 -mt-1" />
+                              </div>
+                            )}
+                          </span>
+                        )}
+                      </div>
+                    </th>
+                  ))}
+                </tr>
+              ))}
+            </thead>
+            <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+              {table.getRowModel().rows.map((row) => (
+                <tr key={row.id} className="hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                  {row.getVisibleCells().map((cell) => (
+                    <td key={cell.id} className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
           </table>
         </div>
       </div>
@@ -36600,7 +36989,7 @@ function DataTable<T>({
             of {table.getFilteredRowModel().rows.length} results
           </span>
         </div>
-        
+
         <div className="flex items-center space-x-2">
           <button
             onClick={() => table.previousPage()}
@@ -36609,11 +36998,11 @@ function DataTable<T>({
           >
             <ChevronLeftIcon className="h-5 w-5" />
           </button>
-          
+
           <span className="text-sm text-gray-700 dark:text-gray-300">
             Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount()}
           </span>
-          
+
           <button
             onClick={() => table.nextPage()}
             disabled={!table.getCanNextPage()}

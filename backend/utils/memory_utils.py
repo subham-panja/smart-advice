@@ -30,9 +30,9 @@ def optimize_dataframe_memory(df: pd.DataFrame) -> pd.DataFrame:
         for col in df.select_dtypes(include=['int64']).columns:
             df[col] = pd.to_numeric(df[col], downcast='integer')
         
-        # Downcast float columns
-        for col in df.select_dtypes(include=['float64']).columns:
-            df[col] = pd.to_numeric(df[col], downcast='float')
+        # Downcast float columns - DISABLED to prevent TA-Lib errors (needs float64)
+        # for col in df.select_dtypes(include=['float64']).columns:
+        #     df[col] = pd.to_numeric(df[col], downcast='float')
         
         # Log memory savings
         final_memory = df.memory_usage(deep=True).sum()
