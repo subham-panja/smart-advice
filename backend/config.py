@@ -81,9 +81,9 @@ STRATEGY_CONFIG = {
     'Keltner_Channel_Squeeze': False,
 }
 
-# BALANCED: Minimum combined score for recommendation - balanced for quality and quantity
+# BALANCED: Minimum combined score for recommendation
 # Adjusted for realistic recommendations while maintaining quality
-MIN_RECOMMENDATION_SCORE = 0.20  # Increased from -0.5 to filter out weak recommendations
+MIN_RECOMMENDATION_SCORE = 0.15  # Lowered slightly to capture moderate opportunities
 
 # Sentiment analysis configuration
 SENTIMENT_MODEL = 'distilbert-base-uncased-finetuned-sst-2-english'
@@ -117,35 +117,35 @@ REMOVE_OLD_DATA_ON_EACH_RUN = True  # NEW: If True, purges old data before each 
 # Logging configuration
 PERSIST_LOGGING = False  # If False, app.log will be reset on each run
 
-# SWING TRADING OPTIMIZED: Technical-heavy weightage for precision entries
+# BALANCED: Weights spread across enabled pillars for quality filtering
 ANALYSIS_WEIGHTS = {
-    'technical': 0.55,    # Technical analysis weight (55%) - Primary for swing trading
-    'fundamental': 0.20,  # Fundamental analysis weight (20%) - Quality filter
-    'sentiment': 0.10,    # Sentiment analysis weight (10%) - Risk events only
-    'sector': 0.05,       # Sector analysis weight (5%) - Sector trends
-    'predictive': 0.05,   # Predictive analysis weight (5%) - Supporting signal
-    'rl_agent': 0.05      # RL agent weight (5%) - Supporting signal
+    'technical': 0.50,    # Technical weight (50%) - Primary for swing entry
+    'fundamental': 0.30,  # Fundamental weight (30%) - Raised to filter quality stocks
+    'sentiment': 0.10,    # Sentiment weight (10%) - Risk events only
+    'sector': 0.05,       # Sector weight (5%)
+    'predictive': 0.03,   # Predictive weight (3%)
+    'rl_agent': 0.02      # RL agent weight (2%)
 }
 
-# SWING TRADING PRECISION: More realistic thresholds for current market conditions
+# REALISTIC 2024 MARKET CONDITIONS: Calibrated for Indian equity market
 RECOMMENDATION_THRESHOLDS = {
-    'strong_buy_combined': 0.50,     # Strong signals only
-    'buy_combined': 0.20,            # Require positive combined score
-    'technical_strong_buy': 0.50,    
-    'sell_combined': -0.20,          
-    'sentiment_positive': 0.10,      
-    'sentiment_negative': -0.20,     
-    'sentiment_cap_positive': 0.30,  
-    'sentiment_cap_negative': -0.60, 
-    'min_backtest_return': 1.2,      # Realistic threshold for consistent returns
-    'technical_minimum': 0.10,       # Require positive technical trend
-    'fundamental_minimum': 0.05,     # Require slightly positive fundamental
-    'volume_confirmation_required': True,  # Enable volume confirmation
-    'market_trend_weight': 0.3,      
-    'require_all_gates': False,      # Keep flexible for market conditions
-    'min_risk_reward_ratio': 1.8,    # Good risk/reward
-    'sector_filter_enabled': False,  # Keep disabled for broader coverage
-    'min_sector_score': -0.5         
+    'strong_buy_combined': 0.40,     # Lowered from 0.50 — fewer stocks pass 0.50 in bear phases
+    'buy_combined': 0.15,            # Moderate positive combined score is sufficient
+    'technical_strong_buy': 0.40,    # Threshold for a clean technical setup
+    'sell_combined': -0.20,
+    'sentiment_positive': 0.10,
+    'sentiment_negative': -0.20,
+    'sentiment_cap_positive': 0.30,
+    'sentiment_cap_negative': -0.60,
+    'min_backtest_return': 0.5,      # Lowered to 0.5% CAGR — screens out truly losing strategies
+    'technical_minimum': 0.08,       # Require a mild positive technical signal
+    'fundamental_minimum': 0.05,     # Require slightly positive fundamentals
+    'volume_confirmation_required': True,
+    'market_trend_weight': 0.3,
+    'require_all_gates': False,      # Keep flexible — not all pillars active
+    'min_risk_reward_ratio': 1.8,
+    'sector_filter_enabled': False,
+    'min_sector_score': -0.5
 }
 
 # Analysis Modules Configuration - OPTIMIZED for SPEED

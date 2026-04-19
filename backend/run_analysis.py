@@ -311,11 +311,13 @@ class AutomatedStockAnalysis:
                     logger.info("Cache cleaning completed")
                     
                     # Step 2: Purge old data if configured
-                    if self.app.config.get('REMOVE_OLD_DATA_ON_EACH_RUN', True):
-                        logger.info("Auto-purge enabled: clearing old data before run")
-                        self.clear_old_data(days_old=self.app.config.get('DATA_PURGE_DAYS', 7))
+                    if self.app.config.get('REMOVE_OLD_DATA_ON_EACH_RUN', False):
+                        logger.info("Auto-purge enabled: clearing ALL old data before run")
+                        self.clear_old_data(days_old=0)
                     else:
-                        logger.info("Auto-purge disabled: skipping data cleanup")
+                        days_old = self.app.config.get('DATA_PURGE_DAYS', 7)
+                        logger.info(f"Auto-purge disabled: cleaning data older than {days_old} days")
+                        self.clear_old_data(days_old=days_old)
                 else:
                     logger.info("Fast mode enabled - skipping cache cleaning and database purge")
                 

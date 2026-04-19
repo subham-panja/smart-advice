@@ -14,22 +14,24 @@ class PersistenceHandler:
 
     def clear_old_data(self, days_old: int = 7):
         """Clear old data (recommendations and backtest results) older than specified days."""
-        with self.app.app_context():
-            try:
-                db = get_mongodb()
-                
-                if days_old == 0:
-                    logger.info("Purging ALL data from database (days_old=0)")
-                    db['recommended_shares'].delete_many({}, maxTimeMS=30000)
-                    db['backtest_results'].delete_many({}, maxTimeMS=30000)
-                else:
-                    logger.info(f"Purging data older than {days_old} days")
-                    cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_old)
-                    db['recommended_shares'].delete_many({'recommendation_date': {'$lt': cutoff_date}}, maxTimeMS=30000)
-                    db['backtest_results'].delete_many({'created_at': {'$lt': cutoff_date}}, maxTimeMS=30000)
-                
-            except Exception as e:
-                logger.error(f"Error clearing old data: {e}")
+        try:
+            # get_mongodb() creates its own direct MongoClient - no Flask context needed
+            db = get_mongodb()
+
+            if days_old == 0:
+                logger.info("Purging ALL data from database (days_old=0)")
+                r1 = db['recommended_shares'].delete_many({})
+                r2 = db['backtest_results'].delete_many({})
+                logger.info(f"Deleted {r1.deleted_count} recommendations and {r2.deleted_count} backtest records")
+            else:
+                logger.info(f"Purging data older than {days_old} days")
+                cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_old)
+                r1 = db['recommended_shares'].delete_many({'recommendation_date': {'$lt': cutoff_date}})
+                r2 = db['backtest_results'].delete_many({'created_at': {'$lt': cutoff_date}})
+                logger.info(f"Deleted {r1.deleted_count} recommendations and {r2.deleted_count} backtest records older than {days_old} days")
+
+        except Exception as e:
+            logger.error(f"Error clearing old data: {e}")
 
     def save_recommendation(self, analysis_result: Dict[str, Any]) -> bool:
         """Save analysis result to the database (only BUY recommendations, not HOLD)."""
@@ -101,7 +103,7 @@ class PersistenceHandler:
             
             if not self._check_existing_backtest_result(symbol, 'Overall'):
                 insert_backtest_result(
-                    symbol, 'Overall', 
+                    symbol, 'Overall',
                     metrics.get('avg_cagr', 0),
                     metrics.get('avg_win_rate', 0),
                     metrics.get('avg_max_drawdown', 0),
@@ -110,9 +112,18 @@ class PersistenceHandler:
                     losing_trades=metrics.get('losing_trades'),
                     avg_profit_per_trade=metrics.get('avg_profit_per_trade'),
                     avg_loss_per_trade=metrics.get('avg_loss_per_trade'),
+                    avg_trade_duration=metrics.get('avg_trade_duration'),
+                    largest_win=metrics.get('largest_win'),
+                    largest_loss=metrics.get('largest_loss'),
+                    sharpe_ratio=metrics.get('avg_sharpe_ratio'),
+                    sortino_ratio=metrics.get('avg_sortino_ratio'),
+                    calmar_ratio=metrics.get('avg_calmar_ratio'),
+                    volatility=metrics.get('avg_volatility'),
+                    start_date=metrics.get('start_date'),
+                    end_date=metrics.get('end_date'),
+                    initial_capital=metrics.get('initial_capital'),
                     final_capital=metrics.get('avg_final_value'),
                     total_return=metrics.get('avg_roi'),
-                    sharpe_ratio=metrics.get('avg_sharpe_ratio')
                 )
                 logger.info(f"Saved detailed backtest results for {symbol}")
             return True

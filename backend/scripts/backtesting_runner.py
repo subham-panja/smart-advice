@@ -241,12 +241,22 @@ class BacktestingRunner:
                 'win_rate': metrics['win_rate'],
                 'max_drawdown': metrics['max_drawdown'],
                 'sharpe_ratio': metrics['sharpe_ratio'],
+                'sortino_ratio': metrics.get('sortino_ratio', 0),
+                'calmar_ratio': metrics.get('calmar_ratio', 0),
+                'volatility': metrics.get('volatility', 0),
                 'total_trades': metrics['total_trades'],
                 'winning_trades': metrics.get('winning_trades', 0),
                 'losing_trades': metrics.get('losing_trades', 0),
                 'avg_profit_per_trade': metrics.get('avg_profit_per_trade', 0),
                 'avg_loss_per_trade': metrics.get('avg_loss_per_trade', 0),
-                'avg_trade_return': metrics['avg_trade_return']
+                'avg_trade_duration': metrics.get('avg_trade_duration', 0),
+                'largest_win': metrics.get('largest_win', 0),
+                'largest_loss': metrics.get('largest_loss', 0),
+                'avg_trade_return': metrics['avg_trade_return'],
+                'start_date': metrics.get('start_date'),
+                'end_date': metrics.get('end_date'),
+                'initial_capital': metrics.get('initial_capital'),
+                'final_capital': metrics.get('final_capital'),
             }
             
         except Exception as e:
@@ -364,31 +374,74 @@ class BacktestingRunner:
             
             # Average trade return
             avg_trade_return = total_return / max(1, estimated_trades)
-            
+
             # Estimated metrics based on win rate
             winning_trades = int(estimated_trades * (win_rate / 100))
             losing_trades = estimated_trades - winning_trades
-            
+
             # Estimates for profit/loss per trade
             if total_return > 0:
                 avg_profit = (total_return * initial_value / 100) / max(1, winning_trades)
-                avg_loss = (avg_profit * 0.7) # Heuristic
+                avg_loss = (avg_profit * 0.7)  # Heuristic
             else:
                 avg_loss = (abs(total_return) * initial_value / 100) / max(1, losing_trades)
-                avg_profit = (avg_loss * 0.7) # Heuristic
-            
+                avg_profit = (avg_loss * 0.7)  # Heuristic
+
+            # --- Previously-null fields: compute them now ---
+
+            # Annualised volatility (std of daily returns * sqrt(252))
+            volatility = round(float(return_std * np.sqrt(252) * 100), 2) if return_std > 0 else 0.0
+
+            # Sortino ratio uses only downside deviation
+            downside_returns = returns[returns < 0]
+            downside_std = downside_returns.std()
+            if len(downside_returns) > 1 and downside_std > 0:
+                avg_return = returns.mean()
+                sortino_ratio = round(float((avg_return / downside_std) * np.sqrt(252)), 2)
+            else:
+                sortino_ratio = 0.0
+
+            # Calmar ratio = CAGR / Max Drawdown
+            calmar_ratio = round(float(abs(cagr) / max_drawdown), 4) if max_drawdown > 0 else 0.0
+
+            # Largest single-day gain/loss as proxy for largest win/loss
+            largest_win = round(float(returns.max() * initial_value), 2) if len(returns) > 0 else 0.0
+            largest_loss = round(float(abs(returns.min()) * initial_value), 2) if len(returns) > 0 else 0.0
+
+            # Average trade duration: assume holding period ~days / trades
+            avg_trade_duration = round(days / max(1, estimated_trades), 1)
+
+            # Start/end dates
+            try:
+                start_date = data.index[0].strftime('%Y-%m-%d') if hasattr(data.index[0], 'strftime') else str(data.index[0])[:10]
+                end_date = data.index[-1].strftime('%Y-%m-%d') if hasattr(data.index[-1], 'strftime') else str(data.index[-1])[:10]
+            except Exception:
+                start_date = None
+                end_date = None
+
             return {
                 'cagr': round(cagr, 2),
                 'win_rate': round(win_rate, 2),
                 'max_drawdown': round(max_drawdown, 2),
                 'sharpe_ratio': round(sharpe_ratio, 2),
+                'sortino_ratio': sortino_ratio,
+                'calmar_ratio': calmar_ratio,
+                'volatility': volatility,
                 'total_trades': estimated_trades,
                 'winning_trades': winning_trades,
                 'losing_trades': losing_trades,
                 'avg_profit_per_trade': round(avg_profit, 2),
                 'avg_loss_per_trade': round(avg_loss, 2),
-                'avg_trade_return': round(avg_trade_return, 2)
+                'avg_trade_return': round(avg_trade_return, 2),
+                'avg_trade_duration': avg_trade_duration,
+                'largest_win': largest_win,
+                'largest_loss': largest_loss,
+                'start_date': start_date,
+                'end_date': end_date,
+                'initial_capital': round(initial_value, 2),
+                'final_capital': round(final_value, 2),
             }
+
             
         except Exception as e:
             logger.error(f"Error calculating metrics: {e}")
@@ -446,12 +499,27 @@ class BacktestingRunner:
             # Find best and worst strategies
             best_strategy = max(successful_results, key=lambda x: x['cagr'])['strategy_name']
             worst_strategy = min(successful_results, key=lambda x: x['cagr'])['strategy_name']
-            
+
+            # Aggregate previously-null fields across strategies
+            avg_volatility = sum(r.get('volatility', 0) for r in successful_results) / len(successful_results)
+            avg_sortino = sum(r.get('sortino_ratio', 0) for r in successful_results) / len(successful_results)
+            avg_calmar = sum(r.get('calmar_ratio', 0) for r in successful_results) / len(successful_results)
+            avg_trade_duration = sum(r.get('avg_trade_duration', 0) for r in successful_results) / len(successful_results)
+            largest_win = max((r.get('largest_win', 0) for r in successful_results), default=0)
+            largest_loss = max((r.get('largest_loss', 0) for r in successful_results), default=0)
+            # Use first strategy's dates and initial capital (shared across all strategies)
+            start_date = next((r.get('start_date') for r in successful_results if r.get('start_date')), None)
+            end_date = next((r.get('end_date') for r in successful_results if r.get('end_date')), None)
+            initial_capital = next((r.get('initial_capital') for r in successful_results if r.get('initial_capital')), None)
+
             return {
                 'avg_cagr': round(avg_cagr, 2),
                 'avg_win_rate': round(avg_win_rate, 2),
                 'avg_max_drawdown': round(avg_max_drawdown, 2),
                 'avg_sharpe_ratio': round(avg_sharpe_ratio, 2),
+                'avg_sortino_ratio': round(avg_sortino, 2),
+                'avg_calmar_ratio': round(avg_calmar, 4),
+                'avg_volatility': round(avg_volatility, 2),
                 'total_trades': total_trades,
                 'winning_trades': winning_trades,
                 'losing_trades': losing_trades,
@@ -459,6 +527,12 @@ class BacktestingRunner:
                 'avg_final_value': round(avg_final_value, 2),
                 'avg_profit_per_trade': round(avg_profit, 2),
                 'avg_loss_per_trade': round(avg_loss, 2),
+                'avg_trade_duration': round(avg_trade_duration, 1),
+                'largest_win': round(largest_win, 2),
+                'largest_loss': round(largest_loss, 2),
+                'start_date': start_date,
+                'end_date': end_date,
+                'initial_capital': initial_capital,
                 'best_strategy': best_strategy,
                 'worst_strategy': worst_strategy,
                 'strategies_tested': len(successful_results)
