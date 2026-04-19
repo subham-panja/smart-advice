@@ -82,7 +82,7 @@ STRATEGY_CONFIG = {
 
 # BALANCED: Minimum combined score for recommendation - balanced for quality and quantity
 # Adjusted for realistic recommendations while maintaining quality
-MIN_RECOMMENDATION_SCORE = 0.0  # Increased from -0.5 to filter out weak recommendations
+MIN_RECOMMENDATION_SCORE = 0.20  # Increased from -0.5 to filter out weak recommendations
 
 # Sentiment analysis configuration
 SENTIMENT_MODEL = 'distilbert-base-uncased-finetuned-sst-2-english'
@@ -124,7 +124,7 @@ ANALYSIS_WEIGHTS = {
 # SWING TRADING PRECISION: More realistic thresholds for current market conditions
 RECOMMENDATION_THRESHOLDS = {
     'strong_buy_combined': 0.50,     # Strong signals only
-    'buy_combined': 0.10,            # Require positive combined score
+    'buy_combined': 0.20,            # Require positive combined score
     'technical_strong_buy': 0.50,    
     'sell_combined': -0.20,          
     'sentiment_positive': 0.10,      
