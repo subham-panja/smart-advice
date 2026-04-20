@@ -9,7 +9,7 @@ from utils.logger import setup_logging
 from utils.memory_utils import optimize_dataframe_memory
 import yfinance as yf
 from nsetools import Nse
-from config import NSE_CACHE_FILE, STOCK_FILTERING, MAX_WORKER_THREADS, MAX_RETRIES, REQUEST_DELAY, TIMEOUT_SECONDS, RATE_LIMIT_DELAY, BACKOFF_MULTIPLIER, HISTORICAL_DATA_PERIOD
+from config import NSE_CACHE_FILE, STOCK_FILTERING, MAX_WORKER_THREADS, MAX_RETRIES, REQUEST_DELAY, TIMEOUT_SECONDS, RATE_LIMIT_DELAY, BACKOFF_MULTIPLIER, HISTORICAL_DATA_PERIOD, FILTERED_SYMBOLS_CACHE_HOURS, FILTER_VALIDATION_PERIOD
 import requests
 from requests.exceptions import RequestException
 import random
@@ -586,7 +586,8 @@ def get_stock_info_with_retry(symbol: str, max_retries: int = MAX_RETRIES) -> Di
                 continue
 
             # Get historical data for volume calculation
-            hist_data = get_historical_data(symbol, '3mo')
+            # Use configurable period (e.g., '1y') so we have enough data points for min_historical_days filtering
+            hist_data = get_historical_data(symbol, FILTER_VALIDATION_PERIOD)
             
             if hist_data.empty:
                 return {'symbol': symbol, 'valid': False, 'reason': 'No historical data'}
@@ -825,7 +826,8 @@ def get_filtered_nse_symbols(max_stocks: int = None) -> Dict[str, str]:
     if os.path.exists(cache_file):
         try:
             file_age = time.time() - os.path.getmtime(cache_file)
-            if file_age < 86400:  # 24 hours
+            cache_seconds = FILTERED_SYMBOLS_CACHE_HOURS * 3600
+            if file_age < cache_seconds:  # Configurable via FILTERED_SYMBOLS_CACHE_HOURS in config.py
                 with open(cache_file, 'r') as f:
                     filtered_symbols = json.load(f)
                     logger.info(f"Loaded {len(filtered_symbols)} filtered symbols from cache.")

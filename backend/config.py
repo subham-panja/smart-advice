@@ -109,6 +109,15 @@ HISTORICAL_DATA_PERIOD = '5y'  # Extended for better regime coverage in swing tr
 BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
 NSE_CACHE_FILE = os.path.join(BACKEND_DIR, 'data', 'nse_symbols.json')
 
+# Filtered symbols cache duration (in hours)
+# After pre-filtering all NSE stocks, the result is cached for this duration.
+# Set higher to avoid re-scanning 2000+ stocks on every run.
+FILTERED_SYMBOLS_CACHE_HOURS = 72  # 3 days — volume patterns are stable for liquid stocks
+
+# Period of data to fetch during pre-filter stock validation
+# Use '1y' to satisfy min_historical_days: 250, or '3mo' for faster but less strict filtering
+FILTER_VALIDATION_PERIOD = '1y'
+
 # Threading and batch processing configuration
 # OPTIMIZED settings for MAXIMUM performance
 MAX_WORKER_THREADS = 10  # Increased threads for parallel processing
@@ -128,7 +137,7 @@ DATA_FETCH_THREADS = 16               # Efficient network I/O concurrency for Ma
 
 # Data purge configuration
 DATA_PURGE_DAYS = 7  # Number of days to keep old data (recommendations and backtest results)
-REMOVE_OLD_DATA_ON_EACH_RUN = True  # NEW: If True, purges old data before each analysis run
+REMOVE_OLD_DATA_ON_EACH_RUN = False  # NEW: If True, purges old data before each analysis run
 # WARNING: Setting DATA_PURGE_DAYS to 0 will DELETE ALL DATA every time analysis runs!
 
 # Logging configuration
