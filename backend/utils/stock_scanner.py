@@ -1,6 +1,9 @@
+import os
+import json
 import logging
 from typing import Dict, List, Any
 from scripts.data_fetcher import get_all_nse_symbols, get_filtered_nse_symbols
+import config
 
 logger = logging.getLogger(__name__)
 
@@ -8,9 +11,36 @@ class StockScanner:
     """Handles fetching and filtering of stock symbols for analysis."""
     
     @staticmethod
-    def get_symbols(max_stocks: int = None, use_all_symbols: bool = False) -> Dict[str, Any]:
+    def get_symbols(max_stocks: int = None, use_all_symbols: bool = False, group_name: str = None) -> Dict[str, Any]:
         """Fetch stock symbols based on criteria."""
-        if use_all_symbols:
+        
+        # Branch 1: If a specific group is specified
+        if group_name:
+            logger.info(f"Fetching symbols for group: {group_name}...")
+            groups_file = getattr(config, 'SYMBOL_GROUPS_FILE', None)
+            if not groups_file or not os.path.exists(groups_file):
+                logger.error(f"Symbol groups file not found at {groups_file}")
+                return {}
+            
+            try:
+                with open(groups_file, 'r') as f:
+                    groups_data = json.load(f)
+                
+                group_symbols = groups_data.get(group_name)
+                if not group_symbols:
+                    logger.warning(f"Group '{group_name}' not found in {groups_file}")
+                    return {}
+                
+                # Convert list to dict format
+                symbols = {s: {'symbol': s, 'company_name': s} for s in group_symbols}
+                logger.info(f"Loaded {len(symbols)} symbols from group '{group_name}'")
+                
+            except Exception as e:
+                logger.error(f"Error loading symbol group '{group_name}': {e}")
+                return {}
+                
+        # Branch 2: Legacy behavior (all or filtered)
+        elif use_all_symbols:
             logger.info(f"Fetching all NSE symbols (max={max_stocks})...")
             all_symbols = get_all_nse_symbols()
             if not all_symbols:

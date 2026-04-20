@@ -47,7 +47,7 @@ STRATEGY_CONFIG = {
     'Multi_Timeframe_RSI': False,          # DISABLED - Causes import hang on some systems
 
     # Keep problematic strategies disabled
-    'Volume_Breakout': False,              # Causes loading hang on some environments
+    'Volume_Breakout': True,               # FIXED: Now vectorized and enabled
     'Support_Resistance_Breakout': False,  # Heavy data needs
 
     # Additional strategies (disabled for now to avoid heavy imports/CPU)
@@ -108,6 +108,7 @@ NEWS_DATE_RANGE = '10d'
 HISTORICAL_DATA_PERIOD = '5y'  # Extended for better regime coverage in swing trading
 BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
 NSE_CACHE_FILE = os.path.join(BACKEND_DIR, 'data', 'nse_symbols.json')
+SYMBOL_GROUPS_FILE = os.path.join(BACKEND_DIR, 'data', 'symbol_groups.json')
 
 # Filtered symbols cache duration (in hours)
 # After pre-filtering all NSE stocks, the result is cached for this duration.
@@ -156,15 +157,15 @@ ANALYSIS_WEIGHTS = {
 
 # SWING TRADING THRESHOLDS: Calibrated for Indian equity market
 RECOMMENDATION_THRESHOLDS = {
-    'strong_buy_combined': 0.45,     # High bar for strong buy — multiple pillars must align
-    'buy_combined': 0.20,            # Raised to 0.20 — only recommend clearly positive setups
+    'strong_buy_combined': 0.85,     # Increased to scale with tighter rules
+    'buy_combined': 0.65,            # REQUIRED: 0.65 to filter only A+ setups without sentiment/sector data
     'technical_strong_buy': 0.40,    # Threshold for a clean technical setup
     'sell_combined': -0.20,
     'sentiment_positive': 0.10,
     'sentiment_negative': -0.20,
     'sentiment_cap_positive': 0.30,
     'sentiment_cap_negative': -0.60,
-    'min_backtest_return': 0.5,      # Lowered to 0.5% CAGR — screens out truly losing strategies
+    'min_backtest_return': 15.0,     # REQUIRED: 15.0% minimum CAGR hurdle for robust backtest outperformance
     'technical_minimum': 0.15,       # Require a mild positive technical signal
     'fundamental_minimum': 0.10,     # Require slightly positive fundamentals
     'volume_confirmation_required': True,
@@ -197,12 +198,12 @@ STOCK_FILTERING = {
     'min_volume': 100000,           # Higher minimum for liquidity
     'min_price': 20.0,              # Avoid penny stocks
     'max_price': 50000.0,           # Maximum stock price
-    'min_market_cap': 500000000,    # 50 crore minimum (mid-cap+)
+    'min_market_cap': 50000000000,  # REQUIRED: 5000 crore minimum (solid mid/large cap)
     'min_historical_days': 250,     # 1 year minimum history
     'volume_lookback_days': 50,     # Volume lookback period
     'exclude_delisted': True,       # Exclude delisted stocks
     'exclude_suspended': True,      # Exclude suspended stocks
-    'min_delivery_percent': 30.0,   # NEW: Minimum delivery percentage
+    'min_delivery_percent': 55.0,   # REQUIRED: 55.0% minimum for guaranteed institutional overnight holding
     'max_volatility_percentile': 80 # NEW: Avoid extremely volatile stocks
 }
 

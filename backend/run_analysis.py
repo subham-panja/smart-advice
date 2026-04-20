@@ -63,6 +63,58 @@ class AutomatedStockAnalysis:
     def save_backtest_results(self, analysis_result: Dict[str, Any]) -> bool:
         """Save backtest results to the database."""
         return self.persistence.save_backtest_results(analysis_result)
+        
+    def check_macro_regime(self) -> bool:
+        """Check NIFTY 50 (^NSEI) trend to protect capital during bearish regimes. Returns True if safe to trade."""
+        try:
+            import yfinance as yf
+            logger.info("Evaluating Macroeconomic Environmental Gate (NIFTY 50)...")
+            
+            # Fetch last 3 months of Nifty 50 data
+            nifty = yf.Ticker('^NSEI')
+            hist = nifty.history(period='3mo')
+            
+            if len(hist) < 30:
+                logger.warning("Insufficient NIFTY 50 data fetched. Defaulting to safe regime.")
+                return True
+                
+            close = hist['Close']
+            
+            # Calculate 20-day EMA
+            ema20 = close.ewm(span=20, adjust=False).mean()
+            current_close = close.iloc[-1]
+            current_ema20 = ema20.iloc[-1]
+            
+            # Calculate MACD
+            ema12 = close.ewm(span=12, adjust=False).mean()
+            ema26 = close.ewm(span=26, adjust=False).mean()
+            macd = ema12 - ema26
+            signal = macd.ewm(span=9, adjust=False).mean()
+            current_macd = macd.iloc[-1]
+            current_signal = signal.iloc[-1]
+            
+            is_safe = True
+            reasons = []
+            
+            if current_close < current_ema20:
+                is_safe = False
+                reasons.append("Price is BELOW 20-Day EMA")
+                
+            if current_macd < current_signal:
+                is_safe = False
+                reasons.append("MACD is Negative/Bearish")
+                
+            if not is_safe:
+                logger.warning(f"🚨 MACRO BEAR MARKET DETECTED: {', '.join(reasons)}")
+                logger.warning("Activating defensive sub-routine. Halting all new long position analysis.")
+                return False
+                
+            logger.info("NIFTY 50 environmental gate passed. Macro regime is favorable.")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error checking NIFTY 50 regime: {e}")
+            return True  # Fail-safe pass if API fails
     
     def analyze_single_stock(self, symbol: str, total_stocks: int, current_index: int) -> Dict[str, Any]:
         """
@@ -118,7 +170,7 @@ class AutomatedStockAnalysis:
                 'recommended': False
             }
     
-    def analyze_all_stocks(self, max_stocks: int = None, batch_size: int = None, use_all_symbols: bool = False, single_threaded: bool = False):
+    def analyze_all_stocks(self, max_stocks: int = None, batch_size: int = None, use_all_symbols: bool = False, single_threaded: bool = False, group_name: str = None):
         """
         Analyze all NSE stocks using multithreading and save recommendations.
         
@@ -127,14 +179,16 @@ class AutomatedStockAnalysis:
             batch_size: Number of stocks to process in each batch (from config if None)
             use_all_symbols: If True, use all NSE symbols instead of filtered ones
             single_threaded: If True, process stocks one by one without threading (for debugging)
+            group_name: Optional name of symbol group to scan (e.g. 'nifty50')
         """
         mode_str = "single-threaded" if single_threaded else "multithreading"
+        log_ctx = f"group={group_name}" if group_name else f"use_all_symbols={use_all_symbols}"
         if self.verbose:
-            logger.info(f"Starting automated stock analysis with {mode_str} (max_stocks={max_stocks}, use_all_symbols={use_all_symbols})")
+            logger.info(f"Starting automated stock analysis with {mode_str} (max_stocks={max_stocks}, {log_ctx})")
         
         # Fetch symbols using the new StockScanner
-        if not hasattr(self, '_cached_symbols'):
-            self._cached_symbols = StockScanner.get_symbols(max_stocks=max_stocks, use_all_symbols=use_all_symbols)
+        if not hasattr(self, '_cached_symbols') or group_name:
+            self._cached_symbols = StockScanner.get_symbols(max_stocks=max_stocks, use_all_symbols=use_all_symbols, group_name=group_name)
         
         filtered_symbols = self._cached_symbols
         if not filtered_symbols:
@@ -471,7 +525,13 @@ class AutomatedStockAnalysis:
                 
                 # Analyze all stocks
                 logger.info("Starting stock analysis...")
-                self.analyze_all_stocks(max_stocks=max_stocks, use_all_symbols=use_all_symbols, single_threaded=getattr(self, 'single_threaded', False))
+                
+                self.analyze_all_stocks(
+                    max_stocks=max_stocks, 
+                    use_all_symbols=use_all_symbols, 
+                    single_threaded=getattr(self, 'single_threaded', False),
+                    group_name=getattr(self, 'group_name', None)
+                )
                 logger.info("Stock analysis completed")
                 
                 logger.info("Automated analysis completed successfully")
@@ -496,6 +556,7 @@ def main():
     parser.add_argument('--disable-volume-filter', action='store_true', help='Disable volume-based filtering for analysis')
     parser.add_argument('--fresh-data', action='store_true', help='Force fresh data fetch (no cache for today)')
     parser.add_argument('--fast', action='store_true', help='Enable fast mode - skip cache cleaning and database purge for maximum speed')
+    parser.add_argument('--group', type=str, help='Analyze aspecific group of stocks from symbol_groups.json (e.g. nifty50)')
     
     args = parser.parse_args()
     
@@ -526,8 +587,9 @@ def main():
         # Create analyzer with correct verbose setting from the start
         analyzer = AutomatedStockAnalysis(verbose=args.verbose)
         
-        # Set single_threaded flag
+        # Set flags
         analyzer.single_threaded = args.single_threaded
+        analyzer.group_name = args.group
         if args.single_threaded and args.verbose:
             logger.info("Single-threaded mode enabled for debugging")
         
