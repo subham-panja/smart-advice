@@ -15,9 +15,10 @@ os.environ['NUMEXPR_NUM_THREADS'] = LIBRARY_MAX_THREADS
 SECRET_KEY = 'your_super_secret_key_here'  # Change this for production!
 
 # Database configuration - MongoDB
-MONGODB_HOST = 'localhost'
-MONGODB_PORT = 27017
-MONGODB_DATABASE = 'super_advice'
+# Prefer 127.0.0.1 over localhost to avoid resolver/socket issues on some setups.
+MONGODB_HOST = os.getenv('MONGODB_HOST', '127.0.0.1')
+MONGODB_PORT = int(os.getenv('MONGODB_PORT', '27017'))
+MONGODB_DATABASE = os.getenv('MONGODB_DATABASE', 'super_advice')
 # Collections
 MONGODB_COLLECTIONS = {
     'recommended_shares': 'recommended_shares',

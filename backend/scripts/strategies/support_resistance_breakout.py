@@ -10,10 +10,10 @@ to identify high-probability breakout opportunities.
 import pandas as pd
 import numpy as np
 from .base_strategy import BaseStrategy
-from utils.logger import setup_logging
+import logging
 from scipy.signal import argrelextrema
 
-logger = setup_logging()
+logger = logging.getLogger(__name__)
 
 
 class SupportResistanceBreakoutStrategy(BaseStrategy):

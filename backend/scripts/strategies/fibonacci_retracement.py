@@ -11,9 +11,9 @@ import pandas as pd
 import numpy as np
 from .base_strategy import BaseStrategy
 from utils.volume_analysis import get_enhanced_volume_confirmation
-from utils.logger import setup_logging
+import logging
 
-logger = setup_logging()
+logger = logging.getLogger(__name__)
 
 
 class FibonacciRetracementStrategy(BaseStrategy):

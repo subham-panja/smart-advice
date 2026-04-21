@@ -19,8 +19,8 @@ class MultiTimeframeRSI(BaseStrategy, TechnicalIndicatorMixin):
         # Initialize logger when strategy is instantiated
         global logger
         if logger is None:
-            from utils.logger import setup_logging
-            logger = setup_logging()
+            import logging
+            logger = logging.getLogger(__name__)
         
         self.params = params or {
             'daily_rsi_period': 14,

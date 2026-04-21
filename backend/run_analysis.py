@@ -288,11 +288,15 @@ class AutomatedStockAnalysis:
         work_items = []
         for sym, df in fetched_data.items():
             company = symbol_names.get(sym, sym)
+            if hasattr(df.index, "strftime"):
+                index_strings = df.index.strftime('%Y-%m-%d %H:%M:%S').tolist()
+            else:
+                index_strings = [str(idx) for idx in df.index.tolist()]
             work_items.append((
                 sym,
                 company,
                 df.to_dict(),           # Serializable dict
-                df.index.strftime('%Y-%m-%d %H:%M:%S').tolist(),  # Index as strings
+                index_strings,          # Index as strings
                 serializable_config
             ))
         
