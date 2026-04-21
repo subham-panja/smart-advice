@@ -541,7 +541,16 @@ class SwingTradingSignalAnalyzer:
                 analysis['reasons'].append(f"✗ Trend Filter: {trend_filter['reason']}")
             
             # 2. Multi-Timeframe Confirmation
-            mtf_confirmation = self.calculate_multi_timeframe_confirmation(daily_df, weekly_df)
+            mtf_config = SWING_TRADING_GATES.get('multi_timeframe_gate', {})
+            if mtf_config.get('weekly_trend_check', True):
+                mtf_confirmation = self.calculate_multi_timeframe_confirmation(daily_df, weekly_df)
+            else:
+                mtf_confirmation = {
+                    'passed': True, 
+                    'reason': 'MTF check disabled in config',
+                    'weekly_trend_up': None,
+                    'mtf_aligned': True
+                }
             analysis['gates_passed']['mtf_confirmation'] = mtf_confirmation['passed']
             if mtf_confirmation['passed']:
                 analysis['reasons'].append(f"✓ MTF Confirmation: {mtf_confirmation['reason']}")
