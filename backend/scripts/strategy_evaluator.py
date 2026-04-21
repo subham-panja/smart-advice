@@ -9,10 +9,10 @@ to generate overall technical analysis scores.
 import pandas as pd
 import importlib
 from typing import Dict, List, Any
-from utils.logger import setup_logging
+import logging
 from config import STRATEGY_CONFIG, MIN_RECOMMENDATION_SCORE
 
-logger = setup_logging()
+logger = logging.getLogger(__name__)
 
 class StrategyEvaluator:
     """

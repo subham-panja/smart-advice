@@ -133,7 +133,6 @@ BACKOFF_MULTIPLIER = 1.5  # Reduced backoff multiplier
 # When enabled, uses a two-phase pipeline: threads for I/O, processes for CPU work
 USE_MULTIPROCESSING_PIPELINE = True   # Toggle: True = multiprocessing, False = legacy threading
 NUM_WORKER_PROCESSES = 8              # Optimized for Apple Silicon M1 (8 physical cores)
-THREADS_PER_PROCESS = 1               # Actual threading is locked to 1 via LIBRARY_MAX_THREADS above
 DATA_FETCH_THREADS = 16               # Efficient network I/O concurrency for Mac M1
 
 # Data purge configuration
@@ -149,10 +148,8 @@ PERSIST_LOGGING = True  # If False, app.log will be reset on each run
 ANALYSIS_WEIGHTS = {
     'technical': 0.60,    # Technical weight (60%) - Primary for swing entry
     'fundamental': 0.40,  # Fundamental weight (40%) - Quality stock filtering
-    'sentiment': 0.00,    # Sentiment weight (0%) - DISABLED in ANALYSIS_CONFIG
-    'sector': 0.00,       # Sector weight (0%) - DISABLED
-    'predictive': 0.00,   # Predictive weight (0%) - DISABLED
-    'rl_agent': 0.00      # RL agent weight (0%) - DISABLED
+    'sentiment': 0.00,    # Sentiment weight (0%)
+    'sector': 0.00        # Sector weight (0%)
 }
 
 # SWING TRADING THRESHOLDS: Calibrated for Indian equity market
@@ -187,8 +184,6 @@ ANALYSIS_CONFIG = {
     'alternative_data': False,        # DISABLED - Additional data fetching
     'backtesting': True,             # ENABLED - Simplified for speed
     'risk_management': True,         # ENABLED - Essential for trade planning
-    'predictive_analysis': False,    # DISABLED - Heavy ML processing
-    'rl_trading_agent': False,       # DISABLED - Heavy ML processing
     'tca_analysis': False           # DISABLED - Complex analysis
 }
 
@@ -289,7 +284,6 @@ RISK_MANAGEMENT = {
     'portfolio_constraints': {
         'max_concurrent_positions': 5,
         'max_sector_concentration': 0.40,  # Max 40% in one sector
-        'max_correlation': 0.70,       # Max correlation between positions
         'daily_loss_limit': 0.03,      # 3% daily loss limit
         'pause_on_limit_breach': True
     },

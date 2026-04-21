@@ -11,6 +11,7 @@ import numpy as np
 import talib as ta
 from typing import Dict, Any
 import logging
+from config import SWING_PATTERNS, RECOMMENDATION_THRESHOLDS, RISK_MANAGEMENT
 
 logger = logging.getLogger(__name__)
 
@@ -160,7 +161,14 @@ class TradeLogic:
         
         ma_cross_bullish = ema_12 > ema_26 and sma_20 > sma_50
         price_above_ma = current_price > sma_20 and current_price > sma_50
-        rsi_neutral = 30 < rsi < 70
+        exit_rules = SWING_PATTERNS.get('exit_rules', {})
+        atr_sl_mult = exit_rules.get('atr_stop_multiplier', 1.5)
+        
+        # Determine RSI range from patterns (pullback_to_ema as proxy for neutral zone)
+        pullback_config = next((p for p in SWING_PATTERNS.get('entry_patterns', []) if p['name'] == 'pullback_to_ema'), {})
+        rsi_min, rsi_max = pullback_config.get('rsi_range', [40, 60])
+        
+        rsi_neutral = rsi_min <= rsi <= rsi_max
         near_support = abs(current_price - support) / current_price < 0.05
         
         if ma_cross_bullish and price_above_ma and rsi_neutral:
@@ -195,10 +203,12 @@ class TradeLogic:
         if recommendation == 'BUY':
             risk = abs(buy_price - stop_loss)
             reward = abs(sell_price - buy_price)
-            risk_reward_ratio = reward / risk if risk > 0 else 0
-            if risk_reward_ratio < 2.0:
+            min_rr = RECOMMENDATION_THRESHOLDS.get('min_risk_reward_ratio', 1.8)
+            if risk_reward_ratio < min_rr:
                 vol_pct = (atr / current_price) * 100
                 min_ratio = self._calculate_dynamic_risk_reward_ratio(vol_pct, rsi)
+                # Ensure we at least meet the global minimum
+                min_ratio = max(min_ratio, min_rr)
                 sell_price = buy_price + (risk * min_ratio)
                 risk_reward_ratio = min_ratio
 

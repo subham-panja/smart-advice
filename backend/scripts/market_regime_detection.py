@@ -10,8 +10,8 @@ from arch import arch_model
 import warnings
 warnings.filterwarnings('ignore', category=FutureWarning)
 
-from utils.logger import setup_logging
-logger = setup_logging()
+import logging
+logger = logging.getLogger(__name__)
 from scripts.data_fetcher import get_historical_data
 
 class MarketRegimeDetection:

@@ -11,12 +11,12 @@ import pandas as pd
 import numpy as np
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional
-from utils.logger import setup_logging
+import logging
 from utils.enhanced_volume_confirmation import volume_confirmator
 from utils.volume_analysis import get_enhanced_volume_confirmation
 import config
 
-logger = setup_logging()
+logger = logging.getLogger(__name__)
 
 class BaseStrategy(ABC):
     """

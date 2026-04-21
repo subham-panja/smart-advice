@@ -23,6 +23,7 @@ from scripts.strategy_evaluator import StrategyEvaluator
 from scripts.fundamental_analysis import FundamentalAnalysis
 from scripts.sentiment_analysis import SentimentAnalysis
 from models.recommendation import RecommendedShare
+from scripts.swing_trading_signals import SwingTradingSignalAnalyzer
 from utils.logger import setup_logging
 from config import HISTORICAL_DATA_PERIOD, ANALYSIS_WEIGHTS, RECOMMENDATION_THRESHOLDS
 from scripts.risk_management import RiskManager
@@ -54,16 +55,7 @@ class StockAnalyzer:
         self.sentiment_analyzer = None
         self.risk_manager = RiskManager()
         self.trade_logic = TradeLogic()
-        self.backtest_utils = BacktestUtils()
-        
-        # Defer heavy initializations
-        self.sector_analyzer = None
-        self.market_regime_detector = None
-        self.market_microstructure_analyzer = None
-        self.alternative_data_analyzer = None
-        self.predictor = None
-        self.rl_trading_agent = None
-        self.tca_analyzer = None
+        self.swing_analyzer = SwingTradingSignalAnalyzer()
         
         logger.info("StockAnalyzer initialization complete")
         
@@ -101,7 +93,22 @@ class StockAnalyzer:
                 logger.error(f"Tech error {symbol}: {e}")
                 result['technical_score'] = -1.0
                 tech_analysis = {'error': str(e)}
+            # 1.5 Swing Trading Gates (The "ignored" config reconnection)
+            swing_gate_res = self.swing_analyzer.analyze_swing_opportunity(symbol, historical_data)
+            result['swing_analysis'] = swing_gate_res
+            
+            # Incorporate swing results into technical score if enabled in RECOMMENDATION_THRESHOLDS
+            if RECOMMENDATION_THRESHOLDS.get('require_all_gates', True) and not swing_gate_res.get('all_gates_passed', False):
+                # Only penalize if technical score was positive
+                if result['technical_score'] > 0:
+                    result['technical_score'] = min(result['technical_score'], 0.1)  # Penalize if gates fail
+                
+                failed_gates = [k for k, v in swing_gate_res.get('gates_passed', {}).items() if not v]
+                if failed_gates:
+                    result['reason'].append(f"Gate failure: {', '.join(failed_gates)}")
+
             result['detailed_analysis']['technical'] = tech_analysis
+            result['detailed_analysis']['swing_gates'] = swing_gate_res
             
             # 2. Fundamental & Sentiment (Optional)
             # Use top-level config or ANALYSIS_CONFIG nested values
@@ -328,6 +335,24 @@ class StockAnalyzer:
         technical_strong_threshold = RECOMMENDATION_THRESHOLDS.get('technical_strong_buy', 0.5)
         sell_threshold = RECOMMENDATION_THRESHOLDS.get('sell_combined', -0.3)
         sentiment_positive_threshold = RECOMMENDATION_THRESHOLDS.get('sentiment_positive', 0.1)
+        sentiment_negative_threshold = RECOMMENDATION_THRESHOLDS.get('sentiment_negative', -0.2)
+        sentiment_cap_positive = RECOMMENDATION_THRESHOLDS.get('sentiment_cap_positive', 0.5)
+        sentiment_cap_negative = RECOMMENDATION_THRESHOLDS.get('sentiment_cap_negative', -0.5)
+        market_trend_weight = RECOMMENDATION_THRESHOLDS.get('market_trend_weight', 0.0)
+        
+        # Penalize if sentiment is significantly negative
+        if sentiment_score < sentiment_negative_threshold:
+            combined_score -= abs(sentiment_score) * 0.5
+            result['reason'].append(f"Penalized due to negative sentiment ({sentiment_score:.2f})")
+            
+        # Cap sentiment influence
+        sentiment_score = max(min(sentiment_score, sentiment_cap_positive), sentiment_cap_negative)
+
+        # Adjust score based on market trend if enabled
+        # This simulates a macro-gate multiplier
+        market_trend_score = result.get('market_trend', 1.0) # Default to 1 (neutral/up)
+        if market_trend_weight > 0:
+            combined_score += (market_trend_score - 0.5) * market_trend_weight
         
         # Recommendation logic with flexible backtest requirements
         if consider_backtest:

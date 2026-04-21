@@ -14,11 +14,11 @@ import pandas as pd
 import numpy as np
 import talib as ta
 from typing import Dict, Any, Optional, Tuple, List
-from utils.logger import setup_logging
+import logging
 from scripts.position_sizing import PositionSizer
 from config import RISK_MANAGEMENT
 
-logger = setup_logging()
+logger = logging.getLogger(__name__)
 
 class RiskManager:
     """
@@ -34,10 +34,18 @@ class RiskManager:
         Initialize the risk manager with parameters from configuration.
         """
         # Load from config if not provided
-        self.account_balance = account_balance or RISK_MANAGEMENT.get('account_settings', {}).get('initial_capital', 100000)
-        self.max_risk_per_trade = max_risk_per_trade or RISK_MANAGEMENT.get('position_sizing', {}).get('risk_per_trade', 0.02)
-        self.max_total_risk = max_total_risk or 0.06  # Default fallback
-        self.max_drawdown = max_drawdown or 0.20      # Default fallback
+        settings = RISK_MANAGEMENT.get('account_settings', {})
+        pos_sizing = RISK_MANAGEMENT.get('position_sizing', {})
+        constraints = RISK_MANAGEMENT.get('portfolio_constraints', {})
+        rr_config = RISK_MANAGEMENT.get('risk_reward', {})
+
+        self.account_balance = account_balance or settings.get('initial_capital', 100000)
+        self.max_risk_per_trade = max_risk_per_trade or pos_sizing.get('risk_per_trade', 0.01)
+        self.max_total_risk = max_total_risk or constraints.get('max_concurrent_positions', 5) * self.max_risk_per_trade
+        self.max_drawdown = max_drawdown or constraints.get('daily_loss_limit', 0.03)
+        self.min_risk_reward = rr_config.get('min_ratio', 1.5)
+        self.optimal_risk_reward = rr_config.get('optimal_ratio', 2.5)
+        
         self.open_positions = {}  # Track open positions for portfolio risk
         
         # Initialize advanced position sizer with volatility awareness
@@ -308,7 +316,15 @@ class RiskManager:
             risk_per_share = abs(entry_price - stop_loss)
             
             targets = {}
+            rr_config = RISK_MANAGEMENT.get('risk_reward', {})
+            min_ratio = rr_config.get('min_ratio', 1.5)
+            should_adjust = rr_config.get('adjust_targets', False)
+            
             for ratio in risk_reward_ratios:
+                # If adjust_targets is True, ensure all targets meet the min_ratio
+                if should_adjust and ratio < min_ratio:
+                    ratio = min_ratio
+                    
                 target_price = entry_price + (risk_per_share * ratio)
                 targets[f'target_{ratio}x'] = {
                     'price': target_price,

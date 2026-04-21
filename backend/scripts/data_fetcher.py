@@ -709,6 +709,22 @@ def process_stock_for_filtering(symbol_data: tuple, filtering_criteria: dict) ->
         if delivery_pct > 0 and delivery_pct < min_delivery:
             logger.debug(f"Skipping {symbol}: Delivery percent {delivery_pct:.1f}% below minimum {min_delivery:.1f}%")
             return (symbol, name, stock_info, False)
+            
+        # Volatility filter
+        volatility_percentile = stock_info.get('volatility_percentile', 0.0)
+        max_vol_percentile = filtering_criteria.get('max_volatility_percentile', 100)
+        if volatility_percentile > max_vol_percentile:
+            logger.debug(f"Skipping {symbol}: Volatility percentile {volatility_percentile:.1f} exceeds maximum {max_vol_percentile}")
+            return (symbol, name, stock_info, False)
+            
+        # Status filters
+        if filtering_criteria.get('exclude_delisted', True) and stock_info.get('is_delisted', False):
+            logger.debug(f"Skipping {symbol}: Stock is delisted")
+            return (symbol, name, stock_info, False)
+            
+        if filtering_criteria.get('exclude_suspended', True) and stock_info.get('is_suspended', False):
+            logger.debug(f"Skipping {symbol}: Stock is suspended")
+            return (symbol, name, stock_info, False)
         
         # Stock passed all filters
         logger.info(f"Added {symbol}: Price={current_price:.2f}, Volume={avg_volume:,.0f}, Days={historical_days}")
@@ -734,46 +750,33 @@ def filter_active_stocks(symbols: Dict[str, str], max_stocks: int = None) -> Dic
     
     filtered_stocks = {}
     
-    # Get filtering criteria from config - more lenient for test mode and large-scale analysis
-    if max_stocks is not None and max_stocks <= 10:  # Test mode with small number of stocks
-        filtering_criteria = {
-            'min_volume': 1000,      # Very low volume requirement for testing
-            'min_price': 1.0,        # Low price requirement
-            'max_price': 50000.0,    # High price limit
-            'min_market_cap': 0,     # No market cap requirement
-            'min_historical_days': 30  # Only 30 days of historical data needed
-        }
-        logger.info("Using relaxed filtering criteria for test mode")
-    elif max_stocks is not None and max_stocks >= 100:  # Large-scale analysis mode
-        filtering_criteria = {
-            'min_volume': 1000,      # Very low volume requirement for large-scale analysis
-            'min_price': 1.0,        # Very low price requirement
-            'max_price': 50000.0,    # High price limit
-            'min_market_cap': 0,     # No market cap requirement for large-scale analysis
-            'min_historical_days': 30  # Very low historical data requirement
-        }
-        logger.info("Using very relaxed filtering criteria for large-scale analysis")
-    elif max_stocks is not None and max_stocks >= 20:  # Mid-sized analysis mode (20-99 stocks)
-        filtering_criteria = {
-            'min_volume': 5000,      # Relaxed volume requirement for mid-sized analysis
-            'min_price': 2.0,        # Relaxed price requirement
-            'max_price': 50000.0,    # High price limit
-            'min_market_cap': 10000000,  # Relaxed market cap requirement (1 crore)
-            'min_historical_days': 200  # Use configured requirement from config.py
-        }
-        logger.info("Using relaxed moderate filtering criteria for mid-sized analysis")
-    else:
-        filtering_criteria = {
-            'min_volume': STOCK_FILTERING.get('min_volume', 100000),
-            'min_price': STOCK_FILTERING.get('min_price', 5.0),
-            'max_price': STOCK_FILTERING.get('max_price', 50000.0),
-            'min_market_cap': STOCK_FILTERING.get('min_market_cap', 100000000),
-            'min_historical_days': STOCK_FILTERING.get('min_historical_days', 200),
-            'min_delivery_percent': STOCK_FILTERING.get('min_delivery_percent', 0.0)
-        }
+    # Get filtering criteria from config - enforce single source of truth
+    filtering_criteria = {
+        'min_volume': STOCK_FILTERING.get('min_volume', 100000),
+        'min_price': STOCK_FILTERING.get('min_price', 5.0),
+        'max_price': STOCK_FILTERING.get('max_price', 50000.0),
+        'min_market_cap': STOCK_FILTERING.get('min_market_cap', 100000000),
+        'min_historical_days': STOCK_FILTERING.get('min_historical_days', 200),
+        'min_delivery_percent': STOCK_FILTERING.get('min_delivery_percent', 0.0),
+        'max_volatility_percentile': STOCK_FILTERING.get('max_volatility_percentile', 80),
+        'volume_lookback_days': STOCK_FILTERING.get('volume_lookback_days', 50),
+        'exclude_delisted': STOCK_FILTERING.get('exclude_delisted', True),
+        'exclude_suspended': STOCK_FILTERING.get('exclude_suspended', True)
+    }
     
-    # Convert symbols dict to list of tuples for threading
-    symbol_list = list(symbols.items())
+    if max_stocks is not None and max_stocks <= 20:
+        logger.info(f"Applying strict config filters to {max_stocks} stocks")
+    else:
+        logger.info(f"Applying strict config filters to full scan of {len(symbols)} stocks")
+    
+    # Convert symbols to list of tuples for threading
+    if isinstance(symbols, dict):
+        symbol_list = list(symbols.items())
+    elif isinstance(symbols, list):
+        symbol_list = [(s, s) for s in symbols]
+    else:
+        logger.error(f"Unsupported symbols type: {type(symbols)}")
+        return {}
     
     # Use ThreadPoolExecutor for parallel processing with adaptive concurrency
     # Reduce workers significantly to avoid rate limiting

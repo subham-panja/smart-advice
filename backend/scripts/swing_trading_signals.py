@@ -15,11 +15,11 @@ import pandas as pd
 import numpy as np
 import talib
 from typing import Dict, Any, List, Tuple, Optional
-from utils.logger import setup_logging
+import logging
 from datetime import datetime, timedelta
 from config import SWING_TRADING_GATES, SWING_PATTERNS, RISK_MANAGEMENT
 
-logger = setup_logging()
+logger = logging.getLogger(__name__)
 
 
 class SwingTradingSignalAnalyzer:
@@ -34,9 +34,12 @@ class SwingTradingSignalAnalyzer:
         self.thresholds = {
             'adx_min': SWING_TRADING_GATES['trend_filter'].get('adx_threshold', 20),
             'adx_max': 50,              # Default cap (not yet in config)
+            'trend_sma_period': SWING_TRADING_GATES['trend_filter'].get('sma_period', 200),
+            'price_above_sma': SWING_TRADING_GATES['trend_filter'].get('price_above_sma', True),
             'atr_percentile_min': SWING_TRADING_GATES['volatility_gate'].get('min_percentile', 20),
             'atr_percentile_max': SWING_TRADING_GATES['volatility_gate'].get('max_percentile', 80),
             'volume_zscore_min': SWING_TRADING_GATES['volume_confirmation'].get('volume_zscore_threshold', 1.0),
+            'obv_trend_periods': SWING_TRADING_GATES['volume_confirmation'].get('obv_trend_periods', 10),
             'rsi_pullback_min': 40,     # Standard RSI levels - keep local or move if needed
             'rsi_pullback_max': 60,
             'bb_squeeze_threshold': 0.05, 
@@ -147,19 +150,23 @@ class SwingTradingSignalAnalyzer:
                     'reason': 'Insufficient weekly data for MTF analysis'
                 }
             
-            # Calculate weekly indicators
-            weekly_sma_20 = talib.SMA(weekly_df['Close'], timeperiod=20)
-            weekly_sma_50 = talib.SMA(weekly_df['Close'], timeperiod=50)
+            # Calculate weekly indicators - Loaded from config
+            mtf_conf = SWING_TRADING_GATES.get('multi_timeframe', {})
+            fast_period = mtf_conf.get('weekly_sma_fast', 20)
+            slow_period = mtf_conf.get('weekly_sma_slow', 50)
+            
+            weekly_sma_fast = talib.SMA(weekly_df['Close'], timeperiod=fast_period)
+            weekly_sma_slow = talib.SMA(weekly_df['Close'], timeperiod=slow_period)
             weekly_rsi = talib.RSI(weekly_df['Close'], timeperiod=14)
             
             # Calculate daily indicators
             daily_sma_20 = talib.SMA(daily_df['Close'], timeperiod=20)
             daily_rsi = talib.RSI(daily_df['Close'], timeperiod=14)
             
-            # Check alignment
+            # Trend is up if fast SMA > slow SMA and price > fast SMA
             weekly_trend_up = (
-                weekly_sma_20.iloc[-1] > weekly_sma_50.iloc[-1] and
-                weekly_df['Close'].iloc[-1] > weekly_sma_20.iloc[-1] and
+                weekly_sma_fast.iloc[-1] > weekly_sma_slow.iloc[-1] and
+                weekly_df['Close'].iloc[-1] > weekly_sma_fast.iloc[-1] and
                 weekly_rsi.iloc[-1] > 50
             )
             
@@ -247,12 +254,15 @@ class SwingTradingSignalAnalyzer:
             # Calculate OBV
             obv = talib.OBV(df['Close'], df['Volume'])
             
+            # Get periods from config
+            conf = SWING_TRADING_GATES.get('volume_confirmation', {})
+            lookback = conf.get('obv_trend_periods', 10)
+            
             # Calculate OBV trend (using linear regression slope)
-            obv_window = 20
-            if len(obv) >= obv_window:
-                x = np.arange(obv_window)
-                y = obv.iloc[-obv_window:].values
-                slope = np.polyfit(x, y, 1)[0]
+            if len(obv) >= lookback:
+                recent_obv = obv.iloc[-lookback:]
+                x = np.arange(len(recent_obv))
+                slope, _ = np.polyfit(x, recent_obv, 1)
                 obv_trending_up = slope > 0
             else:
                 obv_trending_up = False
@@ -274,12 +284,12 @@ class SwingTradingSignalAnalyzer:
             price_breakout = df['Close'].iloc[-1] > df['High'].iloc[-2:-6].max()
             volume_spike = current_volume_zscore > self.thresholds['volume_zscore_min']
             
-            # Volume confirmation conditions
-            volume_confirmed = (
-                obv_trending_up or 
-                (volume_spike and price_breakout) or
-                (volume_above_ma and current_volume_zscore > 0.5)
-            )
+            # Volume confirmation conditions - Respect 'require_either' config
+            require_either = conf.get('require_either', True)
+            if require_either:
+                volume_confirmed = obv_trending_up or volume_spike
+            else:
+                volume_confirmed = obv_trending_up and volume_spike
             
             return {
                 'passed': volume_confirmed,
@@ -312,44 +322,53 @@ class SwingTradingSignalAnalyzer:
         
         try:
             # 1. Pullback to rising EMA
-            p_config = config_patterns.get('pullback_to_ema', {'enabled': True, 'ema_period': 20, 'rsi_range': [40, 60]})
+            p_config = config_patterns.get('pullback_to_ema', {'enabled': True, 'ema_period': 20, 'rsi_range': [40, 60], 'bullish_candle_required': True})
             if p_config['enabled']:
                 ema_period = p_config.get('ema_period', 20)
                 ema_20 = talib.EMA(df['Close'], timeperiod=ema_period)
                 rsi = talib.RSI(df['Close'], timeperiod=14)
+                
+                bullish_candle = df['Close'].iloc[-1] > df['Open'].iloc[-1] if p_config.get('bullish_candle_required', True) else True
                 
                 pullback_to_ema = (
                     df['Low'].iloc[-1] <= ema_20.iloc[-1] * 1.02 and 
                     df['Close'].iloc[-1] > ema_20.iloc[-1] and 
                     ema_20.iloc[-1] > ema_20.iloc[-5] and 
                     p_config['rsi_range'][0] <= rsi.iloc[-1] <= p_config['rsi_range'][1] and
-                    df['Close'].iloc[-1] > df['Open'].iloc[-1]
+                    bullish_candle
                 )
                 
                 patterns['pullback_to_ema'] = {
                     'detected': pullback_to_ema,
                     'strength': 0.8 if pullback_to_ema else 0,
-                    'description': f'Pullback to rising {ema_period} EMA with bullish reversal'
+                    'description': f'Pullback to rising {ema_period} EMA' + (' (Bullish Reversal)' if pullback_to_ema else '')
                 }
             
             # 2. Bollinger Band squeeze breakout
-            p_config = config_patterns.get('bollinger_squeeze_breakout', {'enabled': True, 'bb_period': 20, 'bb_std': 2, 'squeeze_threshold': 0.05})
+            p_config = config_patterns.get('bollinger_squeeze_breakout', {'enabled': True, 'bb_period': 20, 'bb_std': 2, 'squeeze_threshold': 0.05, 'retest_required': False})
             if p_config['enabled']:
                 bb_period = p_config.get('bb_period', 20)
                 bb_std = p_config.get('bb_std', 2)
                 bb_upper, bb_middle, bb_lower = talib.BBANDS(df['Close'], timeperiod=bb_period, nbdevup=bb_std, nbdevdn=bb_std)
                 bb_width = (bb_upper - bb_lower) / bb_middle
                 bb_squeeze = bb_width.iloc[-1] < bb_width.iloc[-20:].quantile(p_config.get('squeeze_threshold', 0.25))
-                bb_breakout = df['Close'].iloc[-1] > bb_upper.iloc[-1] and bb_squeeze
+                
+                # Check for retest if required
+                breakout_valid = df['Close'].iloc[-1] > bb_upper.iloc[-1]
+                if p_config.get('retest_required', False):
+                    # Simplified retest: price was above upper band in previous 3 bars but also close to it
+                    breakout_valid = breakout_valid and df['Low'].iloc[-3:].min() <= bb_upper.iloc[-1] * 1.01
+                
+                bb_breakout = breakout_valid and bb_squeeze
                 
                 patterns['bb_squeeze_breakout'] = {
                     'detected': bb_breakout,
                     'strength': 0.7 if bb_breakout else 0,
-                    'description': 'Bollinger Band squeeze with upward breakout'
+                    'description': 'Bollinger Band squeeze' + (' with retested breakout' if bb_breakout else '')
                 }
             
             # 3. MACD signal cross above zero
-            p_config = config_patterns.get('macd_zero_cross', {'enabled': True, 'fast': 12, 'slow': 26, 'signal': 9})
+            p_config = config_patterns.get('macd_zero_cross', {'enabled': True, 'fast': 12, 'slow': 26, 'signal': 9, 'above_zero_only': True})
             if p_config['enabled']:
                 macd, macd_signal, macd_hist = talib.MACD(
                     df['Close'], 
@@ -357,36 +376,40 @@ class SwingTradingSignalAnalyzer:
                     slowperiod=p_config.get('slow', 26), 
                     signalperiod=p_config.get('signal', 9)
                 )
+                
+                zero_condition = macd.iloc[-1] > 0 if p_config.get('above_zero_only', True) else True
+                
                 macd_bullish_cross = (
                     macd.iloc[-1] > macd_signal.iloc[-1] and
                     macd.iloc[-2] <= macd_signal.iloc[-2] and
-                    macd.iloc[-1] > self.thresholds['macd_zero_buffer']
+                    zero_condition
                 )
                 
                 patterns['macd_bullish_cross'] = {
                     'detected': macd_bullish_cross,
                     'strength': 0.75 if macd_bullish_cross else 0,
-                    'description': 'MACD signal cross above zero line'
+                    'description': 'MACD bullish crossover' + (' above zero' if zero_condition and macd_bullish_cross else '')
                 }
             
             # 4. Higher-low swing structure
-            p_config = config_patterns.get('higher_low_structure', {'enabled': True, 'pivot_lookback': 5})
+            p_config = config_patterns.get('higher_low_structure', {'enabled': True, 'pivot_lookback': 5, 'min_swings': 2})
             if p_config['enabled']:
-                pivot_lookback = p_config.get('pivot_lookback', 5)
-                recent_lows = df['Low'].iloc[-20:]
+                min_swings = p_config.get('min_swings', 2)
+                recent_lows = df['Low'].iloc[-30:] # Increased lookback for swing detection
                 swing_lows = []
-                for i in range(1, len(recent_lows) - 1):
-                    if recent_lows.iloc[i] < recent_lows.iloc[i-1] and recent_lows.iloc[i] < recent_lows.iloc[i+1]:
-                        swing_lows.append((i, recent_lows.iloc[i]))
+                for i in range(2, len(recent_lows) - 2):
+                    if recent_lows.iloc[i] < recent_lows.iloc[i-1] and recent_lows.iloc[i] < recent_lows.iloc[i-2] and \
+                       recent_lows.iloc[i] < recent_lows.iloc[i+1] and recent_lows.iloc[i] < recent_lows.iloc[i+2]:
+                        swing_lows.append(recent_lows.iloc[i])
                 
                 higher_low_structure = False
-                if len(swing_lows) >= 2:
-                    higher_low_structure = swing_lows[-1][1] > swing_lows[-2][1]
+                if len(swing_lows) >= min_swings:
+                    higher_low_structure = all(swing_lows[i] > swing_lows[i-1] for i in range(1, len(swing_lows)))
                 
                 patterns['higher_low_structure'] = {
                     'detected': higher_low_structure,
                     'strength': 0.85 if higher_low_structure else 0,
-                    'description': 'Higher-low swing structure formed'
+                    'description': f'Structural higher-low series ({len(swing_lows)} swings)'
                 }
             
             # 5. Volume-supported breakout
@@ -438,6 +461,11 @@ class SwingTradingSignalAnalyzer:
             if entry_price is None:
                 entry_price = df['Close'].iloc[-1]
             
+            # Load exit rules from config
+            exit_conf = SWING_PATTERNS.get('exit_rules', {})
+            initial_stop_type = exit_conf.get('initial_stop_type', 'atr_based')
+            breakeven_at_target_1 = exit_conf.get('breakeven_at_target_1', True)
+            
             # Calculate ATR for position sizing
             atr = talib.ATR(df['High'], df['Low'], df['Close'], timeperiod=14)
             current_atr = atr.iloc[-1]
@@ -446,12 +474,16 @@ class SwingTradingSignalAnalyzer:
             recent_lows = df['Low'].iloc[-20:]
             swing_low = recent_lows.min()
             
-            # Calculate stop-loss levels
-            atr_stop = entry_price - (current_atr * self.risk_params['atr_multiplier_sl'])
-            swing_stop = swing_low * 0.98  # 2% below swing low
-            
-            # Use the higher stop (tighter risk)
-            stop_loss = max(atr_stop, swing_stop)
+            # Calculate stop-loss level based on type
+            if initial_stop_type == 'atr_based':
+                stop_loss = entry_price - (current_atr * self.risk_params['atr_multiplier_sl'])
+            elif initial_stop_type == 'swing_low':
+                stop_loss = swing_low * 0.99  # 1% below swing low
+            else:
+                # Default to hybrid (tightest)
+                atr_stop = entry_price - (current_atr * self.risk_params['atr_multiplier_sl'])
+                swing_stop = swing_low * 0.99
+                stop_loss = max(atr_stop, swing_stop)
             
             # Calculate take-profit levels
             take_profit_1 = entry_price + (current_atr * self.risk_params['atr_multiplier_tp1'])
@@ -461,9 +493,9 @@ class SwingTradingSignalAnalyzer:
             trailing_stop_distance = current_atr * self.risk_params['atr_multiplier_trail']
             
             # Calculate risk-reward ratios
-            risk = entry_price - stop_loss
-            reward_1 = take_profit_1 - entry_price
-            reward_2 = take_profit_2 - entry_price
+            risk = abs(entry_price - stop_loss)
+            reward_1 = abs(take_profit_1 - entry_price)
+            reward_2 = abs(take_profit_2 - entry_price)
             
             risk_reward_1 = reward_1 / risk if risk > 0 else 0
             risk_reward_2 = reward_2 / risk if risk > 0 else 0
@@ -478,9 +510,11 @@ class SwingTradingSignalAnalyzer:
                 'take_profit_1': take_profit_1,
                 'take_profit_2': take_profit_2,
                 'trailing_stop_distance': trailing_stop_distance,
-                'risk_per_share': risk,
+                'initial_stop_type': initial_stop_type,
+                'breakeven_at_target_1': breakeven_at_target_1,
                 'risk_reward_1': risk_reward_1,
                 'risk_reward_2': risk_reward_2,
+                'risk_per_share': risk,
                 'position_size': position_size,
                 'time_stop_bars': self.risk_params['time_stop_bars'],
                 'atr': current_atr,

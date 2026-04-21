@@ -9,10 +9,10 @@ it signals a potential strong move in the breakout direction.
 
 import pandas as pd
 import numpy as np
+import logging
 from .base_strategy import BaseStrategy
-from utils.logger import setup_logging
 
-logger = setup_logging()
+logger = logging.getLogger(__name__)
 
 
 class VolumeBreakoutStrategy(BaseStrategy):
