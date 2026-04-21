@@ -71,9 +71,10 @@ def analyze_stock_worker(args: Tuple) -> Dict[str, Any]:
             result = _worker_analyzer.analyze_stock_with_data(
                 symbol, company_name, historical_data, app_config
             )
+            success = 'error' not in result
 
             return {
-                'success': True,
+                'success': success,
                 'symbol': symbol,
                 'result': result,
                 'recommended': result.get('is_recommended', False)

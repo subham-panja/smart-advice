@@ -22,6 +22,7 @@ from datetime import datetime
 from typing import Dict, List, Any
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
+from collections import Counter
 
 # from app import create_app
 from scripts.analyzer import StockAnalyzer
@@ -329,9 +330,25 @@ class AutomatedStockAnalysis:
         phase3_start = datetime.now()
         recommended_count = 0
         failed_count = 0
+        hold_reason_counter = Counter()
+        top_candidates = []
         
         for r in results:
             if r['success']:
+                analysis_result = r['result']
+                decision_debug = analysis_result.get('decision_debug', {})
+                for reason in decision_debug.get('hold_reasons', []):
+                    hold_reason_counter[reason] += 1
+
+                top_candidates.append({
+                    'symbol': analysis_result.get('symbol', r.get('symbol')),
+                    'combined_score': analysis_result.get('combined_score', 0),
+                    'technical_score': analysis_result.get('technical_score', 0),
+                    'fundamental_score': analysis_result.get('fundamental_score', 0),
+                    'recommendation_strength': analysis_result.get('recommendation_strength', 'UNKNOWN'),
+                    'hold_reasons': decision_debug.get('hold_reasons', []),
+                })
+
                 self.save_backtest_results(r['result'])
                 if self.save_recommendation(r['result']):
                     if r['recommended']:
@@ -349,6 +366,25 @@ class AutomatedStockAnalysis:
         logger.info(f"Phase 1 (fetch): {phase1_time:.1f}s | Phase 2 (analyze): {phase2_time:.1f}s | Phase 3 (save): {phase3_time:.1f}s")
         logger.info(f"Total: {total_time/60:.1f} min | {len(results)} processed | {recommended_count} recommended | {failed_count} failed")
         logger.info(f"Avg per stock: {total_time/len(results):.1f}s")
+
+        if hold_reason_counter:
+            logger.info("Top hold blockers:")
+            for reason, count in hold_reason_counter.most_common(10):
+                logger.info("  %s -> %d stocks", reason, count)
+
+        if top_candidates:
+            top_candidates.sort(key=lambda item: item.get('combined_score', 0), reverse=True)
+            logger.info("Top near-threshold candidates:")
+            for item in top_candidates[:10]:
+                logger.info(
+                    "  %s | strength=%s | combined=%.3f | tech=%.3f | fund=%.3f | reasons=%s",
+                    item['symbol'],
+                    item['recommendation_strength'],
+                    item['combined_score'],
+                    item['technical_score'],
+                    item['fundamental_score'],
+                    "; ".join(item['hold_reasons']) if item['hold_reasons'] else "n/a",
+                )
         
         try:
             from database import get_mongodb

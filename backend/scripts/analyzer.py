@@ -53,9 +53,11 @@ class StockAnalyzer:
         self.strategy_evaluator = StrategyEvaluator()
         self.fundamental_analyzer = FundamentalAnalysis()
         self.sentiment_analyzer = None
+        self.sector_analyzer = None
         self.risk_manager = RiskManager()
         self.trade_logic = TradeLogic()
         self.swing_analyzer = SwingTradingSignalAnalyzer()
+        self.backtest_utils = BacktestUtils()
         
         logger.info("StockAnalyzer initialization complete")
         
@@ -353,6 +355,7 @@ class StockAnalyzer:
         market_trend_score = result.get('market_trend', 1.0) # Default to 1 (neutral/up)
         if market_trend_weight > 0:
             combined_score += (market_trend_score - 0.5) * market_trend_weight
+        result['combined_score'] = combined_score
         
         # Recommendation logic with flexible backtest requirements
         if consider_backtest:
@@ -398,11 +401,18 @@ class StockAnalyzer:
         
         # Core gates check
         passes_gates = True
+        hold_reasons = []
         if require_all_gates:
             if technical_score < technical_minimum:
                 passes_gates = False
+                hold_reasons.append(
+                    f"technical_score {technical_score:.3f} < minimum {technical_minimum:.3f}"
+                )
             if fundamental_score < fundamental_minimum:
                 passes_gates = False
+                hold_reasons.append(
+                    f"fundamental_score {fundamental_score:.3f} < minimum {fundamental_minimum:.3f}"
+                )
         
         # Strong buy: Multiple positive indicators with good backtest
         if passes_gates and ((technical_score > 0.3 and fundamental_score > 0.3 and sentiment_score > 0) or 
@@ -429,9 +439,47 @@ class StockAnalyzer:
             result['recommendation_strength'] = 'HOLD'
             if consider_backtest and backtest_cagr < min_backtest_return:
                 result['reason'].append(f"Backtest CAGR ({backtest_cagr:.2f}%) below minimum threshold ({min_backtest_return:.2f}%)")
+                hold_reasons.append(
+                    f"backtest_cagr {backtest_cagr:.2f} < minimum {min_backtest_return:.2f}"
+                )
             else:
                 result['reason'].append("Analysis does not support buying at this time")
-        
+            if combined_score < buy_threshold:
+                hold_reasons.append(
+                    f"combined_score {combined_score:.3f} < buy threshold {buy_threshold:.3f}"
+                )
+            if not passes_gates and not hold_reasons:
+                hold_reasons.append("core gates not satisfied")
+
+        decision_debug = {
+            'technical_score': round(technical_score, 4),
+            'fundamental_score': round(fundamental_score, 4),
+            'sentiment_score': round(sentiment_score, 4),
+            'combined_score': round(combined_score, 4),
+            'buy_threshold': round(buy_threshold, 4),
+            'strong_buy_threshold': round(strong_buy_threshold, 4),
+            'technical_minimum': round(technical_minimum, 4),
+            'fundamental_minimum': round(fundamental_minimum, 4),
+            'passes_gates': passes_gates,
+            'backtest_condition': backtest_condition,
+            'backtest_cagr': round(backtest_cagr, 4),
+            'min_backtest_return': round(min_backtest_return, 4),
+            'hold_reasons': hold_reasons,
+        }
+        result['decision_debug'] = decision_debug
+
+        logger.info(
+            "Decision for %s: strength=%s combined=%.3f tech=%.3f fund=%.3f passes_gates=%s backtest_ok=%s reasons=%s",
+            result.get('symbol', 'UNKNOWN'),
+            result.get('recommendation_strength', 'UNKNOWN'),
+            combined_score,
+            technical_score,
+            fundamental_score,
+            passes_gates,
+            backtest_condition,
+            "; ".join(hold_reasons) if hold_reasons else "buy/strong_buy",
+        )
+
         # Format reason as a single string only if requested
         if not keep_reason_as_list:
             result['reason'] = " ".join(result['reason'])
