@@ -23,7 +23,7 @@ from typing import Dict, List, Any
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
 
-from app import create_app
+# from app import create_app
 from scripts.analyzer import StockAnalyzer
 from scripts.data_fetcher import get_historical_data, get_all_nse_symbols
 from utils.logger import setup_logging
@@ -42,6 +42,7 @@ class AutomatedStockAnalysis:
     
     def __init__(self, verbose=False):
         """Initialize the analyzer."""
+        from app import create_app
         self.app = create_app()
         global logger
         logger = setup_logging(verbose=verbose)

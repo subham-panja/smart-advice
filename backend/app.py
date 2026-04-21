@@ -1,3 +1,4 @@
+import os
 from flask import Flask, jsonify, request, Response
 from flask_cors import CORS
 from database import init_app, get_db, query_mongodb
@@ -351,6 +352,7 @@ def trigger_analysis():
         max_stocks = config.get('max_stocks')
         test_mode = config.get('test', False)
         use_all_symbols = config.get('all', False)
+        group_name = config.get('group')
         offline_mode = config.get('offline', False)
         verbose = config.get('verbose', False)
         purge_days = config.get('purge_days')
@@ -362,6 +364,10 @@ def trigger_analysis():
         # Create analyzer instance
         analyzer = AutomatedStockAnalysis(verbose=verbose)
         
+        # Set group name if provided
+        if group_name:
+            analyzer.group_name = group_name
+        
         # Override config if purge_days is provided
         if purge_days is not None:
             analyzer.app.config['DATA_PURGE_DAYS'] = purge_days
@@ -370,7 +376,7 @@ def trigger_analysis():
         if test_mode and max_stocks is None:
             max_stocks = 2
         
-        app.logger.info(f"Starting analysis with config: max_stocks={max_stocks}, test={test_mode}, all={use_all_symbols}, offline={offline_mode}, verbose={verbose}")
+        app.logger.info(f"Starting analysis with config: max_stocks={max_stocks}, test={test_mode}, all={use_all_symbols}, group={group_name}, offline={offline_mode}, verbose={verbose}")
         
         # Run analysis in a separate thread to avoid blocking
         
@@ -418,6 +424,7 @@ def trigger_analysis():
                 "max_stocks": max_stocks,
                 "test_mode": test_mode,
                 "use_all_symbols": use_all_symbols,
+                "group": group_name,
                 "offline_mode": offline_mode,
                 "verbose": verbose,
                 "purge_days": purge_days,
@@ -427,6 +434,33 @@ def trigger_analysis():
         
     except Exception as e:
         app.logger.error(f"Error triggering analysis: {e}")
+        return jsonify({
+            "status": "error",
+            "error": str(e)
+        }), 500
+
+@app.route('/symbol-groups', methods=['GET'])
+def get_symbol_groups():
+    """Get available symbol groups from symbol_groups.json."""
+    try:
+        if not os.path.exists(config.SYMBOL_GROUPS_FILE):
+            return jsonify({
+                "status": "error",
+                "error": "Symbol groups file not found"
+            }), 404
+            
+        import json
+        with open(config.SYMBOL_GROUPS_FILE, 'r') as f:
+            groups_data = json.load(f)
+            
+        groups = list(groups_data.keys())
+        return jsonify({
+            "status": "success",
+            "count": len(groups),
+            "groups": groups
+        })
+    except Exception as e:
+        app.logger.error(f"Error fetching symbol groups: {e}")
         return jsonify({
             "status": "error",
             "error": str(e)

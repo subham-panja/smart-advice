@@ -1,17 +1,18 @@
 'use client';
 
 import { useState } from 'react';
-import { 
-  PlayIcon, 
-  ExclamationTriangleIcon, 
-  CheckCircleIcon, 
+import {
+  PlayIcon,
+  ExclamationTriangleIcon,
+  CheckCircleIcon,
   ChartBarIcon,
   CogIcon,
   SparklesIcon,
   ClockIcon,
   ServerIcon
 } from '@heroicons/react/24/outline';
-import { triggerAnalysis, AnalysisConfig } from '@/lib/api';
+import { triggerAnalysis, AnalysisConfig, getSymbolGroups } from '@/lib/api';
+import { useEffect } from 'react';
 
 interface AnalysisStatus {
   type: 'idle' | 'loading' | 'success' | 'error';
@@ -34,14 +35,26 @@ export default function AnalysisPage() {
     message: '',
   });
 
+  const [availableGroups, setAvailableGroups] = useState<string[]>([]);
+
+  useEffect(() => {
+    const fetchGroups = async () => {
+      const response = await getSymbolGroups();
+      if (response.status === 'success' && response.recommendations) {
+        setAvailableGroups(response.recommendations as unknown as string[]);
+      }
+    };
+    fetchGroups();
+  }, []);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     setStatus({ type: 'loading', message: 'Starting analysis...' });
-    
+
     try {
       const response = await triggerAnalysis(config);
-      
+
       if (response.status === 'success') {
         setStatus({
           type: 'success',
@@ -89,7 +102,7 @@ export default function AnalysisPage() {
             </p>
           </div>
         </div>
-        
+
         {/* Quick Stats */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
           <div className="bg-white/10 rounded-lg p-4">
@@ -137,8 +150,32 @@ export default function AnalysisPage() {
               <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
               <span>Parameters</span>
             </h3>
-            
+
             <div className="grid md:grid-cols-2 gap-6">
+              <div className="space-y-2">
+                <label htmlFor="symbolGroup" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Symbol Group
+                </label>
+                <select
+                  id="symbolGroup"
+                  value={config.group || ''}
+                  onChange={(e) => setConfig({
+                    ...config,
+                    group: e.target.value || undefined,
+                    all: e.target.value ? false : config.all // Uncheck All Symbols if a group is selected
+                  })}
+                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
+                >
+                  <option value="">None (Custom/Filtered)</option>
+                  {availableGroups.map(group => (
+                    <option key={group} value={group}>{group}</option>
+                  ))}
+                </select>
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  Select a predefined group of symbols to analyze
+                </p>
+              </div>
+
               <div className="space-y-2">
                 <label htmlFor="maxStocks" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                   Max Stocks
@@ -193,7 +230,7 @@ export default function AnalysisPage() {
               <span className="w-2 h-2 bg-purple-500 rounded-full"></span>
               <span>Analysis Options</span>
             </h3>
-            
+
             <div className="grid md:grid-cols-2 gap-4">
               {/* Test Mode */}
               <label className="group relative flex items-center justify-between p-4 border-2 border-gray-200 dark:border-gray-600 rounded-xl hover:border-blue-300 dark:hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 cursor-pointer transition-all duration-200">
@@ -228,7 +265,11 @@ export default function AnalysisPage() {
                 <input
                   type="checkbox"
                   checked={config.all}
-                  onChange={(e) => setConfig({ ...config, all: e.target.checked })}
+                  onChange={(e) => setConfig({
+                    ...config,
+                    all: e.target.checked,
+                    group: e.target.checked ? undefined : config.group // Reset group if All Symbols is checked
+                  })}
                   className="h-5 w-5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded transition-colors"
                 />
               </label>
@@ -294,13 +335,12 @@ export default function AnalysisPage() {
 
           {/* Status Display */}
           {status.type !== 'idle' && (
-            <div className={`p-6 rounded-xl border-2 ${
-              status.type === 'loading' 
-                ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800' 
-                : status.type === 'success' 
-                ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' 
-                : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'
-            }`}>
+            <div className={`p-6 rounded-xl border-2 ${status.type === 'loading'
+                ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800'
+                : status.type === 'success'
+                  ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'
+                  : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'
+              }`}>
               <div className="flex items-center space-x-4">
                 {status.type === 'loading' && (
                   <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 dark:border-blue-400"></div>
@@ -312,23 +352,21 @@ export default function AnalysisPage() {
                   <ExclamationTriangleIcon className="h-6 w-6 text-red-600 dark:text-red-400" />
                 )}
                 <div>
-                  <p className={`font-semibold ${
-                    status.type === 'loading' 
-                      ? 'text-blue-800 dark:text-blue-200' 
-                      : status.type === 'success' 
-                      ? 'text-green-800 dark:text-green-200' 
-                      : 'text-red-800 dark:text-red-200'
-                  }`}>
-                    {status.type === 'loading' ? 'Analysis in Progress' : 
-                     status.type === 'success' ? 'Analysis Started' : 'Analysis Failed'}
+                  <p className={`font-semibold ${status.type === 'loading'
+                      ? 'text-blue-800 dark:text-blue-200'
+                      : status.type === 'success'
+                        ? 'text-green-800 dark:text-green-200'
+                        : 'text-red-800 dark:text-red-200'
+                    }`}>
+                    {status.type === 'loading' ? 'Analysis in Progress' :
+                      status.type === 'success' ? 'Analysis Started' : 'Analysis Failed'}
                   </p>
-                  <p className={`text-sm ${
-                    status.type === 'loading' 
-                      ? 'text-blue-700 dark:text-blue-300' 
-                      : status.type === 'success' 
-                      ? 'text-green-700 dark:text-green-300' 
-                      : 'text-red-700 dark:text-red-300'
-                  }`}>
+                  <p className={`text-sm ${status.type === 'loading'
+                      ? 'text-blue-700 dark:text-blue-300'
+                      : status.type === 'success'
+                        ? 'text-green-700 dark:text-green-300'
+                        : 'text-red-700 dark:text-red-300'
+                    }`}>
                     {status.message}
                   </p>
                 </div>
@@ -345,7 +383,7 @@ export default function AnalysisPage() {
             >
               Reset Configuration
             </button>
-            
+
             <button
               type="submit"
               disabled={status.type === 'loading'}
