@@ -12,7 +12,7 @@ from transformers import pipeline
 import pandas as pd
 from typing import List, Dict, Any
 from utils.logger import setup_logging
-from config import SENTIMENT_MODEL, NEWS_COUNT, NEWS_DATE_RANGE
+from config import SENTIMENT_MODEL, NEWS_COUNT, NEWS_DATE_RANGE, ALT_SENTIMENT_MODEL, NEWS_MAX_RETRIES
 
 logger = setup_logging()
 
@@ -46,7 +46,8 @@ class SentimentAnalysis:
             models_to_try = [
                 'textblob',  # Start with TextBlob for better memory management
                 'distilbert-base-uncased-finetuned-sst-2-english',  # Simple fallback
-                self.model_name  # Primary model from config (last resort)
+                self.model_name,  # Primary model from config
+                ALT_SENTIMENT_MODEL  # Alternative model from config as extra fallback
             ]
             
             for i, model_name in enumerate(models_to_try):
@@ -208,7 +209,19 @@ class SentimentAnalysis:
             
             # Search for news with simpler query
             search_query = f"{company_name} stock"
-            self.google_news.search(search_query)
+            
+            # Use NEWS_MAX_RETRIES from config
+            for attempt in range(NEWS_MAX_RETRIES):
+                try:
+                    self.google_news.search(search_query)
+                    break
+                except Exception as e:
+                    if attempt == NEWS_MAX_RETRIES - 1:
+                        raise e
+                    logger.warning(f"News fetch attempt {attempt+1} failed for {company_name}: {e}")
+                    import time
+                    time.sleep(1)
+            
             results = self.google_news.results()
             
             news_texts = []

@@ -28,6 +28,7 @@ def create_app():
     """Create and configure the Flask application."""
     app = Flask(__name__)
     app.config.from_object(config)
+    app.secret_key = config.SECRET_KEY
     
     # Set up logging
     app.logger = setup_logging()

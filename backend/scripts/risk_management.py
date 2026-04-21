@@ -16,6 +16,7 @@ import talib as ta
 from typing import Dict, Any, Optional, Tuple, List
 from utils.logger import setup_logging
 from scripts.position_sizing import PositionSizer
+from config import RISK_MANAGEMENT
 
 logger = setup_logging()
 
@@ -24,27 +25,25 @@ class RiskManager:
     Professional risk management system for swing trading.
     """
     
-    def __init__(self, account_balance: float = 100000.0, max_risk_per_trade: float = 0.02, 
-                 max_total_risk: float = 0.06, max_drawdown: float = 0.20):
+    def __init__(self, 
+                 account_balance: float = None, 
+                 max_risk_per_trade: float = None,
+                 max_total_risk: float = None,
+                 max_drawdown: float = None):
         """
-        Initialize the risk manager.
-        
-        Args:
-            account_balance: Total account balance
-            max_risk_per_trade: Maximum risk per trade (default 2%)
-            max_total_risk: Maximum total portfolio risk (default 6%)
-            max_drawdown: Maximum allowable drawdown (default 20%)
+        Initialize the risk manager with parameters from configuration.
         """
-        self.account_balance = account_balance
-        self.max_risk_per_trade = max_risk_per_trade
-        self.max_total_risk = max_total_risk
-        self.max_drawdown = max_drawdown
+        # Load from config if not provided
+        self.account_balance = account_balance or RISK_MANAGEMENT.get('account_settings', {}).get('initial_capital', 100000)
+        self.max_risk_per_trade = max_risk_per_trade or RISK_MANAGEMENT.get('position_sizing', {}).get('risk_per_trade', 0.02)
+        self.max_total_risk = max_total_risk or 0.06  # Default fallback
+        self.max_drawdown = max_drawdown or 0.20      # Default fallback
         self.open_positions = {}  # Track open positions for portfolio risk
         
         # Initialize advanced position sizer with volatility awareness
         self.position_sizer = PositionSizer(
-            account_balance=account_balance,
-            base_risk_per_trade=max_risk_per_trade,
+            account_balance=self.account_balance,
+            base_risk_per_trade=self.max_risk_per_trade,
             volatility_factor_enabled=True  # Enable volatility-based risk adjustments
         )
         
@@ -293,19 +292,19 @@ class RiskManager:
             return data['Low'].min() if not data.empty else 0
     
     def calculate_profit_targets(self, entry_price: float, stop_loss: float, 
-                               risk_reward_ratios: list = [2, 3]) -> Dict[str, Any]:
+                               risk_reward_ratios: list = None) -> Dict[str, Any]:
         """
         Calculate profit targets based on risk-reward ratios.
-        
-        Args:
-            entry_price: Entry price for the trade
-            stop_loss: Stop loss price
-            risk_reward_ratios: List of risk-reward ratios to calculate
-            
-        Returns:
-            Dictionary containing profit targets
         """
         try:
+            # Use ratios from config if not provided
+            if risk_reward_ratios is None:
+                rr_config = RISK_MANAGEMENT.get('risk_reward', {})
+                risk_reward_ratios = [
+                    rr_config.get('min_ratio', 1.5),
+                    rr_config.get('optimal_ratio', 2.5)
+                ]
+            
             risk_per_share = abs(entry_price - stop_loss)
             
             targets = {}

@@ -703,6 +703,13 @@ def process_stock_for_filtering(symbol_data: tuple, filtering_criteria: dict) ->
             logger.debug(f"Skipping {symbol}: Historical days {historical_days} below minimum {min_historical_days}")
             return (symbol, name, stock_info, False)
         
+        # Delivery percentage filter
+        delivery_pct = stock_info.get('delivery_percent', 0.0)
+        min_delivery = filtering_criteria.get('min_delivery_percent', 0.0)
+        if delivery_pct > 0 and delivery_pct < min_delivery:
+            logger.debug(f"Skipping {symbol}: Delivery percent {delivery_pct:.1f}% below minimum {min_delivery:.1f}%")
+            return (symbol, name, stock_info, False)
+        
         # Stock passed all filters
         logger.info(f"Added {symbol}: Price={current_price:.2f}, Volume={avg_volume:,.0f}, Days={historical_days}")
         return (symbol, name, stock_info, True)
@@ -761,7 +768,8 @@ def filter_active_stocks(symbols: Dict[str, str], max_stocks: int = None) -> Dic
             'min_price': STOCK_FILTERING.get('min_price', 5.0),
             'max_price': STOCK_FILTERING.get('max_price', 50000.0),
             'min_market_cap': STOCK_FILTERING.get('min_market_cap', 100000000),
-            'min_historical_days': STOCK_FILTERING.get('min_historical_days', 200)
+            'min_historical_days': STOCK_FILTERING.get('min_historical_days', 200),
+            'min_delivery_percent': STOCK_FILTERING.get('min_delivery_percent', 0.0)
         }
     
     # Convert symbols dict to list of tuples for threading

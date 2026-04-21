@@ -17,6 +17,7 @@ import talib
 from typing import Dict, Any, List, Tuple, Optional
 from utils.logger import setup_logging
 from datetime import datetime, timedelta
+from config import SWING_TRADING_GATES, SWING_PATTERNS, RISK_MANAGEMENT
 
 logger = setup_logging()
 
@@ -29,27 +30,30 @@ class SwingTradingSignalAnalyzer:
     def __init__(self):
         """Initialize the swing trading signal analyzer"""
         
-        # Signal thresholds
+        # Signal thresholds - Loaded from SWING_TRADING_GATES in config.py
         self.thresholds = {
-            'adx_min': 20,              # Minimum ADX for trend strength
-            'adx_max': 50,              # Maximum ADX (too high = exhausted trend)
-            'atr_percentile_min': 20,   # Minimum ATR percentile (avoid dead stocks)
-            'atr_percentile_max': 80,   # Maximum ATR percentile (avoid extreme volatility)
-            'volume_zscore_min': 1.0,   # Minimum volume Z-score for breakout
-            'rsi_pullback_min': 40,     # Minimum RSI for pullback entry
-            'rsi_pullback_max': 60,     # Maximum RSI for pullback entry
-            'bb_squeeze_threshold': 0.05, # Bollinger Band squeeze threshold
-            'macd_zero_buffer': 0.1     # Buffer above zero line for MACD crosses
+            'adx_min': SWING_TRADING_GATES['trend_filter'].get('adx_threshold', 20),
+            'adx_max': 50,              # Default cap (not yet in config)
+            'atr_percentile_min': SWING_TRADING_GATES['volatility_gate'].get('min_percentile', 20),
+            'atr_percentile_max': SWING_TRADING_GATES['volatility_gate'].get('max_percentile', 80),
+            'volume_zscore_min': SWING_TRADING_GATES['volume_confirmation'].get('volume_zscore_threshold', 1.0),
+            'rsi_pullback_min': 40,     # Standard RSI levels - keep local or move if needed
+            'rsi_pullback_max': 60,
+            'bb_squeeze_threshold': 0.05, 
+            'macd_zero_buffer': 0.1
         }
         
-        # Risk management parameters
+        # Risk management parameters - Loaded from SWING_PATTERNS and RISK_MANAGEMENT
+        exit_rules = SWING_PATTERNS.get('exit_rules', {})
+        pos_sizing = RISK_MANAGEMENT.get('position_sizing', {})
+        
         self.risk_params = {
-            'atr_multiplier_sl': 1.5,   # ATR multiplier for stop-loss
-            'atr_multiplier_tp1': 1.0,  # ATR multiplier for first take-profit
-            'atr_multiplier_tp2': 2.5,  # ATR multiplier for second take-profit
-            'atr_multiplier_trail': 3.0, # ATR multiplier for trailing stop
-            'time_stop_bars': 15,        # Exit if no progress after N bars
-            'max_risk_per_trade': 0.01   # Maximum 1% risk per trade
+            'atr_multiplier_sl': exit_rules.get('atr_stop_multiplier', 1.5),
+            'atr_multiplier_tp1': exit_rules.get('target_1_atr', 1.0),
+            'atr_multiplier_tp2': exit_rules.get('target_2_atr', 2.5),
+            'atr_multiplier_trail': exit_rules.get('trail_stop_atr', 3.0),
+            'time_stop_bars': exit_rules.get('time_stop_bars', 15),
+            'max_risk_per_trade': pos_sizing.get('risk_per_trade', 0.01)
         }
     
     def calculate_trend_filter(self, df: pd.DataFrame) -> Dict[str, Any]:
@@ -303,69 +307,90 @@ class SwingTradingSignalAnalyzer:
         """
         patterns = {}
         
+        # Get enabled patterns from config
+        config_patterns = {p['name']: p for p in SWING_PATTERNS.get('entry_patterns', [])}
+        
         try:
-            # 1. Pullback to rising 20 EMA
-            ema_20 = talib.EMA(df['Close'], timeperiod=20)
-            rsi = talib.RSI(df['Close'], timeperiod=14)
-            
-            pullback_to_ema = (
-                df['Low'].iloc[-1] <= ema_20.iloc[-1] * 1.02 and  # Near EMA
-                df['Close'].iloc[-1] > ema_20.iloc[-1] and        # Closed above EMA
-                ema_20.iloc[-1] > ema_20.iloc[-5] and            # EMA rising
-                self.thresholds['rsi_pullback_min'] <= rsi.iloc[-1] <= self.thresholds['rsi_pullback_max'] and
-                df['Close'].iloc[-1] > df['Open'].iloc[-1]       # Bullish candle
-            )
-            
-            patterns['pullback_to_ema'] = {
-                'detected': pullback_to_ema,
-                'strength': 0.8 if pullback_to_ema else 0,
-                'description': 'Pullback to rising 20 EMA with bullish reversal'
-            }
+            # 1. Pullback to rising EMA
+            p_config = config_patterns.get('pullback_to_ema', {'enabled': True, 'ema_period': 20, 'rsi_range': [40, 60]})
+            if p_config['enabled']:
+                ema_period = p_config.get('ema_period', 20)
+                ema_20 = talib.EMA(df['Close'], timeperiod=ema_period)
+                rsi = talib.RSI(df['Close'], timeperiod=14)
+                
+                pullback_to_ema = (
+                    df['Low'].iloc[-1] <= ema_20.iloc[-1] * 1.02 and 
+                    df['Close'].iloc[-1] > ema_20.iloc[-1] and 
+                    ema_20.iloc[-1] > ema_20.iloc[-5] and 
+                    p_config['rsi_range'][0] <= rsi.iloc[-1] <= p_config['rsi_range'][1] and
+                    df['Close'].iloc[-1] > df['Open'].iloc[-1]
+                )
+                
+                patterns['pullback_to_ema'] = {
+                    'detected': pullback_to_ema,
+                    'strength': 0.8 if pullback_to_ema else 0,
+                    'description': f'Pullback to rising {ema_period} EMA with bullish reversal'
+                }
             
             # 2. Bollinger Band squeeze breakout
-            bb_upper, bb_middle, bb_lower = talib.BBANDS(df['Close'], timeperiod=20, nbdevup=2, nbdevdn=2)
-            bb_width = (bb_upper - bb_lower) / bb_middle
-            bb_squeeze = bb_width.iloc[-1] < bb_width.iloc[-20:].quantile(0.25)
-            bb_breakout = df['Close'].iloc[-1] > bb_upper.iloc[-1] and bb_squeeze
-            
-            patterns['bb_squeeze_breakout'] = {
-                'detected': bb_breakout,
-                'strength': 0.7 if bb_breakout else 0,
-                'description': 'Bollinger Band squeeze with upward breakout'
-            }
+            p_config = config_patterns.get('bollinger_squeeze_breakout', {'enabled': True, 'bb_period': 20, 'bb_std': 2, 'squeeze_threshold': 0.05})
+            if p_config['enabled']:
+                bb_period = p_config.get('bb_period', 20)
+                bb_std = p_config.get('bb_std', 2)
+                bb_upper, bb_middle, bb_lower = talib.BBANDS(df['Close'], timeperiod=bb_period, nbdevup=bb_std, nbdevdn=bb_std)
+                bb_width = (bb_upper - bb_lower) / bb_middle
+                bb_squeeze = bb_width.iloc[-1] < bb_width.iloc[-20:].quantile(p_config.get('squeeze_threshold', 0.25))
+                bb_breakout = df['Close'].iloc[-1] > bb_upper.iloc[-1] and bb_squeeze
+                
+                patterns['bb_squeeze_breakout'] = {
+                    'detected': bb_breakout,
+                    'strength': 0.7 if bb_breakout else 0,
+                    'description': 'Bollinger Band squeeze with upward breakout'
+                }
             
             # 3. MACD signal cross above zero
-            macd, macd_signal, macd_hist = talib.MACD(df['Close'], fastperiod=12, slowperiod=26, signalperiod=9)
-            macd_bullish_cross = (
-                macd.iloc[-1] > macd_signal.iloc[-1] and
-                macd.iloc[-2] <= macd_signal.iloc[-2] and
-                macd.iloc[-1] > self.thresholds['macd_zero_buffer']
-            )
-            
-            patterns['macd_bullish_cross'] = {
-                'detected': macd_bullish_cross,
-                'strength': 0.75 if macd_bullish_cross else 0,
-                'description': 'MACD signal cross above zero line'
-            }
+            p_config = config_patterns.get('macd_zero_cross', {'enabled': True, 'fast': 12, 'slow': 26, 'signal': 9})
+            if p_config['enabled']:
+                macd, macd_signal, macd_hist = talib.MACD(
+                    df['Close'], 
+                    fastperiod=p_config.get('fast', 12), 
+                    slowperiod=p_config.get('slow', 26), 
+                    signalperiod=p_config.get('signal', 9)
+                )
+                macd_bullish_cross = (
+                    macd.iloc[-1] > macd_signal.iloc[-1] and
+                    macd.iloc[-2] <= macd_signal.iloc[-2] and
+                    macd.iloc[-1] > self.thresholds['macd_zero_buffer']
+                )
+                
+                patterns['macd_bullish_cross'] = {
+                    'detected': macd_bullish_cross,
+                    'strength': 0.75 if macd_bullish_cross else 0,
+                    'description': 'MACD signal cross above zero line'
+                }
             
             # 4. Higher-low swing structure
-            recent_lows = df['Low'].iloc[-20:]
-            swing_lows = []
-            for i in range(1, len(recent_lows) - 1):
-                if recent_lows.iloc[i] < recent_lows.iloc[i-1] and recent_lows.iloc[i] < recent_lows.iloc[i+1]:
-                    swing_lows.append((i, recent_lows.iloc[i]))
-            
-            higher_low_structure = False
-            if len(swing_lows) >= 2:
-                higher_low_structure = swing_lows[-1][1] > swing_lows[-2][1]
-            
-            patterns['higher_low_structure'] = {
-                'detected': higher_low_structure,
-                'strength': 0.85 if higher_low_structure else 0,
-                'description': 'Higher-low swing structure formed'
-            }
+            p_config = config_patterns.get('higher_low_structure', {'enabled': True, 'pivot_lookback': 5})
+            if p_config['enabled']:
+                pivot_lookback = p_config.get('pivot_lookback', 5)
+                recent_lows = df['Low'].iloc[-20:]
+                swing_lows = []
+                for i in range(1, len(recent_lows) - 1):
+                    if recent_lows.iloc[i] < recent_lows.iloc[i-1] and recent_lows.iloc[i] < recent_lows.iloc[i+1]:
+                        swing_lows.append((i, recent_lows.iloc[i]))
+                
+                higher_low_structure = False
+                if len(swing_lows) >= 2:
+                    higher_low_structure = swing_lows[-1][1] > swing_lows[-2][1]
+                
+                patterns['higher_low_structure'] = {
+                    'detected': higher_low_structure,
+                    'strength': 0.85 if higher_low_structure else 0,
+                    'description': 'Higher-low swing structure formed'
+                }
             
             # 5. Volume-supported breakout
+            # Keep this as a default since it's a core confirmation even if not explicitly in config list yet
             resistance = df['High'].iloc[-20:-1].max()
             breakout_with_volume = (
                 df['Close'].iloc[-1] > resistance and

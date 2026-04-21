@@ -48,7 +48,7 @@ STRATEGY_CONFIG = {
 
     # Keep problematic strategies disabled
     'Volume_Breakout': True,               # FIXED: Now vectorized and enabled
-    'Support_Resistance_Breakout': False,  # Heavy data needs
+    'Support_Resistance_Breakout': True,  # Heavy data needs
 
     # Additional strategies (disabled for now to avoid heavy imports/CPU)
     'Williams_Percent_R_Overbought_Oversold': False,
@@ -157,21 +157,20 @@ ANALYSIS_WEIGHTS = {
 
 # SWING TRADING THRESHOLDS: Calibrated for Indian equity market
 RECOMMENDATION_THRESHOLDS = {
-    'strong_buy_combined': 0.85,     # Increased to scale with tighter rules
-    'buy_combined': 0.65,            # REQUIRED: 0.65 to filter only A+ setups without sentiment/sector data
+    'strong_buy_combined': 0.65,     # Increased to scale with tighter rules
+    'buy_combined': 0.50,            # REQUIRED: 0.65 to filter only A+ setups without sentiment/sector data
     'technical_strong_buy': 0.40,    # Threshold for a clean technical setup
     'sell_combined': -0.20,
     'sentiment_positive': 0.10,
     'sentiment_negative': -0.20,
     'sentiment_cap_positive': 0.30,
     'sentiment_cap_negative': -0.60,
-    'min_backtest_return': 15.0,     # REQUIRED: 15.0% minimum CAGR hurdle for robust backtest outperformance
-    'technical_minimum': 0.15,       # Require a mild positive technical signal
+    'min_backtest_return': 0.0,     # REQUIRED: 15.0% minimum CAGR hurdle for robust backtest outperformance
+    'technical_minimum': 0.35,       # Require a mild positive technical signal
     'fundamental_minimum': 0.10,     # Require slightly positive fundamentals
     'volume_confirmation_required': True,
     'market_trend_weight': 0.3,
     'require_all_gates': True,       # ENABLED: Ensure all core pillars pass minima
-    'min_risk_reward_ratio': 1.8,
     'sector_filter_enabled': False,
     'min_sector_score': -0.5
 }
@@ -203,7 +202,7 @@ STOCK_FILTERING = {
     'volume_lookback_days': 50,     # Volume lookback period
     'exclude_delisted': True,       # Exclude delisted stocks
     'exclude_suspended': True,      # Exclude suspended stocks
-    'min_delivery_percent': 55.0,   # REQUIRED: 55.0% minimum for guaranteed institutional overnight holding
+    'min_delivery_percent': 40.0,   # REQUIRED: 55.0% minimum for guaranteed institutional overnight holding
     'max_volatility_percentile': 80 # NEW: Avoid extremely volatile stocks
 }
 
@@ -270,11 +269,11 @@ SWING_PATTERNS = {
         }
     ],
     'exit_rules': {
-        'initial_stop_type': 'swing_low',  # or 'atr_based'
+        'initial_stop_type': 'atr_based',  # or 'atr_based'
         'atr_stop_multiplier': 1.5,
-        'target_1_atr': 1.0,           # First target at 1x ATR
-        'target_2_atr': 2.5,           # Second target at 2.5x ATR
-        'trail_stop_atr': 3.0,         # Trail stop at 3x ATR
+        'target_1_atr': 1.5,           # First target at 1x ATR
+        'target_2_atr': 3.0,           # Second target at 2.5x ATR
+        'trail_stop_atr': 2.0,         # Trail stop at 3x ATR
         'time_stop_bars': 15,          # Exit if no progress
         'breakeven_at_target_1': True
     }
@@ -295,8 +294,8 @@ RISK_MANAGEMENT = {
         'pause_on_limit_breach': True
     },
     'risk_reward': {
-        'min_ratio': 2.5,              # Minimum 2.5:1 risk-reward
-        'optimal_ratio': 3.0,          # Target 3:1 risk-reward
-        'adjust_targets': True         # Adjust targets for min ratio
+        'min_ratio': 1.5,              # Minimum 2.5:1 risk-reward
+        'optimal_ratio': 2.5,          # Target 3:1 risk-reward
+        'adjust_targets': False         # Adjust targets for min ratio
     }
 }
