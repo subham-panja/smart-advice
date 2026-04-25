@@ -1,9 +1,7 @@
 import os
 import logging
 
-# Data Science Library Threading Limits
-# Essential for preventing lock contention during multiprocessing.
-# This MUST be set before importing numpy/scipy/sklearn/pandas.
+# Data Science Library Threading Limits (Must be set before imports)
 LIBRARY_MAX_THREADS = '1'
 os.environ['OMP_NUM_THREADS'] = LIBRARY_MAX_THREADS
 os.environ['OPENBLAS_NUM_THREADS'] = LIBRARY_MAX_THREADS
@@ -12,14 +10,13 @@ os.environ['VECLIB_MAXIMUM_THREADS'] = LIBRARY_MAX_THREADS
 os.environ['NUMEXPR_NUM_THREADS'] = LIBRARY_MAX_THREADS
 
 # Flask configuration
-SECRET_KEY = 'your_super_secret_key_here'  # Change this for production!
+SECRET_KEY = 'your_super_secret_key_here'
 
 # Database configuration - MongoDB
-# Prefer 127.0.0.1 over localhost to avoid resolver/socket issues on some setups.
 MONGODB_HOST = os.getenv('MONGODB_HOST', '127.0.0.1')
 MONGODB_PORT = int(os.getenv('MONGODB_PORT', '27017'))
 MONGODB_DATABASE = os.getenv('MONGODB_DATABASE', 'super_advice')
-# Collections
+
 MONGODB_COLLECTIONS = {
     'recommended_shares': 'recommended_shares',
     'backtest_results': 'backtest_results',
@@ -29,32 +26,23 @@ MONGODB_COLLECTIONS = {
     'scan_runs': 'scan_runs',
 }
 
-# Legacy SQLite config (for migration reference)
-# DATABASE = 'data/recommendations.db'
-# DATABASE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), DATABASE)
-
-# Strategy configuration - Enable/disable trading strategies
-# SWING TRADING v2: Only 5 core signals enabled for clean swing entries.
-# All other strategies are preserved (files intact) for future re-enabling.
+# Strategy configuration - Core Swing Signals
 STRATEGY_CONFIG = {
-    # ═══ 5 CORE SWING SIGNALS (enabled) ═══
-    'RSI_Overbought_Oversold': True,       # Oversold bounce entry filter
+    'RSI_Overbought_Oversold': True,       # Oversold bounce entry
     'MACD_Signal_Crossover': True,         # Momentum confirmation
     'EMA_Crossover_12_26': True,           # Fast trend confirmation
-    'ADX_Trend_Strength': True,            # Core trend gate filter
-    'On_Balance_Volume': True,             # Volume confirmation gate
+    'ADX_Trend_Strength': True,            # Trend gate
+    'On_Balance_Volume': True,             # Volume confirmation
 
-    # ═══ DISABLED (handled by swing gates or redundant) ═══
-    'MA_Crossover_50_200': False,          # Too slow for swing (200-day lag)
-    'Bollinger_Band_Breakout': False,      # Squeeze logic in swing patterns instead
-    'ATR_Volatility': False,               # Handled inside swing exit rules
-    'SMA_Crossover_20_50': False,          # Redundant with EMA 12/26
-    'Stochastic_Overbought_Oversold': False, # Adds noise over RSI
-    'Multi_Timeframe_RSI': False,          # Import hang on some systems
-    'Volume_Breakout': False,              # Handled inside swing patterns
-    'Support_Resistance_Breakout': False,  # Heavy compute, marginal value
-
-    # Additional strategies (disabled for now to avoid heavy imports/CPU)
+    # Disabled or redundant strategies
+    'MA_Crossover_50_200': False,
+    'Bollinger_Band_Breakout': False,
+    'ATR_Volatility': False,
+    'SMA_Crossover_20_50': False,
+    'Stochastic_Overbought_Oversold': False,
+    'Multi_Timeframe_RSI': False,
+    'Volume_Breakout': False,
+    'Support_Resistance_Breakout': False,
     'Williams_Percent_R_Overbought_Oversold': False,
     'Fibonacci_Retracement': False,
     'Chart_Patterns': False,
@@ -95,147 +83,127 @@ STRATEGY_CONFIG = {
     'Keltner_Channel_Squeeze': False,
 }
 
-# Minimum combined score for recommendation
-# With 5 enabled strategies, 0.40 = need at least 2/5 to agree
+# Thresholds & Parameters
 MIN_RECOMMENDATION_SCORE = 0.40
-
-# Sentiment analysis configuration
 SENTIMENT_MODEL = 'distilbert-base-uncased-finetuned-sst-2-english'
 ALT_SENTIMENT_MODEL = 'cardiffnlp/twitter-roberta-base-sentiment-latest'
-
-# News fetching parameters
 NEWS_COUNT = 20
 NEWS_MAX_RETRIES = 3
 NEWS_DATE_RANGE = '10d'
 
-# Data fetching parameters
-HISTORICAL_DATA_PERIOD = '5y'  # Extended for better regime coverage in swing trading
+# Data fetching
+HISTORICAL_DATA_PERIOD = '5y'
 BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
 NSE_CACHE_FILE = os.path.join(BACKEND_DIR, 'data', 'nse_symbols.json')
 SYMBOL_GROUPS_FILE = os.path.join(BACKEND_DIR, 'data', 'symbol_groups.json')
-
-# Filtered symbols cache duration (in hours)
-# After pre-filtering all NSE stocks, the result is cached for this duration.
-# Set higher to avoid re-scanning 2000+ stocks on every run.
-FILTERED_SYMBOLS_CACHE_HOURS = 72  # 3 days — volume patterns are stable for liquid stocks
-
-# Period of data to fetch during pre-filter stock validation
-# Use '1y' to satisfy min_historical_days: 250, or '3mo' for faster but less strict filtering
+FILTERED_SYMBOLS_CACHE_HOURS = 72
 FILTER_VALIDATION_PERIOD = '1y'
 
-# Threading and batch processing configuration
-# OPTIMIZED settings for MAXIMUM performance
-MAX_WORKER_THREADS = 10  # Increased threads for parallel processing
-BATCH_SIZE = 8  # Smaller batches for faster feedback
-REQUEST_DELAY = 0.5  # Reduced delay for faster processing
-MAX_RETRIES = 1  # Minimal retries for speed
-TIMEOUT_SECONDS = 10  # Faster timeout for non-responsive calls
-RATE_LIMIT_DELAY = 2.0  # Reduced rate limit delay
-BACKOFF_MULTIPLIER = 1.5  # Reduced backoff multiplier
+# Performance & Pipeline optimization
+MAX_WORKER_THREADS = 10
+BATCH_SIZE = 8
+REQUEST_DELAY = 0.5
+MAX_RETRIES = 1
+TIMEOUT_SECONDS = 10
+RATE_LIMIT_DELAY = 2.0
+BACKOFF_MULTIPLIER = 1.5
 
-# Multiprocessing pipeline configuration
-# When enabled, uses a two-phase pipeline: threads for I/O, processes for CPU work
-USE_MULTIPROCESSING_PIPELINE = True   # Toggle: True = multiprocessing, False = legacy threading
-NUM_WORKER_PROCESSES = 8              # Optimized for Apple Silicon M1 (8 physical cores)
-DATA_FETCH_THREADS = 16               # Efficient network I/O concurrency for Mac M1
+USE_MULTIPROCESSING_PIPELINE = True
+NUM_WORKER_PROCESSES = 8
+DATA_FETCH_THREADS = 16
 
-# Data purge configuration
-DATA_PURGE_DAYS = 7  # Number of days to keep old data (recommendations and backtest results)
-REMOVE_OLD_DATA_ON_EACH_RUN = False  # NEW: If True, purges old data before each analysis run
-# WARNING: Setting DATA_PURGE_DAYS to 0 will DELETE ALL DATA every time analysis runs!
+# Maintenance
+DATA_PURGE_DAYS = 7
+REMOVE_OLD_DATA_ON_EACH_RUN = False
+PERSIST_LOGGING = True
 
-# Logging configuration
-PERSIST_LOGGING = True  # If False, app.log will be reset on each run
-
-# SWING TRADING WEIGHTS: Only active pillars get weight.
-# If a module is disabled in ANALYSIS_CONFIG, set its weight to 0.0 here.
+# Analysis Weights
 ANALYSIS_WEIGHTS = {
-    'technical': 1.00,    # 100% technical for swing trading
-    'fundamental': 0.00,  # Disabled — not needed for swing entry
-    'sentiment': 0.00,    # Disabled
-    'sector': 0.00        # Disabled
+    'technical': 1.00,
+    'fundamental': 0.00,
+    'sentiment': 0.00,
+    'sector': 0.00
 }
 
-# SWING TRADING THRESHOLDS: Calibrated for Indian equity market
+# Recommendation Logic Thresholds
 RECOMMENDATION_THRESHOLDS = {
-    'strong_buy_combined': 0.65,     # Increased to scale with tighter rules
-    'buy_combined': 0.50,            # REQUIRED: 0.65 to filter only A+ setups without sentiment/sector data
-    'technical_strong_buy': 0.40,    # Threshold for a clean technical setup
+    'strong_buy_combined': 0.65,
+    'buy_combined': 0.50,
+    'technical_strong_buy': 0.40,
     'sell_combined': -0.20,
     'sentiment_positive': 0.10,
     'sentiment_negative': -0.20,
     'sentiment_cap_positive': 0.30,
     'sentiment_cap_negative': -0.60,
-    'min_backtest_return': 0.0,     # REQUIRED: 15.0% minimum CAGR hurdle for robust backtest outperformance
-    'technical_minimum': 0.35,       # Require a mild positive technical signal
-    'fundamental_minimum': 0.10,     # Require slightly positive fundamentals
+    'min_backtest_return': 0.0,
+    'technical_minimum': 0.35,
+    'fundamental_minimum': 0.10,
     'volume_confirmation_required': True,
-    'volume_confidence_threshold': 0.45,  # NEW: Relaxed from 0.7 for better signal generation
+    'volume_confidence_threshold': 0.45,
     'market_trend_weight': 0.3,
-    'require_all_gates': True,       # ENABLED: Ensure all core pillars pass minima
+    'require_all_gates': True,
     'sector_filter_enabled': False,
     'min_sector_score': -0.5
 }
 
-# Analysis Modules Configuration - OPTIMIZED for SPEED
-# Disable heavy modules for faster analysis
+# Module Toggles
 ANALYSIS_CONFIG = {
-    'technical_analysis': True,      # CORE — keep
-    'fundamental_analysis': False,   # DISABLED — not needed for swing entry
-    'sentiment_analysis': False,     # DISABLED — heavy ML processing
-    'sector_analysis': False,        # DISABLED
-    'market_regime_detection': False, # DISABLED
-    'market_microstructure': False,   # DISABLED
-    'alternative_data': False,        # DISABLED
-    'backtesting': True,             # CORE — keep for validation
-    'risk_management': True,         # CORE — keep for trade planning
-    'tca_analysis': False            # DISABLED
+    'technical_analysis': True,
+    'fundamental_analysis': False,
+    'sentiment_analysis': False,
+    'sector_analysis': False,
+    'market_regime_detection': False,
+    'market_microstructure': False,
+    'alternative_data': False,
+    'backtesting': True,
+    'risk_management': True,
+    'tca_analysis': False
 }
 
-# SWING TRADING QUALITY: Tighter filters for liquid, tradeable stocks only
+# Stock Screening Criteria
 STOCK_FILTERING = {
-    'min_volume': 100000,           # Higher minimum for liquidity
-    'min_price': 20.0,              # Avoid penny stocks
-    'max_price': 50000.0,           # Maximum stock price
-    'min_market_cap': 5000000000,  # REQUIRED: 5000 crore minimum (solid mid/large cap)
-    'min_historical_days': 250,     # 1 year minimum history
-    'volume_lookback_days': 50,     # Volume lookback period
-    'exclude_delisted': True,       # Exclude delisted stocks
-    'exclude_suspended': True,      # Exclude suspended stocks
-    'min_delivery_percent': 30.0,   # REQUIRED: 55.0% minimum for guaranteed institutional overnight holding
-    'max_volatility_percentile': 80 # NEW: Avoid extremely volatile stocks
+    'min_volume': 100000,
+    'min_price': 20.0,
+    'max_price': 50000.0,
+    'min_market_cap': 5000000000,
+    'min_historical_days': 250,
+    'volume_lookback_days': 50,
+    'exclude_delisted': True,
+    'exclude_suspended': True,
+    'min_delivery_percent': 30.0,
+    'max_volatility_percentile': 80
 }
 
-# SWING TRADING GATES: Strict entry criteria for high precision
+# Swing Trading Strategy Gates
 SWING_TRADING_GATES = {
     'trend_filter': {
         'enabled': True,
         'adx_period': 14,
-        'adx_threshold': 20,        # Minimum ADX for trending market
+        'adx_threshold': 20,
         'sma_period': 200,
-        'price_above_sma': True     # Price must be above 200 SMA
+        'price_above_sma': True
     },
     'volatility_gate': {
         'enabled': True,
         'atr_period': 14,
-        'min_percentile': 20,        # Avoid low volatility
-        'max_percentile': 80         # Avoid extreme volatility
+        'min_percentile': 20,
+        'max_percentile': 80
     },
     'volume_confirmation': {
         'enabled': True,
-        'obv_trend_periods': 10,     # OBV trend lookback
-        'volume_zscore_threshold': 1.0,  # Volume spike threshold
-        'require_either': True       # Either OBV trend OR volume spike
+        'obv_trend_periods': 10,
+        'volume_zscore_threshold': 1.0,
+        'require_either': True
     },
     'multi_timeframe': {
         'enabled': True,
-        'weekly_trend_check': True,  # Check weekly trend alignment
+        'weekly_trend_check': True,
         'weekly_sma_fast': 20,
         'weekly_sma_slow': 50
     }
 }
 
-# SWING TRADING PATTERNS: Entry and exit patterns
+# Swing Trading Patterns & Exit Rules
 SWING_PATTERNS = {
     'entry_patterns': [
         {
@@ -269,32 +237,32 @@ SWING_PATTERNS = {
         }
     ],
     'exit_rules': {
-        'initial_stop_type': 'atr_based',  # or 'atr_based'
+        'initial_stop_type': 'atr_based',
         'atr_stop_multiplier': 1.5,
-        'target_1_atr': 1.5,           # First target at 1x ATR
-        'target_2_atr': 3.0,           # Second target at 2.5x ATR
-        'trail_stop_atr': 2.0,         # Trail stop at 3x ATR
-        'time_stop_bars': 15,          # Exit if no progress
+        'target_1_atr': 1.5,
+        'target_2_atr': 3.0,
+        'trail_stop_atr': 2.0,
+        'time_stop_bars': 15,
         'breakeven_at_target_1': True
     }
 }
 
-# RISK MANAGEMENT: Position sizing and portfolio constraints
+# Risk Management & Portfolio
 RISK_MANAGEMENT = {
     'position_sizing': {
-        'method': 'atr_based',        # ATR-based position sizing
-        'risk_per_trade': 0.01,       # 1% risk per trade
-        'max_position_pct': 0.20      # Max 20% in single position
+        'method': 'atr_based',
+        'risk_per_trade': 0.01,
+        'max_position_pct': 0.20
     },
     'portfolio_constraints': {
         'max_concurrent_positions': 5,
-        'max_sector_concentration': 0.40,  # Max 40% in one sector
-        'daily_loss_limit': 0.03,      # 3% daily loss limit
+        'max_sector_concentration': 0.40,
+        'daily_loss_limit': 0.03,
         'pause_on_limit_breach': True
     },
     'risk_reward': {
-        'min_ratio': 1.5,              # Minimum 2.5:1 risk-reward
-        'optimal_ratio': 2.5,          # Target 3:1 risk-reward
-        'adjust_targets': False         # Adjust targets for min ratio
+        'min_ratio': 1.5,
+        'optimal_ratio': 2.5,
+        'adjust_targets': False
     }
 }
