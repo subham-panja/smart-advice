@@ -43,6 +43,22 @@ def init_db():
     db[backtest_collection].create_index("symbol")
     db[backtest_collection].create_index("created_at")
     
+    # New multi-stage collections indexes
+    db['analysis_snapshots'].create_index("symbol")
+    db['analysis_snapshots'].create_index("analyzed_at")
+    db['analysis_snapshots'].create_index("scan_run_id")
+    
+    db['swing_gate_results'].create_index("symbol")
+    db['swing_gate_results'].create_index("analyzed_at")
+    db['swing_gate_results'].create_index("scan_run_id")
+    db['swing_gate_results'].create_index("all_gates_passed")
+    
+    db['trade_signals'].create_index("symbol")
+    db['trade_signals'].create_index("signal_date")
+    db['trade_signals'].create_index("status")
+    
+    db['scan_runs'].create_index("started_at")
+    
     current_app.logger.info("MongoDB collections initialized with indexes.")
 
 def query_mongodb(collection_name, query_filter=None, projection=None, sort=None, limit=None, one=False):
@@ -146,6 +162,9 @@ def insert_backtest_result(symbol, period, cagr, win_rate, max_drawdown, **kwarg
         'initial_capital': kwargs.get('initial_capital'),
         'final_capital': kwargs.get('final_capital'),
         'total_return': kwargs.get('total_return'),
+        'expectancy': kwargs.get('expectancy'),
+        'profit_factor': kwargs.get('profit_factor'),
+        'recovery_factor': kwargs.get('recovery_factor'),
         'created_at': datetime.now()
     }
     

@@ -124,6 +124,9 @@ class PersistenceHandler:
                     initial_capital=metrics.get('initial_capital'),
                     final_capital=metrics.get('avg_final_value'),
                     total_return=metrics.get('avg_roi'),
+                    expectancy=metrics.get('avg_expectancy'),
+                    profit_factor=metrics.get('avg_profit_factor'),
+                    recovery_factor=metrics.get('avg_recovery_factor'),
                 )
                 logger.info(f"Saved detailed backtest results for {symbol}")
             return True
@@ -147,17 +150,177 @@ class PersistenceHandler:
 
     def _extract_detailed_backtest_metrics(self, analysis_result: Dict[str, Any]) -> Dict[str, Any]:
         """Simplified extraction of backtest metrics."""
-        # Implementation similar to run_analysis.py but more compact
-        metrics = {'cagr': 0.0, 'win_rate': 0.0, 'max_drawdown': 0.0}
+        metrics = {
+            'cagr': 0.0, 'win_rate': 0.0, 'max_drawdown': 0.0,
+            'expectancy': 0.0, 'profit_factor': 0.0, 'recovery_factor': 0.0
+        }
         backtest = analysis_result.get('backtest_results', analysis_result.get('backtest', {}))
         if backtest and backtest.get('status') == 'completed':
             m = backtest.get('combined_metrics', backtest.get('overall_metrics', {}))
             metrics['cagr'] = m.get('avg_cagr', 0) or m.get('average_cagr', 0)
             metrics['win_rate'] = m.get('avg_win_rate', 0) or m.get('average_win_rate', 0)
             metrics['max_drawdown'] = m.get('avg_max_drawdown', 0) or m.get('average_max_drawdown', 0)
+            metrics['expectancy'] = m.get('avg_expectancy', 0.0)
+            metrics['profit_factor'] = m.get('avg_profit_factor', 0.0)
+            metrics['recovery_factor'] = m.get('avg_recovery_factor', 0.0)
         return metrics
 
     def extract_backtest_cagr(self, analysis_result: Dict[str, Any]) -> str:
         """Extract CAGR for logging."""
         m = self._extract_detailed_backtest_metrics(analysis_result)
         return f"{m['cagr']:.2f}"
+
+    # ─── NEW MULTI-STAGE PERSISTENCE METHODS ────────────────────────────────
+
+    def save_analysis_snapshot(self, analysis_result: Dict[str, Any], scan_run_id=None) -> bool:
+        """Save analysis snapshot for EVERY stock (pass or fail) for debugging."""
+        try:
+            db = get_mongodb()
+            
+            # Extract strategy signals detail
+            strategy_signals = {}
+            detailed = analysis_result.get('detailed_analysis', {})
+            tech_detail = detailed.get('technical', {})
+            individual_strategies = tech_detail.get('individual_strategies', {})
+            
+            for name, info in individual_strategies.items():
+                strategy_signals[name] = {
+                    'signal': info.get('signal', 0),
+                    'type': info.get('type', 'UNKNOWN')
+                }
+            
+            decision_debug = analysis_result.get('decision_debug', {})
+            
+            # Price snapshot from latest data
+            price_snapshot = {}
+            if 'price_data' in analysis_result:
+                pd = analysis_result['price_data']
+                price_snapshot = {
+                    'close': pd.get('close'),
+                    'sma_200': pd.get('sma_200'),
+                    'ema_21': pd.get('ema_21'),
+                    'rsi_14': pd.get('rsi_14'),
+                    'adx_14': pd.get('adx_14'),
+                    'atr_14': pd.get('atr_14'),
+                    'volume': pd.get('volume'),
+                    'volume_avg_20': pd.get('volume_avg_20'),
+                }
+            
+            doc = {
+                'symbol': analysis_result.get('symbol', 'UNKNOWN'),
+                'company_name': analysis_result.get('company_name', ''),
+                'scan_run_id': scan_run_id,
+                'analyzed_at': datetime.utcnow(),
+                'technical_score': analysis_result.get('technical_score', 0),
+                'combined_score': analysis_result.get('combined_score', 0),
+                'recommendation': analysis_result.get('recommendation_strength', 'NO_SIGNAL'),
+                'is_recommended': analysis_result.get('is_recommended', False),
+                'hold_reasons': decision_debug.get('hold_reasons', []),
+                'strategy_signals': strategy_signals,
+                'positive_signals': sum(1 for s in strategy_signals.values() if s.get('signal', 0) > 0),
+                'total_signals': len(strategy_signals),
+                'price_snapshot': price_snapshot,
+            }
+            
+            db.analysis_snapshots.insert_one(doc)
+            return True
+        except Exception as e:
+            logger.error(f"Error saving analysis snapshot: {e}")
+            return False
+
+    def save_swing_gate_results(self, symbol: str, gate_results: Dict[str, Any], scan_run_id=None) -> bool:
+        """Save swing gate pass/fail results for debugging."""
+        try:
+            db = get_mongodb()
+            
+            doc = {
+                'symbol': symbol,
+                'scan_run_id': scan_run_id,
+                'analyzed_at': datetime.utcnow(),
+                'all_gates_passed': gate_results.get('all_gates_passed', False),
+                'gate_1_trend': gate_results.get('gate_1_trend', {}),
+                'gate_2_mtf': gate_results.get('gate_2_mtf', {}),
+                'gate_3_volatility': gate_results.get('gate_3_volatility', {}),
+                'gate_4_volume': gate_results.get('gate_4_volume', {}),
+            }
+            
+            db.swing_gate_results.insert_one(doc)
+            return True
+        except Exception as e:
+            logger.error(f"Error saving swing gate results: {e}")
+            return False
+
+    def save_trade_signal(self, symbol: str, signal_data: Dict[str, Any], scan_run_id=None) -> bool:
+        """Save trade signal with entry/exit levels for stocks that pass all gates."""
+        try:
+            db = get_mongodb()
+            
+            doc = {
+                'symbol': symbol,
+                'scan_run_id': scan_run_id,
+                'signal_date': datetime.utcnow(),
+                'status': 'ACTIVE',
+                'entry_price': signal_data.get('entry_price'),
+                'entry_pattern': signal_data.get('entry_pattern', 'unknown'),
+                'pattern_strength': signal_data.get('pattern_strength', 0),
+                'signal_strength': signal_data.get('signal_strength', 0),
+                'patterns': signal_data.get('patterns', {}),
+                'stop_loss': signal_data.get('stop_loss'),
+                'take_profit_1': signal_data.get('take_profit_1'),
+                'take_profit_2': signal_data.get('take_profit_2'),
+                'trailing_stop_distance': signal_data.get('trailing_stop_distance'),
+                'time_stop_bars': signal_data.get('time_stop_bars', 15),
+                'risk_per_share': signal_data.get('risk_per_share'),
+                'risk_reward_1': signal_data.get('risk_reward_1'),
+                'risk_reward_2': signal_data.get('risk_reward_2'),
+                'atr': signal_data.get('atr'),
+                'bars_since_entry': 0,
+                'current_pnl_pct': 0.0,
+                'tp1_hit': False,
+                'highest_since_entry': signal_data.get('entry_price'),
+            }
+            
+            db.trade_signals.insert_one(doc)
+            return True
+        except Exception as e:
+            logger.error(f"Error saving trade signal: {e}")
+            return False
+
+    def create_scan_run(self, config_snapshot: Dict[str, Any], macro_regime: Dict[str, Any] = None) -> Any:
+        """Create a scan run document and return its ID."""
+        try:
+            db = get_mongodb()
+            
+            doc = {
+                'started_at': datetime.utcnow(),
+                'completed_at': None,
+                'duration_seconds': None,
+                'config_snapshot': config_snapshot,
+                'macro_regime': macro_regime or {},
+                'results_summary': {},
+            }
+            
+            result = db.scan_runs.insert_one(doc)
+            return result.inserted_id
+        except Exception as e:
+            logger.error(f"Error creating scan run: {e}")
+            return None
+
+    def complete_scan_run(self, scan_run_id, summary: Dict[str, Any]) -> bool:
+        """Update scan run with completion data."""
+        try:
+            db = get_mongodb()
+            
+            db.scan_runs.update_one(
+                {'_id': scan_run_id},
+                {'$set': {
+                    'completed_at': datetime.utcnow(),
+                    'duration_seconds': summary.get('duration_seconds', 0),
+                    'results_summary': summary,
+                }}
+            )
+            return True
+        except Exception as e:
+            logger.error(f"Error completing scan run: {e}")
+            return False
+

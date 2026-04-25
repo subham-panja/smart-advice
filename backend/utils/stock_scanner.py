@@ -31,8 +31,12 @@ class StockScanner:
                     logger.warning(f"Group '{group_name}' not found in {groups_file}")
                     return {}
                 
-                # Convert list to dict format
-                symbols = {s: {'symbol': s, 'company_name': s} for s in group_symbols}
+                # Convert list to dict format and strip .NS suffix if present
+                symbols = {}
+                for s in group_symbols:
+                    clean_symbol = s.replace('.NS', '').replace('.ns', '')
+                    symbols[clean_symbol] = {'symbol': clean_symbol, 'company_name': clean_symbol}
+                
                 logger.info(f"Loaded {len(symbols)} symbols from group '{group_name}'")
                 
             except Exception as e:

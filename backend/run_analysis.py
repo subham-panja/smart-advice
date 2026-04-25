@@ -53,6 +53,7 @@ class AutomatedStockAnalysis:
         self.start_time = datetime.now()
         self.verbose = verbose
         self.progress_callback = None
+        self.scan_run_id = None  # Track current scan run for multi-stage persistence
         
     def clear_old_data(self, days_old: int = 7):
         """Clear old data older than specified days."""
@@ -105,6 +106,26 @@ class AutomatedStockAnalysis:
             if current_macd < current_signal:
                 is_safe = False
                 reasons.append("MACD is Negative/Bearish")
+            
+            # ── STEP 0: Save macro gate result to scan_runs ──
+            macro_regime = {
+                'nifty50_safe': is_safe,
+                'nifty_close': round(float(current_close), 2),
+                'nifty_ema20': round(float(current_ema20), 2),
+                'nifty_macd': round(float(current_macd), 4),
+                'nifty_signal': round(float(current_signal), 4),
+                'price_above_ema': bool(current_close > current_ema20),
+                'macd_bullish': bool(current_macd > current_signal),
+                'reasons': reasons,
+            }
+            config_snapshot = {
+                'enabled_strategies': [k for k, v in config.STRATEGY_CONFIG.items() if v],
+                'analysis_weights': dict(config.ANALYSIS_WEIGHTS),
+                'min_recommendation_score': config.MIN_RECOMMENDATION_SCORE,
+                'historical_data_period': config.HISTORICAL_DATA_PERIOD,
+            }
+            self.scan_run_id = self.persistence.create_scan_run(config_snapshot, macro_regime)
+            logger.info(f"Scan run created: {self.scan_run_id}")
                 
             if not is_safe:
                 logger.warning(f"🚨 MACRO BEAR MARKET DETECTED: {', '.join(reasons)}")
@@ -333,6 +354,10 @@ class AutomatedStockAnalysis:
         hold_reason_counter = Counter()
         top_candidates = []
         
+        scan_run_id = getattr(self, 'scan_run_id', None)
+        gates_passed_count = 0
+        signals_found_count = 0
+        
         for r in results:
             if r['success']:
                 analysis_result = r['result']
@@ -349,6 +374,63 @@ class AutomatedStockAnalysis:
                     'hold_reasons': decision_debug.get('hold_reasons', []),
                 })
 
+                # ── STEP 3: Save analysis snapshot for EVERY stock ──
+                try:
+                    self.persistence.save_analysis_snapshot(analysis_result, scan_run_id=scan_run_id)
+                except Exception as e:
+                    logger.debug(f"Failed to save analysis snapshot: {e}")
+
+                # ── STEP 4: Save swing gate results ──
+                swing_analysis = analysis_result.get('swing_analysis', analysis_result.get('detailed_analysis', {}).get('swing_gates', {}))
+                if swing_analysis and 'gates_passed' in swing_analysis:
+                    gate_results = {
+                        'all_gates_passed': swing_analysis.get('all_gates_passed', False),
+                        'gate_1_trend': swing_analysis.get('detailed_metrics', {}).get('trend', {}),
+                        'gate_2_mtf': swing_analysis.get('detailed_metrics', {}).get('mtf', {}),
+                        'gate_3_volatility': swing_analysis.get('detailed_metrics', {}).get('volatility', {}),
+                        'gate_4_volume': swing_analysis.get('detailed_metrics', {}).get('volume', {}),
+                    }
+                    if gate_results['all_gates_passed']:
+                        gates_passed_count += 1
+                    try:
+                        self.persistence.save_swing_gate_results(
+                            symbol=analysis_result.get('symbol', r.get('symbol')),
+                            gate_results=gate_results,
+                            scan_run_id=scan_run_id
+                        )
+                    except Exception as e:
+                        logger.debug(f"Failed to save swing gate results: {e}")
+
+                # ── STEP 5+6: Save trade signal for stocks with entry patterns + exit levels ──
+                trade_plan = analysis_result.get('trade_plan', {})
+                if analysis_result.get('is_recommended') and trade_plan:
+                    signals_found_count += 1
+                    try:
+                        swing_entry = swing_analysis.get('entry_patterns', {})
+                        swing_exit = swing_analysis.get('exit_rules', {})
+                        self.persistence.save_trade_signal(
+                            symbol=analysis_result.get('symbol', r.get('symbol')),
+                            signal_data={
+                                'entry_price': trade_plan.get('buy_price'),
+                                'entry_pattern': swing_entry.get('strongest_pattern', 'strategy_signal'),
+                                'pattern_strength': swing_entry.get('overall_strength', 0),
+                                'signal_strength': swing_analysis.get('signal_strength', 0),
+                                'patterns': swing_entry.get('patterns', {}),
+                                'stop_loss': trade_plan.get('stop_loss') or swing_exit.get('stop_loss'),
+                                'take_profit_1': swing_exit.get('take_profit_1', trade_plan.get('sell_price')),
+                                'take_profit_2': swing_exit.get('take_profit_2'),
+                                'trailing_stop_distance': swing_exit.get('trailing_stop_distance'),
+                                'atr': swing_exit.get('atr'),
+                                'risk_per_share': swing_exit.get('risk_per_share'),
+                                'risk_reward_1': swing_exit.get('risk_reward_1', trade_plan.get('risk_reward_ratio')),
+                                'risk_reward_2': swing_exit.get('risk_reward_2'),
+                            },
+                            scan_run_id=scan_run_id
+                        )
+                    except Exception as e:
+                        logger.debug(f"Failed to save trade signal: {e}")
+
+                # ── STEP 7+8: Existing saves ──
                 self.save_backtest_results(r['result'])
                 if self.save_recommendation(r['result']):
                     if r['recommended']:
@@ -385,6 +467,27 @@ class AutomatedStockAnalysis:
                     item['fundamental_score'],
                     "; ".join(item['hold_reasons']) if item['hold_reasons'] else "n/a",
                 )
+        
+        # ── FINAL: Complete scan_run with summary ──
+        if scan_run_id:
+            try:
+                self.persistence.complete_scan_run(scan_run_id, {
+                    'duration_seconds': round(total_time, 1),
+                    'total_symbols_scanned': len(results),
+                    'data_fetch_success': len(fetched_data),
+                    'data_fetch_failed': fetch_failed,
+                    'all_gates_passed': gates_passed_count,
+                    'trade_signals_found': signals_found_count,
+                    'recommendations_generated': recommended_count,
+                    'failed_analysis': failed_count,
+                    'phase1_seconds': round(phase1_time, 1),
+                    'phase2_seconds': round(phase2_time, 1),
+                    'phase3_seconds': round(phase3_time, 1),
+                    'top_hold_blockers': dict(hold_reason_counter.most_common(10)),
+                })
+                logger.info(f"Scan run {scan_run_id} completed and saved")
+            except Exception as e:
+                logger.error(f"Error completing scan run: {e}")
         
         try:
             from database import get_mongodb
@@ -429,6 +532,55 @@ class AutomatedStockAnalysis:
                         processed_count += 1
                         
                         if result['success']:
+                            analysis_result = result['result']
+                            scan_run_id = getattr(self, 'scan_run_id', None)
+                            
+                            # ── Multi-stage saves (same as multiprocessing path) ──
+                            try:
+                                self.persistence.save_analysis_snapshot(analysis_result, scan_run_id=scan_run_id)
+                            except Exception:
+                                pass
+                            
+                            swing_analysis = analysis_result.get('swing_analysis', analysis_result.get('detailed_analysis', {}).get('swing_gates', {}))
+                            if swing_analysis and 'gates_passed' in swing_analysis:
+                                gate_results = {
+                                    'all_gates_passed': swing_analysis.get('all_gates_passed', False),
+                                    'gate_1_trend': swing_analysis.get('detailed_metrics', {}).get('trend', {}),
+                                    'gate_2_mtf': swing_analysis.get('detailed_metrics', {}).get('mtf', {}),
+                                    'gate_3_volatility': swing_analysis.get('detailed_metrics', {}).get('volatility', {}),
+                                    'gate_4_volume': swing_analysis.get('detailed_metrics', {}).get('volume', {}),
+                                }
+                                try:
+                                    self.persistence.save_swing_gate_results(
+                                        symbol=analysis_result.get('symbol', symbol),
+                                        gate_results=gate_results,
+                                        scan_run_id=scan_run_id
+                                    )
+                                except Exception:
+                                    pass
+                            
+                            trade_plan = analysis_result.get('trade_plan', {})
+                            if analysis_result.get('is_recommended') and trade_plan:
+                                try:
+                                    swing_entry = (swing_analysis or {}).get('entry_patterns', {})
+                                    swing_exit = (swing_analysis or {}).get('exit_rules', {})
+                                    self.persistence.save_trade_signal(
+                                        symbol=analysis_result.get('symbol', symbol),
+                                        signal_data={
+                                            'entry_price': trade_plan.get('buy_price'),
+                                            'entry_pattern': swing_entry.get('strongest_pattern', 'strategy_signal'),
+                                            'patterns': swing_entry.get('patterns', {}),
+                                            'stop_loss': trade_plan.get('stop_loss') or swing_exit.get('stop_loss'),
+                                            'take_profit_1': swing_exit.get('take_profit_1', trade_plan.get('sell_price')),
+                                            'take_profit_2': swing_exit.get('take_profit_2'),
+                                            'atr': swing_exit.get('atr'),
+                                            'risk_reward_1': swing_exit.get('risk_reward_1', trade_plan.get('risk_reward_ratio')),
+                                        },
+                                        scan_run_id=scan_run_id
+                                    )
+                                except Exception:
+                                    pass
+                            
                             # Save backtest results regardless of recommendation
                             self.save_backtest_results(result['result'])
                             
@@ -465,6 +617,55 @@ class AutomatedStockAnalysis:
                             processed_count += 1
                             
                             if result['success']:
+                                analysis_result = result['result']
+                                scan_run_id = getattr(self, 'scan_run_id', None)
+                                
+                                # ── Multi-stage saves (same as multiprocessing path) ──
+                                try:
+                                    self.persistence.save_analysis_snapshot(analysis_result, scan_run_id=scan_run_id)
+                                except Exception:
+                                    pass
+                                
+                                swing_analysis = analysis_result.get('swing_analysis', analysis_result.get('detailed_analysis', {}).get('swing_gates', {}))
+                                if swing_analysis and 'gates_passed' in swing_analysis:
+                                    gate_results = {
+                                        'all_gates_passed': swing_analysis.get('all_gates_passed', False),
+                                        'gate_1_trend': swing_analysis.get('detailed_metrics', {}).get('trend', {}),
+                                        'gate_2_mtf': swing_analysis.get('detailed_metrics', {}).get('mtf', {}),
+                                        'gate_3_volatility': swing_analysis.get('detailed_metrics', {}).get('volatility', {}),
+                                        'gate_4_volume': swing_analysis.get('detailed_metrics', {}).get('volume', {}),
+                                    }
+                                    try:
+                                        self.persistence.save_swing_gate_results(
+                                            symbol=analysis_result.get('symbol', symbol),
+                                            gate_results=gate_results,
+                                            scan_run_id=scan_run_id
+                                        )
+                                    except Exception:
+                                        pass
+                                
+                                trade_plan = analysis_result.get('trade_plan', {})
+                                if analysis_result.get('is_recommended') and trade_plan:
+                                    try:
+                                        swing_entry = (swing_analysis or {}).get('entry_patterns', {})
+                                        swing_exit = (swing_analysis or {}).get('exit_rules', {})
+                                        self.persistence.save_trade_signal(
+                                            symbol=analysis_result.get('symbol', symbol),
+                                            signal_data={
+                                                'entry_price': trade_plan.get('buy_price'),
+                                                'entry_pattern': swing_entry.get('strongest_pattern', 'strategy_signal'),
+                                                'patterns': swing_entry.get('patterns', {}),
+                                                'stop_loss': trade_plan.get('stop_loss') or swing_exit.get('stop_loss'),
+                                                'take_profit_1': swing_exit.get('take_profit_1', trade_plan.get('sell_price')),
+                                                'take_profit_2': swing_exit.get('take_profit_2'),
+                                                'atr': swing_exit.get('atr'),
+                                                'risk_reward_1': swing_exit.get('risk_reward_1', trade_plan.get('risk_reward_ratio')),
+                                            },
+                                            scan_run_id=scan_run_id
+                                        )
+                                    except Exception:
+                                        pass
+                                
                                 # Save backtest results regardless of recommendation
                                 self.save_backtest_results(result['result'])
                                 

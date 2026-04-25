@@ -22,7 +22,11 @@ MONGODB_DATABASE = os.getenv('MONGODB_DATABASE', 'super_advice')
 # Collections
 MONGODB_COLLECTIONS = {
     'recommended_shares': 'recommended_shares',
-    'backtest_results': 'backtest_results'
+    'backtest_results': 'backtest_results',
+    'analysis_snapshots': 'analysis_snapshots',
+    'swing_gate_results': 'swing_gate_results',
+    'trade_signals': 'trade_signals',
+    'scan_runs': 'scan_runs',
 }
 
 # Legacy SQLite config (for migration reference)
@@ -30,26 +34,25 @@ MONGODB_COLLECTIONS = {
 # DATABASE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), DATABASE)
 
 # Strategy configuration - Enable/disable trading strategies
-# SWING TRADING OPTIMIZED: Enable key indicators for precision swing trading
+# SWING TRADING v2: Only 5 core signals enabled for clean swing entries.
+# All other strategies are preserved (files intact) for future re-enabling.
 STRATEGY_CONFIG = {
-    # CORE HIGH-SPEED STRATEGIES (fast computation, proven reliable)
-    'MA_Crossover_50_200': True,           # Golden/Death cross - FAST & RELIABLE
-    'RSI_Overbought_Oversold': True,       # RSI - FAST computation
-    'MACD_Signal_Crossover': True,         # MACD - FAST & RELIABLE
-    'Bollinger_Band_Breakout': True,       # Bollinger bands - FAST
-    'EMA_Crossover_12_26': True,           # Fast EMA crossover - VERY FAST
+    # ═══ 5 CORE SWING SIGNALS (enabled) ═══
+    'RSI_Overbought_Oversold': True,       # Oversold bounce entry filter
+    'MACD_Signal_Crossover': True,         # Momentum confirmation
+    'EMA_Crossover_12_26': True,           # Fast trend confirmation
+    'ADX_Trend_Strength': True,            # Core trend gate filter
+    'On_Balance_Volume': True,             # Volume confirmation gate
 
-    # SWING TRADING ESSENTIALS - Now enabled for better precision
-    'ADX_Trend_Strength': True,            # ENABLED - Essential for trend filtering
-    'On_Balance_Volume': True,             # ENABLED - Volume confirmation
-    'ATR_Volatility': True,                # ENABLED - Volatility gates and position sizing
-    'SMA_Crossover_20_50': True,           # ENABLED - Medium-term trend confirmation
-    'Stochastic_Overbought_Oversold': True, # ENABLED - With strict filters for swing entries
-    'Multi_Timeframe_RSI': False,          # DISABLED - Causes import hang on some systems
-
-    # Keep problematic strategies disabled
-    'Volume_Breakout': True,               # FIXED: Now vectorized and enabled
-    'Support_Resistance_Breakout': True,  # Heavy data needs
+    # ═══ DISABLED (handled by swing gates or redundant) ═══
+    'MA_Crossover_50_200': False,          # Too slow for swing (200-day lag)
+    'Bollinger_Band_Breakout': False,      # Squeeze logic in swing patterns instead
+    'ATR_Volatility': False,               # Handled inside swing exit rules
+    'SMA_Crossover_20_50': False,          # Redundant with EMA 12/26
+    'Stochastic_Overbought_Oversold': False, # Adds noise over RSI
+    'Multi_Timeframe_RSI': False,          # Import hang on some systems
+    'Volume_Breakout': False,              # Handled inside swing patterns
+    'Support_Resistance_Breakout': False,  # Heavy compute, marginal value
 
     # Additional strategies (disabled for now to avoid heavy imports/CPU)
     'Williams_Percent_R_Overbought_Oversold': False,
@@ -92,9 +95,9 @@ STRATEGY_CONFIG = {
     'Keltner_Channel_Squeeze': False,
 }
 
-# BALANCED: Minimum combined score for recommendation
-# Adjusted for realistic recommendations while maintaining quality
-MIN_RECOMMENDATION_SCORE = 0.15  # Lowered slightly to capture moderate opportunities
+# Minimum combined score for recommendation
+# With 5 enabled strategies, 0.40 = need at least 2/5 to agree
+MIN_RECOMMENDATION_SCORE = 0.40
 
 # Sentiment analysis configuration
 SENTIMENT_MODEL = 'distilbert-base-uncased-finetuned-sst-2-english'
@@ -147,10 +150,10 @@ PERSIST_LOGGING = True  # If False, app.log will be reset on each run
 # SWING TRADING WEIGHTS: Only active pillars get weight.
 # If a module is disabled in ANALYSIS_CONFIG, set its weight to 0.0 here.
 ANALYSIS_WEIGHTS = {
-    'technical': 0.60,    # Technical weight (60%) - Primary for swing entry
-    'fundamental': 0.40,  # Fundamental weight (40%) - Quality stock filtering
-    'sentiment': 0.00,    # Sentiment weight (0%)
-    'sector': 0.00        # Sector weight (0%)
+    'technical': 1.00,    # 100% technical for swing trading
+    'fundamental': 0.00,  # Disabled — not needed for swing entry
+    'sentiment': 0.00,    # Disabled
+    'sector': 0.00        # Disabled
 }
 
 # SWING TRADING THRESHOLDS: Calibrated for Indian equity market
@@ -167,6 +170,7 @@ RECOMMENDATION_THRESHOLDS = {
     'technical_minimum': 0.35,       # Require a mild positive technical signal
     'fundamental_minimum': 0.10,     # Require slightly positive fundamentals
     'volume_confirmation_required': True,
+    'volume_confidence_threshold': 0.45,  # NEW: Relaxed from 0.7 for better signal generation
     'market_trend_weight': 0.3,
     'require_all_gates': True,       # ENABLED: Ensure all core pillars pass minima
     'sector_filter_enabled': False,
@@ -176,16 +180,16 @@ RECOMMENDATION_THRESHOLDS = {
 # Analysis Modules Configuration - OPTIMIZED for SPEED
 # Disable heavy modules for faster analysis
 ANALYSIS_CONFIG = {
-    'technical_analysis': True,     # Core analysis - ESSENTIAL
-    'fundamental_analysis': True,   # ENABLED - For comprehensive quality filtering
-    'sentiment_analysis': False,    # DISABLED - Heavy ML processing
-    'sector_analysis': False,       # DISABLED - Additional overhead
-    'market_regime_detection': False,  # DISABLED - Heavy ML processing
-    'market_microstructure': False,   # DISABLED - Complex simulation
-    'alternative_data': False,        # DISABLED - Additional data fetching
-    'backtesting': True,             # ENABLED - Simplified for speed
-    'risk_management': True,         # ENABLED - Essential for trade planning
-    'tca_analysis': False           # DISABLED - Complex analysis
+    'technical_analysis': True,      # CORE — keep
+    'fundamental_analysis': False,   # DISABLED — not needed for swing entry
+    'sentiment_analysis': False,     # DISABLED — heavy ML processing
+    'sector_analysis': False,        # DISABLED
+    'market_regime_detection': False, # DISABLED
+    'market_microstructure': False,   # DISABLED
+    'alternative_data': False,        # DISABLED
+    'backtesting': True,             # CORE — keep for validation
+    'risk_management': True,         # CORE — keep for trade planning
+    'tca_analysis': False            # DISABLED
 }
 
 # SWING TRADING QUALITY: Tighter filters for liquid, tradeable stocks only
@@ -193,12 +197,12 @@ STOCK_FILTERING = {
     'min_volume': 100000,           # Higher minimum for liquidity
     'min_price': 20.0,              # Avoid penny stocks
     'max_price': 50000.0,           # Maximum stock price
-    'min_market_cap': 50000000000,  # REQUIRED: 5000 crore minimum (solid mid/large cap)
+    'min_market_cap': 5000000000,  # REQUIRED: 5000 crore minimum (solid mid/large cap)
     'min_historical_days': 250,     # 1 year minimum history
     'volume_lookback_days': 50,     # Volume lookback period
     'exclude_delisted': True,       # Exclude delisted stocks
     'exclude_suspended': True,      # Exclude suspended stocks
-    'min_delivery_percent': 40.0,   # REQUIRED: 55.0% minimum for guaranteed institutional overnight holding
+    'min_delivery_percent': 30.0,   # REQUIRED: 55.0% minimum for guaranteed institutional overnight holding
     'max_volatility_percentile': 80 # NEW: Avoid extremely volatile stocks
 }
 

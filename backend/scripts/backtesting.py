@@ -86,11 +86,22 @@ class BacktestingEngine:
             # Add strategy with parameters
             self.cerebro.addstrategy(strategy_class, **(strategy_params or {}))
 
+            # Add analyzers for comprehensive metrics
+            self.cerebro.addanalyzer(bt.analyzers.TradeAnalyzer, _name='trades')
+            self.cerebro.addanalyzer(bt.analyzers.DrawDown, _name='drawdown')
+            self.cerebro.addanalyzer(bt.analyzers.SharpeRatio, _name='sharpe', riskfreerate=0.0)
+
             # Run backtest
             logger.info(f"Starting backtest with initial cash: {self.initial_cash}")
             initial_portfolio_value = self.cerebro.broker.getvalue()
-            self.cerebro.run()
+            results = self.cerebro.run()
             final_portfolio_value = self.cerebro.broker.getvalue()
+            
+            # Extract analyzer results
+            strat = results[0]
+            trade_analysis = strat.analyzers.trades.get_analysis()
+            drawdown_analysis = strat.analyzers.drawdown.get_analysis()
+            sharpe_analysis = strat.analyzers.sharpe.get_analysis()
             
             # Calculate results
             profit_loss = final_portfolio_value - initial_portfolio_value
@@ -104,7 +115,10 @@ class BacktestingEngine:
                 'initial_cash': self.initial_cash,
                 'final_portfolio_value': final_portfolio_value,
                 'profit_loss': profit_loss,
-                'roi': roi
+                'roi': roi,
+                'trade_analysis': trade_analysis,
+                'drawdown_analysis': drawdown_analysis,
+                'sharpe_analysis': sharpe_analysis
             }
             
         except Exception as e:

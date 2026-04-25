@@ -360,8 +360,9 @@ class EnhancedVolumeConfirmation:
             else:
                 overall_signal = 'neutral'
             
-            # Calculate confidence (weighted average)
-            overall_confidence = np.mean(confidence_scores) if confidence_scores else 0.0
+            # Calculate confidence: Use MAX instead of MEAN as per update.md
+            # If any single volume signal is extremely powerful, it should validate the trade.
+            overall_confidence = np.max(confidence_scores) if confidence_scores else 0.0
             
             return {
                 'overall_signal': overall_signal,
@@ -410,17 +411,21 @@ class EnhancedVolumeConfirmation:
             vol_strength = volume_strength.get('strength', 'unknown')
             vol_multiplier = volume_strength.get('multiplier', 0.0)
             
-            # VERY STRICT: For buy signals, require strong bullish volume only
+            # Use threshold from config
+            from config import RECOMMENDATION_THRESHOLDS
+            threshold = RECOMMENDATION_THRESHOLDS.get('volume_confidence_threshold', 0.45)
+            
+            # For buy signals, check against threshold
             if signal == 1:
                 if volume_analysis['overall_signal'] == 'bullish':
-                    if volume_analysis['confidence'] >= 0.8:  # VERY HIGH confidence required
-                        return 1, f"Exceptional volume confirmation: {vol_description}"
-                    elif volume_analysis['confidence'] >= 0.7:  # HIGH confidence required
-                        return 1, f"Strong volume confirmation: {vol_description}"
+                    if volume_analysis['confidence'] >= threshold:
+                        return 1, f"Volume confirmation passed ({volume_analysis['confidence']:.2f} >= {threshold}): {vol_description}"
                     else:
-                        return 0, f"Signal filtered - insufficient bullish volume confidence: {vol_strength} (confidence: {volume_analysis['confidence']:.2f})"
+                        return 0, f"Signal filtered - insufficient bullish volume confidence: {vol_strength} (confidence: {volume_analysis['confidence']:.2f} < {threshold})"
                 elif volume_analysis['overall_signal'] == 'neutral':
-                    if volume_analysis['confidence'] >= 0.6:  # STRICT neutral volume threshold
+                    # Neutral volume needs a slightly higher threshold or specific logic
+                    neutral_threshold = threshold + 0.15 
+                    if volume_analysis['confidence'] >= neutral_threshold:
                         return 1, f"High-confidence neutral volume allows signal: {vol_description}"
                     else:
                         return 0, f"Signal filtered due to weak neutral volume: {vol_strength} (confidence: {volume_analysis['confidence']:.2f})"
