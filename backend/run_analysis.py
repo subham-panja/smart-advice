@@ -732,38 +732,34 @@ class AutomatedStockAnalysis:
         except Exception as e:
             logger.error(f"Error getting total recommendations count: {e}")
     
-    def run_analysis(self, max_stocks: int = None, use_all_symbols: bool = False, fast_mode: bool = False):
+    def run_analysis(self, max_stocks: int = None, use_all_symbols: bool = False):
         """
         Run the complete analysis process.
         
         Args:
             max_stocks: Maximum number of stocks to analyze (for testing)
             use_all_symbols: If True, use all NSE symbols instead of filtered ones
-            fast_mode: If True, skip database purge and cache cleaning for speed
         """
         with self.app.app_context():
             try:
                 logger.info("Starting run_analysis method")
                 
-                if not fast_mode:
-                    # Clean corrupted cache files first
-                    logger.info("Cleaning corrupted cache files...")
-                    cache_manager = get_cache_manager()
-                    cleaned_files = cache_manager.clean_corrupted_cache_files()
-                    if cleaned_files > 0:
-                        logger.info(f"Cleaned {cleaned_files} corrupted cache files")
-                    logger.info("Cache cleaning completed")
-                    
-                    # Step 2: Purge old data if configured
-                    if self.app.config.get('REMOVE_OLD_DATA_ON_EACH_RUN', False):
-                        logger.info("Auto-purge enabled: clearing ALL old data before run")
-                        self.clear_old_data(days_old=0)
-                    else:
-                        days_old = self.app.config.get('DATA_PURGE_DAYS', 7)
-                        logger.info(f"Auto-purge disabled: cleaning data older than {days_old} days")
-                        self.clear_old_data(days_old=days_old)
+                # Clean corrupted cache files first
+                logger.info("Cleaning corrupted cache files...")
+                cache_manager = get_cache_manager()
+                cleaned_files = cache_manager.clean_corrupted_cache_files()
+                if cleaned_files > 0:
+                    logger.info(f"Cleaned {cleaned_files} corrupted cache files")
+                logger.info("Cache cleaning completed")
+                
+                # Step 2: Purge old data if configured
+                if self.app.config.get('REMOVE_OLD_DATA_ON_EACH_RUN', False):
+                    logger.info("Auto-purge enabled: clearing ALL old data before run")
+                    self.clear_old_data(days_old=0)
                 else:
-                    logger.info("Fast mode enabled - skipping cache cleaning and database purge")
+                    days_old = self.app.config.get('DATA_PURGE_DAYS', 7)
+                    logger.info(f"Auto-purge disabled: cleaning data older than {days_old} days")
+                    self.clear_old_data(days_old=days_old)
                 
                 # Analyze all stocks
                 logger.info("Starting stock analysis...")
@@ -797,7 +793,6 @@ def main():
     parser.add_argument('--single-threaded', action='store_true', help='Use single-threaded mode for debugging (slower but more stable)')
     parser.add_argument('--disable-volume-filter', action='store_true', help='Disable volume-based filtering for analysis')
     parser.add_argument('--fresh-data', action='store_true', help='Force fresh data fetch (no cache for today)')
-    parser.add_argument('--fast', action='store_true', help='Enable fast mode - skip cache cleaning and database purge for maximum speed')
     parser.add_argument('--group', type=str, help='Analyze aspecific group of stocks from symbol_groups.json (e.g. nifty50)')
     
     args = parser.parse_args()
@@ -856,7 +851,7 @@ def main():
         
         if args.verbose:
             # Verbose mode - logging already configured in constructor
-            analyzer.run_analysis(max_stocks=max_stocks, use_all_symbols=args.all, fast_mode=args.fast)
+            analyzer.run_analysis(max_stocks=max_stocks, use_all_symbols=args.all)
             logger.info("Script completed successfully")
         else:
             # Non-verbose mode - logging already configured in constructor
@@ -878,7 +873,7 @@ def main():
             
             # Show initial message (we'll update this after getting the actual stock count)
             print(f"Initializing analysis...")
-            analyzer.run_analysis(max_stocks=max_stocks, use_all_symbols=args.all, fast_mode=args.fast)
+            analyzer.run_analysis(max_stocks=max_stocks, use_all_symbols=args.all)
             print("\n")
             
             # Show final summary in non-verbose mode

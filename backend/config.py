@@ -62,10 +62,17 @@ USE_SCREENER = False
 MONGODB_COLLECTIONS = {
     'recommended_shares': 'recommended_shares',
     'backtest_results': 'backtest_results',
-    'analysis_snapshots': 'analysis_snapshots',
-    'swing_gate_results': 'swing_gate_results',
     'trade_signals': 'trade_signals',
     'scan_runs': 'scan_runs',
+    'analysis_snapshots': 'analysis_snapshots',
+    'swing_gate_results': 'swing_gate_results'
+}
+
+# Telegram Bot Integration
+TELEGRAM_CONFIG = {
+    'enabled': True,  # Change to True to enable the dashboard
+    'bot_token': '8268725983:AAFyPsqUoZSKcWYxNEHCFXVjHSg4PH7_p8I',
+    'allowed_user_ids': [2008236755], # Optional: Add your Telegram User ID here so only YOU can trigger it
 }
 
 # Strategy configuration - Core Swing Signals
@@ -127,8 +134,8 @@ STRATEGY_CONFIG = {
 
 # Analysis Weights
 ANALYSIS_WEIGHTS = {
-    'technical': 1.00,
-    'fundamental': 0.00,
+    'technical': 0.70,
+    'fundamental': 0.30,
     'sentiment': 0.00,
     'sector': 0.00
 }
@@ -158,10 +165,10 @@ RECOMMENDATION_THRESHOLDS = {
 # Module Toggles
 ANALYSIS_CONFIG = {
     'technical_analysis': True,
-    'fundamental_analysis': False,
+    'fundamental_analysis': True,
     'sentiment_analysis': False,
     'sector_analysis': False,
-    'market_regime_detection': False,
+    'market_regime_detection': True,
     'market_microstructure': False,
     'alternative_data': False,
     'backtesting': True,
@@ -286,6 +293,12 @@ SWING_PATTERNS = {
             'enabled': True,
             'pivot_lookback': 5,
             'min_swings': 2
+        },
+        {
+            'name': 'volatility_contraction',
+            'enabled': True,
+            'min_contractions': 2,
+            'volume_dry_up_required': True
         }
     ],
     'exit_rules': {
@@ -294,6 +307,7 @@ SWING_PATTERNS = {
         'target_1_atr': 1.5,
         'target_2_atr': 3.0,
         'trail_stop_atr': 2.0,
+        'trailing_stop_enabled': True,
         'time_stop_bars': 15,
         'breakeven_at_target_1': True
     }
@@ -315,6 +329,6 @@ RISK_MANAGEMENT = {
     'risk_reward': {
         'min_ratio': 1.5,
         'optimal_ratio': 2.5,
-        'adjust_targets': False
+        'adjust_targets': True
     }
 }

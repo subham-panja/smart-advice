@@ -412,7 +412,41 @@ class SwingTradingSignalAnalyzer:
                     'description': f'Structural higher-low series ({len(swing_lows)} swings)'
                 }
             
-            # 5. Volume-supported breakout
+            # 5. Volatility Contraction Pattern (VCP)
+            p_config = config_patterns.get('volatility_contraction', {'enabled': True, 'min_contractions': 2, 'volume_dry_up_required': True})
+            if p_config['enabled']:
+                # Basic VCP logic: Look back over last 40 days for contracting price ranges
+                lookback = 40
+                if len(df) > lookback:
+                    recent_data = df.iloc[-lookback:]
+                    # Calculate rolling 5-day True Range to represent volatility swings
+                    tr = recent_data['High'] - recent_data['Low']
+                    rolling_tr = tr.rolling(window=5).mean().dropna()
+                    
+                    # We want to see the TR decreasing over the last few weeks
+                    first_half_vol = rolling_tr.iloc[:len(rolling_tr)//2].mean()
+                    second_half_vol = rolling_tr.iloc[len(rolling_tr)//2:].mean()
+                    
+                    volatility_contracting = second_half_vol < (first_half_vol * 0.75) # 25% contraction
+                    
+                    volume_dry_up = True
+                    if p_config.get('volume_dry_up_required', True):
+                        recent_vol = recent_data['Volume'].iloc[-10:-1].mean() # Up to yesterday
+                        older_vol = recent_data['Volume'].iloc[:10].mean()
+                        volume_dry_up = recent_vol < older_vol
+                    
+                    # Breakout requirement: Today must be a strong day breaking the recent contraction
+                    breakout = df['Close'].iloc[-1] > df['High'].iloc[-6:-1].max()
+                    
+                    vcp_detected = bool(volatility_contracting and volume_dry_up and breakout)
+                    
+                    patterns['volatility_contraction'] = {
+                        'detected': vcp_detected,
+                        'strength': 0.95 if vcp_detected else 0,
+                        'description': 'Volatility Contraction Pattern (VCP) Breakout'
+                    }
+
+            # 6. Volume-supported breakout
             # Keep this as a default since it's a core confirmation even if not explicitly in config list yet
             resistance = df['High'].iloc[-20:-1].max()
             breakout_with_volume = (

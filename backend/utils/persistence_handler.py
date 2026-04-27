@@ -75,6 +75,8 @@ class PersistenceHandler:
                 'reason': rec.reason,
                 'buy_price': buy_price,
                 'sell_price': sell_price,
+                'stop_loss': trade_plan.get('stop_loss', 0.0) if trade_plan else 0.0,
+                'trade_plan': trade_plan,
                 'backtest_metrics': backtest_metrics,
                 'recommendation_date': datetime.utcnow(),
             }
