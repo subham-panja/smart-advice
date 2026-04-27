@@ -761,6 +761,19 @@ class AutomatedStockAnalysis:
                     logger.info(f"Auto-purge disabled: cleaning data older than {days_old} days")
                     self.clear_old_data(days_old=days_old)
                 
+                # Fetch Global FII/DII Macro Status
+                try:
+                    logger.info("Fetching FII/DII Institutional flow data...")
+                    from scripts.smart_money_tracker import SmartMoneyTracker
+                    tracker = SmartMoneyTracker()
+                    fii_dii_status = tracker.get_fii_dii_status()
+                    self.app.config['FII_DII_STATUS'] = fii_dii_status
+                    logger.info(f"FII/DII Status: {fii_dii_status}")
+                    if not fii_dii_status.get('is_bullish', True):
+                        logger.warning("ALERT: Heavy FII Selling detected. The macro environment is currently BEARISH.")
+                except Exception as e:
+                    logger.error(f"Failed to fetch FII/DII status: {e}")
+                
                 # Analyze all stocks
                 logger.info("Starting stock analysis...")
                 

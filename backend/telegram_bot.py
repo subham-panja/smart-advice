@@ -143,6 +143,28 @@ def view_recommendations_command(message, today_only=False):
                 f"• Technical: {tech:.2f}\n"
                 f"• Fundamental: {fund:.2f}\n"
                 f"──────────────\n"
+            )
+            
+            # Smart Money & Sector
+            sector_data = rec.get('sector_analysis', {})
+            sector_name = sector_data.get('sector', 'Unknown')
+            sector_rec = sector_data.get('recommendation', '')
+            
+            fii_dii = rec.get('market_regime', {}).get('fii_dii_status', {}) # if you saved it here, or just grab from global config, but since it's historical, let's grab from DB if it exists
+            
+            smart_money = rec.get('detailed_analysis', {}).get('smart_money', {})
+            delivery = smart_money.get('delivery_pct', 0)
+            
+            if sector_name != 'Unknown' or delivery > 0:
+                msg += f"🏦 *Smart Money & Sector:*\n"
+                if sector_name != 'Unknown':
+                    msg += f"• 🏭 Sector: {sector_name}\n"
+                    msg += f"• 🧭 Sector Flow: {sector_rec}\n"
+                if delivery > 0:
+                    msg += f"• 🚚 Delivery Vol: {delivery:.1f}%\n"
+                msg += f"──────────────\n"
+            
+            msg += (
                 f"⚙️ *Backtest Performance:*\n"
                 f"• Historical CAGR: {cagr:.1f}%\n"
                 f"• Win Rate: {win_rate:.1f}%\n"

@@ -85,6 +85,8 @@ class PersistenceHandler:
                 doc['detailed_analysis'] = analysis_result['detailed_analysis']
             if 'market_regime' in analysis_result:
                 doc['market_regime'] = analysis_result['market_regime']
+            if 'sector_analysis' in analysis_result:
+                doc['sector_analysis'] = analysis_result['sector_analysis']
             
             db.recommended_shares.update_one({'symbol': rec.symbol}, {'$set': doc}, upsert=True)
             return True

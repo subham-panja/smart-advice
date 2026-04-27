@@ -109,8 +109,28 @@ class StockAnalyzer:
                 if failed_gates:
                     result['reason'].append(f"Gate failure: {', '.join(failed_gates)}")
 
+            # Smart Money: Delivery Volume Check
+            try:
+                from scripts.smart_money_tracker import SmartMoneyTracker
+                tracker = SmartMoneyTracker()
+                delivery_pct = tracker.get_delivery_volume(symbol)
+                result['delivery_volume_pct'] = delivery_pct
+                
+                # Bonus for high delivery accumulation (Institutional Buying)
+                if delivery_pct > 60:
+                    result['technical_score'] += 0.15
+                    result['reason'].append(f"MASSIVE Institutional Accumulation (Delivery: {delivery_pct:.1f}%)")
+                elif delivery_pct > 40:
+                    result['technical_score'] += 0.05
+                    result['reason'].append(f"Strong Delivery Volume ({delivery_pct:.1f}%)")
+                
+            except Exception as e:
+                logger.warning(f"Failed to fetch delivery volume for {symbol}: {e}")
+                result['delivery_volume_pct'] = 0.0
+
             result['detailed_analysis']['technical'] = tech_analysis
             result['detailed_analysis']['swing_gates'] = swing_gate_res
+            result['detailed_analysis']['smart_money'] = {'delivery_pct': result.get('delivery_volume_pct', 0)}
             
             # 2. Fundamental & Sentiment (Optional)
             # Use top-level config or ANALYSIS_CONFIG nested values
@@ -137,8 +157,22 @@ class StockAnalyzer:
             analysis_config = app_config.get('ANALYSIS_CONFIG', {})
             if analysis_config.get('sector_analysis'):
                 if not self.sector_analyzer: self.sector_analyzer = SectorAnalyzer()
-                result['sector_analysis'] = self.sector_analyzer.get_sector_recommendation(symbol)
-            
+                # Get comprehensive analysis
+                sector_res = self.sector_analyzer.get_comprehensive_sector_analysis(symbol)
+                result['sector_analysis'] = sector_res
+                # Use the sector score (-1 to 1) 
+                result['sector_score'] = sector_res.get('sector_score', 0.0)
+                
+                if RECOMMENDATION_THRESHOLDS.get('sector_filter_enabled', False):
+                    min_sector_score = RECOMMENDATION_THRESHOLDS.get('min_sector_score', -0.2)
+                    if result['sector_score'] < min_sector_score:
+                        result['technical_score'] -= 0.2  # Penalize for bad sector
+                        result['reason'].append(f"Weak Sector Performance: {sector_res.get('sector', 'Unknown')}")
+                    elif result['sector_score'] > 0.4:
+                        result['technical_score'] += 0.1  # Bonus for leading sector
+                        result['reason'].append(f"Leading Sector Tailwinds: {sector_res.get('sector', 'Unknown')}")
+            else:
+                result['sector_score'] = 0.0
             # 4. Preliminary Combination
             result = self._combine_analysis_results(result, consider_backtest=False, keep_reason_as_list=True)
             

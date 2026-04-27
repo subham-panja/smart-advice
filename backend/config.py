@@ -137,7 +137,7 @@ ANALYSIS_WEIGHTS = {
     'technical': 0.70,
     'fundamental': 0.30,
     'sentiment': 0.00,
-    'sector': 0.00
+    'sector': 0.20
 }
 
 # Recommendation Logic Thresholds
@@ -158,7 +158,7 @@ RECOMMENDATION_THRESHOLDS = {
     'market_trend_weight': 0.3,
     'require_all_gates': True,
     'min_risk_reward_ratio': 1.8,
-    'sector_filter_enabled': False,
+    'sector_filter_enabled': True,
     'min_sector_score': -0.5
 }
 
@@ -167,7 +167,7 @@ ANALYSIS_CONFIG = {
     'technical_analysis': True,
     'fundamental_analysis': True,
     'sentiment_analysis': False,
-    'sector_analysis': False,
+    'sector_analysis': True,
     'market_regime_detection': True,
     'market_microstructure': False,
     'alternative_data': False,
