@@ -166,8 +166,10 @@ def view_recommendations_command(message, today_only=False):
             
             msg += (
                 f"⚙️ *Backtest Performance:*\n"
-                f"• Historical CAGR: {cagr:.1f}%\n"
+                f"• Hist. CAGR: {cagr:.1f}%\n"
                 f"• Win Rate: {win_rate:.1f}%\n"
+                f"• Expectancy: ₹{bt.get('expectancy', 0):.2f}\n"
+                f"• Profit Factor: {bt.get('profit_factor', 0):.2f}\n"
             )
             
             # Add strategy details and entry patterns

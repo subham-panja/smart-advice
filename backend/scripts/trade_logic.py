@@ -65,6 +65,11 @@ class TradeLogic:
             current_bb_upper = bb_upper[-1] if not pd.isna(bb_upper[-1]) else current_price * 1.05
             current_bb_lower = bb_lower[-1] if not pd.isna(bb_lower[-1]) else current_price * 0.95
             
+            # Calculate 20-day high for breakout detection
+            high_20 = historical_data['High'].rolling(window=20).max()
+            current_high_20 = high_20.iloc[-2] if len(high_20) > 1 else current_price
+            is_breakout = current_price > current_high_20
+            
             # Find support and resistance levels
             support_level = self._find_support_resistance(historical_data, 'support')
             resistance_level = self._find_support_resistance(historical_data, 'resistance')
@@ -73,7 +78,7 @@ class TradeLogic:
             recommendation_data = self._generate_buy_sell_recommendations(
                 current_price, current_sma_20, current_sma_50, current_ema_12, current_ema_26,
                 current_rsi, current_atr, current_bb_upper, current_bb_lower,
-                support_level, resistance_level
+                support_level, resistance_level, is_breakout
             )
             
             # Calculate days to target
@@ -146,7 +151,7 @@ class TradeLogic:
     def _generate_buy_sell_recommendations(self, current_price: float, sma_20: float, sma_50: float,
                                          ema_12: float, ema_26: float, rsi: float, atr: float,
                                          bb_upper: float, bb_lower: float, support: float,
-                                         resistance: float) -> Dict[str, Any]:
+                                         resistance: float, is_breakout: bool = False) -> Dict[str, Any]:
         """Generate recommendations based on technical indicators."""
         recommendation = 'HOLD'
         entry_timing = 'WAIT'
@@ -171,7 +176,13 @@ class TradeLogic:
         rsi_neutral = rsi_min <= rsi <= rsi_max
         near_support = abs(current_price - support) / current_price < 0.05
         
-        if ma_cross_bullish and price_above_ma and rsi_neutral:
+        if is_breakout:
+            recommendation = 'BUY'
+            entry_timing = 'IMMEDIATE'
+            buy_price = current_price
+            sell_price = current_price + (atr * 2.5)
+            stop_loss = current_price - (atr * 1.5)
+        elif ma_cross_bullish and price_above_ma and rsi_neutral:
             recommendation = 'BUY'
             if current_price > (resistance * 0.98):
                 entry_timing = 'IMMEDIATE'
@@ -181,7 +192,8 @@ class TradeLogic:
                 sell_price = current_price * 1.06
             else:
                 entry_timing = 'WAIT_FOR_DIP'
-                buy_price = max(support * 1.01, current_price * 0.98)
+                # If breakout is close, don't wait too deep
+                buy_price = max(support * 1.01, current_price * 0.99)
                 sell_price = buy_price * 1.08
             stop_loss = buy_price * 0.96
         elif rsi < 30 and near_support:

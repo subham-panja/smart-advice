@@ -79,6 +79,12 @@ class BacktestingEngine:
             self.cerebro.broker.set_cash(self.initial_cash)
             self.cerebro.broker.setcommission(commission=self.commission)
             
+            # Add a sizer to use a percentage of available cash
+            # Using the 'Normal' position sizing from config to ensure realistic portfolio impact
+            from config import RISK_MANAGEMENT
+            pos_pct = RISK_MANAGEMENT.get('position_sizing', {}).get('max_position_pct', 0.20) * 100
+            self.cerebro.addsizer(bt.sizers.PercentSizer, percents=pos_pct)
+            
             # Convert DataFrame to Backtrader data feed
             data_feed = bt.feeds.PandasData(dataname=data_copy)
             self.cerebro.adddata(data_feed)

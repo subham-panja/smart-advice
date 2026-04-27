@@ -125,6 +125,11 @@ class BacktestingRunner:
                 try:
                     result = self._run_strategy_backtest(strategy_name, backtest_data, symbol)
                     strategy_results[strategy_name] = result
+                    
+                    cagr_val = result.get('cagr', 0)
+                    trades_val = result.get('total_trades', 0)
+                    logger.info(f"BACKTEST_DEBUG | {symbol} | {strategy_name} | CAGR: {cagr_val}% | Trades: {trades_val}")
+                    
                     logger.info(f"Completed backtest for {strategy_name} on {symbol}")
                 except Exception as e:
                     logger.error(f"Error backtesting {strategy_name} on {symbol}: {e}")
@@ -258,6 +263,8 @@ class BacktestingRunner:
                 'initial_capital': metrics.get('initial_capital'),
                 'final_capital': metrics.get('final_capital'),
                 'expectancy': metrics.get('expectancy', 0.0),
+                'profit_factor': metrics.get('profit_factor', 0.0),
+                'recovery_factor': metrics.get('recovery_factor', 0.0),
             }
             
         except Exception as e:
@@ -336,11 +343,13 @@ class BacktestingRunner:
             # 1. Total return
             total_return = bt_results['roi']
             
-            # 2. CAGR (Still keep for comparison)
+            # 2. CAGR
             if years > 0 and initial_value > 0:
                 cagr = ((final_value / initial_value) ** (1/years) - 1) * 100
+                logger.debug(f"CAGR_CALC | {symbol} | Years: {years:.2f} | Initial: {initial_value:.2f} | Final: {final_value:.2f} | Result: {cagr:.4f}%")
             else:
                 cagr = 0.0
+                logger.debug(f"CAGR_CALC | {symbol} | Years: {years:.2f} | Initial: {initial_value:.2f} | Final: {final_value:.2f} | Result: 0.0 (Invalid inputs)")
             
             # 3. Trade Metrics
             total_trades = trades.get('total', {}).get('total', 0)
@@ -351,8 +360,15 @@ class BacktestingRunner:
             
             # 4. Profit/Loss Metrics
             pnl_total = trades.get('pnl', {}).get('net', {}).get('total', 0)
-            won_pnl = trades.get('won', {}).get('pnl', {}).get('total', 0)
-            lost_pnl = abs(trades.get('lost', {}).get('pnl', {}).get('total', 0))
+            
+            # Safely extract won/lost PnL
+            won_data = trades.get('won', {})
+            lost_data = trades.get('lost', {})
+            
+            won_pnl = won_data.get('pnl', {}).get('total', 0.0)
+            lost_pnl = abs(lost_data.get('pnl', {}).get('total', 0.0))
+            
+            # logger.info(f"DEBUG_PNL | {symbol} | {strategy_name} | Won: {won_pnl} | Lost: {lost_pnl}")
             
             avg_profit = (won_pnl / won_trades) if won_trades > 0 else 0.0
             avg_loss = (lost_pnl / lost_trades) if lost_trades > 0 else 0.0
