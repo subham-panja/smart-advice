@@ -1,5 +1,10 @@
 import os
 import logging
+from typing import Dict, List, Any
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Data Science Library Threading Limits (Must be set before imports)
 LIBRARY_MAX_THREADS = '1'
@@ -71,9 +76,22 @@ MONGODB_COLLECTIONS = {
 
 # Telegram Bot Integration
 TELEGRAM_CONFIG = {
-    'enabled': True,  # Change to True to enable the dashboard
-    'bot_token': '8268725983:AAFyPsqUoZSKcWYxNEHCFXVjHSg4PH7_p8I',
-    'allowed_user_ids': [2008236755], # Optional: Add your Telegram User ID here so only YOU can trigger it
+    'enabled': True,
+    'bot_token': os.getenv('TELEGRAM_BOT_TOKEN'),
+    'allowed_user_ids': [int(uid.strip()) for uid in os.getenv('TELEGRAM_ALLOWED_USER_IDS').split(',') if uid.strip()],
+}
+
+# 5paisa API Configuration
+FIVEPAISA_CONFIG = {
+    'app_name': os.getenv('FIVEPAISA_APP_NAME'),
+    'app_source': os.getenv('FIVEPAISA_APP_SOURCE'),
+    'user_id': os.getenv('FIVEPAISA_USER_ID'),
+    'password': os.getenv('FIVEPAISA_PASSWORD'),
+    'api_key': os.getenv('FIVEPAISA_API_KEY'),
+    'encry_key': os.getenv('FIVEPAISA_ENCRY_KEY'),
+    'client_code': os.getenv('FIVEPAISA_CLIENT_CODE'),
+    'redirect_url': os.getenv('FIVEPAISA_REDIRECT_URL', 'https://xstream.5paisa.com/'),
+    'access_token': os.getenv('FIVEPAISA_ACCESS_TOKEN'),
 }
 
 # Strategy configuration - Core Swing Signals

@@ -10,6 +10,7 @@ backend_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(backend_dir)
 
 import config
+from utils.fivepaisa_client import get_5paisa_balance, get_5paisa_holdings, FivePaisaUtility
 
 # Check if Telegram is enabled
 if not getattr(config, 'TELEGRAM_CONFIG', {}).get('enabled', False):
@@ -38,15 +39,33 @@ def get_main_keyboard():
     markup = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     btn_run = KeyboardButton("▶️ Run Analysis")
     btn_view = KeyboardButton("📊 View Recommendations")
-    markup.add(btn_run, btn_view)
+    btn_balance = KeyboardButton("💰 Wallet Balance")
+    btn_portfolio = KeyboardButton("💼 View Portfolio")
+    btn_help = KeyboardButton("❓ Help & Commands")
+    markup.add(btn_run, btn_view, btn_balance, btn_portfolio, btn_help)
     return markup
 
 @bot.message_handler(commands=['start', 'help'])
+@bot.message_handler(func=lambda message: message.text == "❓ Help & Commands")
 def send_welcome(message):
     if not check_permission(message): return
-    bot.reply_to(
-        message, 
-        "🤖 *Smart Advice Trading Dashboard*\n\nWelcome! I am your personal swing trading assistant.", 
+    
+    help_text = (
+        "🤖 *Smart Advice Trading Dashboard*\n\n"
+        "Welcome! I am your personal swing trading assistant. Here are my available commands:\n\n"
+        "🚀 *Core Actions*\n"
+        "• *Run Analysis*: Start the full market scan (Chartink + TA + Backtest).\n"
+        "• *View Recommendations*: Show the latest BUY signals from the database.\n\n"
+        "🏦 *Account Details*\n"
+        "• *Wallet Balance*: Fetch your live margin and ledger balance from 5paisa.\n"
+        "• *View Portfolio*: Check your current stock holdings.\n\n"
+        "💡 *How to use*\n"
+        "Use the buttons below to navigate, or simply type the command name."
+    )
+    
+    bot.send_message(
+        message.chat.id, 
+        help_text, 
         parse_mode='Markdown',
         reply_markup=get_main_keyboard()
     )
@@ -76,6 +95,171 @@ def run_analysis_command(message):
     except Exception as e:
         bot.send_message(message.chat.id, f"❌ *Error starting analysis:*\n{str(e)}", parse_mode='Markdown')
 
+
+@bot.message_handler(func=lambda message: message.text == "💰 Wallet Balance")
+def wallet_balance_command(message):
+    if not check_permission(message): return
+    
+    bot.send_message(message.chat.id, "🏦 *Fetching your 5paisa balance...*", parse_mode='Markdown')
+    
+    try:
+        balance = get_5paisa_balance()
+        
+        if balance.get('status') == 'success':
+            data = balance
+            # If the utility returned the simplified dict
+            if 'available_margin' in data:
+                msg = (
+                    "💰 *5paisa Wallet Balance*\n"
+                    "──────────────\n"
+                    f"💳 *Available Margin:* ₹{data['available_margin']:.2f}\n"
+                    f"📝 *Ledger Balance:* ₹{data['ledger_balance']:.2f}\n"
+                    f"📊 *Utilized Margin:* ₹{data['utilized_margin']:.2f}\n"
+                    f"📈 *Net Available:* ₹{data['net_available']:.2f}\n"
+                    "──────────────\n"
+                    "_Note: Data fetched live from your 5paisa account._"
+                )
+            else:
+                msg = f"✅ *Balance Data:*\n\n```json\n{data}\n```"
+            
+            bot.send_message(message.chat.id, msg, parse_mode='Markdown')
+        else:
+            bot.send_message(message.chat.id, f"❌ *Error fetching balance:*\n{balance.get('message', 'Unknown error')}", parse_mode='Markdown')
+            
+    except Exception as e:
+        bot.send_message(message.chat.id, f"❌ *Bot Error:*\n```\n{str(e)}\n```", parse_mode='Markdown')
+
+
+@bot.message_handler(func=lambda message: message.text == "💼 View Portfolio")
+def view_portfolio_command(message):
+    if not check_permission(message): return
+    
+    bot.send_message(message.chat.id, "💼 *Fetching your 5paisa holdings...*", parse_mode='Markdown')
+    
+    try:
+        portfolio = get_5paisa_holdings()
+        
+        if portfolio.get('status') == 'success':
+            holdings = portfolio.get('data', [])
+            
+            if not holdings:
+                bot.send_message(message.chat.id, "📭 Your portfolio is currently empty.", parse_mode='Markdown')
+                return
+                
+            # Filter out zero quantity holdings
+            active_holdings = [h for h in holdings if h.get('Quantity', 0) > 0]
+            
+            if not active_holdings:
+                bot.send_message(message.chat.id, "📭 You have no active holdings.", parse_mode='Markdown')
+                return
+                
+            msg_chunks = []
+            current_msg = "💼 *Your Active Portfolio*\n──────────────\n"
+            total_invested = 0
+            total_current = 0
+            
+            for h in active_holdings:
+                symbol = h.get('Symbol', 'UNKNOWN')
+                qty = h.get('Quantity', 0)
+                avg_price = h.get('AvgRate', 0)
+                ltp = h.get('CurrentPrice', avg_price) # Fallback to avg price if LTP is missing
+                
+                invested = qty * avg_price
+                current = qty * ltp
+                pnl = current - invested
+                pnl_pct = (pnl / invested * 100) if invested > 0 else 0
+                
+                total_invested += invested
+                total_current += current
+                
+                icon = "🟢" if pnl >= 0 else "🔴"
+                stock_text = f"*{symbol}* ({qty} qty)\nAvg: ₹{avg_price:.2f} | LTP: ₹{ltp:.2f}\nP&L: {icon} ₹{pnl:.2f} ({pnl_pct:.2f}%)\n\n"
+                
+                if len(current_msg) + len(stock_text) > 3000:
+                    msg_chunks.append(current_msg)
+                    current_msg = ""
+                
+                current_msg += stock_text
+                
+            total_pnl = total_current - total_invested
+            total_pnl_pct = (total_pnl / total_invested * 100) if total_invested > 0 else 0
+            total_icon = "🟢" if total_pnl >= 0 else "🔴"
+            
+            summary = (
+                "──────────────\n"
+                f"📈 *Total Invested:* ₹{total_invested:.2f}\n"
+                f"💰 *Current Value:* ₹{total_current:.2f}\n"
+                f"📊 *Total P&L:* {total_icon} ₹{total_pnl:.2f} ({total_pnl_pct:.2f}%)"
+            )
+            
+            if len(current_msg) + len(summary) > 3000:
+                msg_chunks.append(current_msg)
+                current_msg = summary
+            else:
+                current_msg += summary
+                
+            msg_chunks.append(current_msg)
+            
+            for chunk in msg_chunks:
+                bot.send_message(message.chat.id, chunk, parse_mode='Markdown')
+
+                
+        else:
+            bot.send_message(message.chat.id, f"❌ *Error fetching portfolio:*\n{portfolio.get('message', 'Unknown error')}", parse_mode='Markdown')
+            
+    except Exception as e:
+        bot.send_message(message.chat.id, f"❌ *Bot Error:*\n```\n{str(e)}\n```", parse_mode='Markdown')
+
+
+@bot.message_handler(commands=['5paisa_login'])
+def fivepaisa_login_start(message):
+    """Start the 5paisa OAuth login flow."""
+    if not check_permission(message): return
+    
+    utility = FivePaisaUtility()
+    oauth_url = utility.get_oauth_url()
+    
+    if not oauth_url:
+        bot.send_message(message.chat.id, "❌ 5paisa credentials not configured in .env")
+        return
+    
+    msg = (
+        "🔐 *5paisa OAuth Login*\n\n"
+        "Step 1: Click the link below and login with your 5paisa account:\n\n"
+        f"`{oauth_url}`\n\n"
+        "Step 2: After login, you will be redirected to a URL. "
+        "Copy the *RequestToken* from the URL and send it to me as:\n\n"
+        "`/5paisa_token YOUR_TOKEN_HERE`"
+    )
+    bot.send_message(message.chat.id, msg, parse_mode='Markdown')
+
+
+@bot.message_handler(commands=['5paisa_token'])
+def fivepaisa_login_token(message):
+    """Complete the 5paisa OAuth flow with the request token."""
+    if not check_permission(message): return
+    
+    parts = message.text.split(maxsplit=1)
+    if len(parts) < 2:
+        bot.send_message(message.chat.id, "❌ Usage: `/5paisa_token YOUR_TOKEN_HERE`", parse_mode='Markdown')
+        return
+    
+    request_token = parts[1].strip()
+    utility = FivePaisaUtility()
+    result = utility.login_with_request_token(request_token)
+    
+    if result.get('status') == 'success':
+        access_token = result.get('access_token', '')
+        msg = (
+            "✅ *5paisa Login Successful!*\n\n"
+            f"Your Access Token:\n`{access_token}`\n\n"
+            "⚠️ *Save this in your .env file as:*\n"
+            f"`FIVEPAISA_ACCESS_TOKEN={access_token}`\n\n"
+            "After saving, restart the bot. You won't need to login again."
+        )
+        bot.send_message(message.chat.id, msg, parse_mode='Markdown')
+    else:
+        bot.send_message(message.chat.id, f"❌ *Login Failed:*\n{result.get('message')}", parse_mode='Markdown')
 
 @bot.message_handler(func=lambda message: message.text == "📊 View Recommendations")
 def view_recommendations_command(message, today_only=False):
@@ -193,8 +377,47 @@ def view_recommendations_command(message, today_only=False):
             
             bot.send_message(message.chat.id, msg, parse_mode='Markdown')
 
+        # === DYNAMIC POSITION SIZING (NO ORDER PLACEMENT) ===
+        try:
+            balance = get_5paisa_balance()
+            if balance.get('status') == 'success' and 'net_available' in balance:
+                net_available = balance['net_available']
+                if net_available > 0:
+                    sizing_msg = f"🧮 *Dynamic Position Sizing (Based on ₹{net_available:.2f})*\n"
+                    sizing_msg += "_Risking max 2% of available capital per trade_\n──────────────\n"
+                    
+                    risk_capital = net_available * 0.02 # 2% risk per trade
+                    max_allocation = net_available * 0.25 # Max 25% of capital in one stock
+                    
+                    for rec in recs:
+                        symbol = rec.get('symbol', 'UNKNOWN')
+                        buy_price = rec.get('buy_price', 0)
+                        stop_loss = rec.get('stop_loss', 0)
+                        
+                        if buy_price > 0 and stop_loss > 0 and buy_price > stop_loss:
+                            risk_per_share = buy_price - stop_loss
+                            shares_to_buy = int(risk_capital / risk_per_share)
+                            
+                            # Capital constraint
+                            total_cost = shares_to_buy * buy_price
+                            if total_cost > max_allocation:
+                                shares_to_buy = int(max_allocation / buy_price)
+                                total_cost = shares_to_buy * buy_price
+                                
+                            if shares_to_buy > 0:
+                                sizing_msg += f"• *{symbol}*: Buy {shares_to_buy} shares (Cost: ₹{total_cost:.2f})\n"
+                            else:
+                                sizing_msg += f"• *{symbol}*: Too expensive for current margin.\n"
+                    
+                    bot.send_message(message.chat.id, sizing_msg, parse_mode='Markdown')
+                else:
+                    bot.send_message(message.chat.id, f"⚠️ *Insufficient Margin*\nYour Net Available margin is ₹{net_available:.2f}. Cannot generate dynamic position sizing.", parse_mode='Markdown')
+        except Exception as e:
+            print(f"Error calculating position sizing: {e}")
+
     except Exception as e:
         bot.send_message(message.chat.id, f"❌ *Database Error:*\n{str(e)}", parse_mode='Markdown')
+
 
 print("Telegram Bot is running! Waiting for messages...")
 bot.infinity_polling()
