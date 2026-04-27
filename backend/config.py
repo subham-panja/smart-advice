@@ -142,6 +142,7 @@ RECOMMENDATION_THRESHOLDS = {
     'volume_confidence_threshold': 0.45,
     'market_trend_weight': 0.3,
     'require_all_gates': True,
+    'min_risk_reward_ratio': 1.8,
     'sector_filter_enabled': False,
     'min_sector_score': -0.5
 }
@@ -160,7 +161,53 @@ ANALYSIS_CONFIG = {
     'tca_analysis': False
 }
 
-# Stock Screening Criteria
+# External Screener Integration
+# When enabled, these replace the legacy per-stock yfinance filtering
+# with a single server-side screener API call (much faster).
+# If both are False, the system uses the existing STOCK_FILTERING criteria.
+# If both are True, Chartink is preferred (faster) with Screener.in as fallback.
+USE_CHARTINK = True
+USE_SCREENER = False
+
+# Chartink Screener Configuration
+# NOTE: 'scan_clause' must be in Chartink's internal DSL format (lowercase),
+#       wrapped in ( {cash} ( ... ) ). NOT the human-readable UI format.
+CHARTINK_CONFIG = {
+    'scan_clause': (
+        "( {cash} ( "
+        "latest close > latest sma( close,50 ) and "
+        "latest close > latest sma( close,200 ) and "
+        "latest volume > latest sma( volume,20 ) * 2 and "
+        "latest close > 1 day ago max( 20, high ) and "
+        "latest rsi( 14 ) > 60 and "
+        "latest close > latest open and "
+        "latest close >= latest high * 0.98"
+        " ) )"
+    ),
+    'max_retries': 3,
+    'retry_delay': 2.0,
+    'cache_results': True,
+    'cache_ttl_minutes': 30,
+}
+
+# Screener.in Configuration
+SCREENER_CONFIG = {
+    'query': (
+        "Current price > 20 AND "
+        "Current price < 50000 AND "
+        "Market Capitalization > 5000 AND "
+        "Volume > 100000 AND "
+        "Current price > DMA 50 AND "
+        "Current price > DMA 200"
+    ),
+    'username': os.getenv('SCREENER_USERNAME', ''),
+    'password': os.getenv('SCREENER_PASSWORD', ''),
+    'max_retries': 3,
+    'retry_delay': 2.0,
+    'fetch_all_pages': False,
+}
+
+# Stock Screening Criteria (Legacy – used when USE_CHARTINK and USE_SCREENER are both False)
 STOCK_FILTERING = {
     'min_volume': 100000,
     'min_price': 20.0,
@@ -173,6 +220,7 @@ STOCK_FILTERING = {
     'min_delivery_percent': 30.0,
     'max_volatility_percentile': 80
 }
+
 
 # Swing Trading Strategy Gates
 SWING_TRADING_GATES = {

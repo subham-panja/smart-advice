@@ -413,6 +413,37 @@ class StockAnalyzer:
                 hold_reasons.append(
                     f"fundamental_score {fundamental_score:.3f} < minimum {fundamental_minimum:.3f}"
                 )
+            
+            # 1. Sector filter integration
+            if RECOMMENDATION_THRESHOLDS.get('sector_filter_enabled', False):
+                sector_data = result.get('sector_analysis', {})
+                sector_score = sector_data.get('score', 0)
+                min_sector_score = RECOMMENDATION_THRESHOLDS.get('min_sector_score', -0.5)
+                if sector_score < min_sector_score:
+                    passes_gates = False
+                    hold_reasons.append(f"sector_score {sector_score:.2f} < minimum {min_sector_score:.2f}")
+            
+            # 2. Enhanced Volume confirmation check
+            if RECOMMENDATION_THRESHOLDS.get('volume_confirmation_required', True):
+                swing_gates = result.get('detailed_analysis', {}).get('swing_gates', {})
+                vol_gate_passed = swing_gates.get('gates_passed', {}).get('volume_confirmation', True)
+                
+                # Check specific confidence threshold if available from technical analysis
+                tech_vol_score = result.get('detailed_analysis', {}).get('technical', {}).get('volume_score', 1.0)
+                vol_threshold = RECOMMENDATION_THRESHOLDS.get('volume_confidence_threshold', 0.45)
+                
+                if not vol_gate_passed or tech_vol_score < vol_threshold:
+                    passes_gates = False
+                    reason_msg = "Volume gate failed" if not vol_gate_passed else f"Volume confidence {tech_vol_score:.2f} < {vol_threshold}"
+                    hold_reasons.append(reason_msg)
+        
+        # 3. Risk-Reward Ratio Gate (using trade_plan if available)
+        if result.get('trade_plan'):
+            rr_ratio = result['trade_plan'].get('risk_reward_ratio', 0)
+            min_rr = RECOMMENDATION_THRESHOLDS.get('min_risk_reward_ratio', 1.8)
+            if rr_ratio < min_rr:
+                # We don't necessarily block the trade, but we downgrade it
+                result['reason'].append(f"Low risk-reward ratio ({rr_ratio:.2f} < {min_rr})")
         
         # Strong buy: Multiple positive indicators with good backtest
         if passes_gates and ((technical_score > 0.3 and fundamental_score > 0.3 and sentiment_score > 0) or 
@@ -464,6 +495,8 @@ class StockAnalyzer:
             'backtest_condition': backtest_condition,
             'backtest_cagr': round(backtest_cagr, 4),
             'min_backtest_return': round(min_backtest_return, 4),
+            'min_risk_reward': RECOMMENDATION_THRESHOLDS.get('min_risk_reward_ratio', 1.8),
+            'sector_filter_enabled': RECOMMENDATION_THRESHOLDS.get('sector_filter_enabled', False),
             'hold_reasons': hold_reasons,
         }
         result['decision_debug'] = decision_debug
