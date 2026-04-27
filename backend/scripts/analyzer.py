@@ -25,7 +25,7 @@ from scripts.sentiment_analysis import SentimentAnalysis
 from models.recommendation import RecommendedShare
 from scripts.swing_trading_signals import SwingTradingSignalAnalyzer
 from utils.logger import setup_logging
-from config import HISTORICAL_DATA_PERIOD, ANALYSIS_WEIGHTS, RECOMMENDATION_THRESHOLDS
+from config import HISTORICAL_DATA_PERIOD, ANALYSIS_WEIGHTS, RECOMMENDATION_THRESHOLDS, ANALYSIS_CONFIG
 from scripts.risk_management import RiskManager
 from scripts.sector_analysis import SectorAnalyzer
 from scripts.backtesting_runner import BacktestingRunner
@@ -350,11 +350,12 @@ class StockAnalyzer:
         # Cap sentiment influence
         sentiment_score = max(min(sentiment_score, sentiment_cap_positive), sentiment_cap_negative)
 
-        # Adjust score based on market trend if enabled
-        # This simulates a macro-gate multiplier
-        market_trend_score = result.get('market_trend', 1.0) # Default to 1 (neutral/up)
-        if market_trend_weight > 0:
+        # Adjust score based on market trend only if explicitly calculated
+        # Do not use a default value (1.0) as it artificially inflates the score when the module is disabled
+        if 'market_trend' in result and market_trend_weight > 0:
+            market_trend_score = result['market_trend']
             combined_score += (market_trend_score - 0.5) * market_trend_weight
+            
         result['combined_score'] = combined_score
         
         # Recommendation logic with flexible backtest requirements
@@ -399,6 +400,9 @@ class StockAnalyzer:
         technical_minimum = RECOMMENDATION_THRESHOLDS.get('technical_minimum', 0.1)
         fundamental_minimum = RECOMMENDATION_THRESHOLDS.get('fundamental_minimum', 0.0)
         
+        # Check which analysis modules are actually enabled
+        fundamental_enabled = ANALYSIS_CONFIG.get('fundamental_analysis', False)
+        
         # Core gates check
         passes_gates = True
         hold_reasons = []
@@ -408,7 +412,9 @@ class StockAnalyzer:
                 hold_reasons.append(
                     f"technical_score {technical_score:.3f} < minimum {technical_minimum:.3f}"
                 )
-            if fundamental_score < fundamental_minimum:
+            # Only enforce fundamental gate when fundamental_analysis is enabled.
+            # When disabled, score is 0.0 by design — don't block on a skipped module.
+            if fundamental_enabled and fundamental_score < fundamental_minimum:
                 passes_gates = False
                 hold_reasons.append(
                     f"fundamental_score {fundamental_score:.3f} < minimum {fundamental_minimum:.3f}"

@@ -17,6 +17,48 @@ MONGODB_HOST = os.getenv('MONGODB_HOST', '127.0.0.1')
 MONGODB_PORT = int(os.getenv('MONGODB_PORT', '27017'))
 MONGODB_DATABASE = os.getenv('MONGODB_DATABASE', 'super_advice')
 
+# Thresholds & Parameters
+MIN_RECOMMENDATION_SCORE = 0.40
+SENTIMENT_MODEL = 'distilbert-base-uncased-finetuned-sst-2-english'
+ALT_SENTIMENT_MODEL = 'cardiffnlp/twitter-roberta-base-sentiment-latest'
+NEWS_COUNT = 20
+NEWS_MAX_RETRIES = 3
+NEWS_DATE_RANGE = '10d'
+
+# Data fetching
+HISTORICAL_DATA_PERIOD = '5y'
+BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
+NSE_CACHE_FILE = os.path.join(BACKEND_DIR, 'data', 'nse_symbols.json')
+SYMBOL_GROUPS_FILE = os.path.join(BACKEND_DIR, 'data', 'symbol_groups.json')
+FILTERED_SYMBOLS_CACHE_HOURS = 72
+FILTER_VALIDATION_PERIOD = '1y'
+
+# Performance & Pipeline optimization
+MAX_WORKER_THREADS = 10
+BATCH_SIZE = 8
+REQUEST_DELAY = 0.5
+MAX_RETRIES = 1
+TIMEOUT_SECONDS = 10
+RATE_LIMIT_DELAY = 2.0
+BACKOFF_MULTIPLIER = 1.5
+
+USE_MULTIPROCESSING_PIPELINE = True
+NUM_WORKER_PROCESSES = 8
+DATA_FETCH_THREADS = 16
+
+# Maintenance
+DATA_PURGE_DAYS = 7
+REMOVE_OLD_DATA_ON_EACH_RUN = False
+PERSIST_LOGGING = True
+
+# External Screener Integration
+# When enabled, these replace the legacy per-stock yfinance filtering
+# with a single server-side screener API call (much faster).
+# If both are False, the system uses the existing STOCK_FILTERING criteria.
+# If both are True, Chartink is preferred (faster) with Screener.in as fallback.
+USE_CHARTINK = True
+USE_SCREENER = False
+
 MONGODB_COLLECTIONS = {
     'recommended_shares': 'recommended_shares',
     'backtest_results': 'backtest_results',
@@ -83,40 +125,6 @@ STRATEGY_CONFIG = {
     'Keltner_Channel_Squeeze': False,
 }
 
-# Thresholds & Parameters
-MIN_RECOMMENDATION_SCORE = 0.40
-SENTIMENT_MODEL = 'distilbert-base-uncased-finetuned-sst-2-english'
-ALT_SENTIMENT_MODEL = 'cardiffnlp/twitter-roberta-base-sentiment-latest'
-NEWS_COUNT = 20
-NEWS_MAX_RETRIES = 3
-NEWS_DATE_RANGE = '10d'
-
-# Data fetching
-HISTORICAL_DATA_PERIOD = '5y'
-BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
-NSE_CACHE_FILE = os.path.join(BACKEND_DIR, 'data', 'nse_symbols.json')
-SYMBOL_GROUPS_FILE = os.path.join(BACKEND_DIR, 'data', 'symbol_groups.json')
-FILTERED_SYMBOLS_CACHE_HOURS = 72
-FILTER_VALIDATION_PERIOD = '1y'
-
-# Performance & Pipeline optimization
-MAX_WORKER_THREADS = 10
-BATCH_SIZE = 8
-REQUEST_DELAY = 0.5
-MAX_RETRIES = 1
-TIMEOUT_SECONDS = 10
-RATE_LIMIT_DELAY = 2.0
-BACKOFF_MULTIPLIER = 1.5
-
-USE_MULTIPROCESSING_PIPELINE = True
-NUM_WORKER_PROCESSES = 8
-DATA_FETCH_THREADS = 16
-
-# Maintenance
-DATA_PURGE_DAYS = 7
-REMOVE_OLD_DATA_ON_EACH_RUN = False
-PERSIST_LOGGING = True
-
 # Analysis Weights
 ANALYSIS_WEIGHTS = {
     'technical': 1.00,
@@ -161,14 +169,6 @@ ANALYSIS_CONFIG = {
     'tca_analysis': False
 }
 
-# External Screener Integration
-# When enabled, these replace the legacy per-stock yfinance filtering
-# with a single server-side screener API call (much faster).
-# If both are False, the system uses the existing STOCK_FILTERING criteria.
-# If both are True, Chartink is preferred (faster) with Screener.in as fallback.
-USE_CHARTINK = True
-USE_SCREENER = False
-
 # Chartink Screener Configuration
 # NOTE: 'scan_clause' must be in Chartink's internal DSL format (lowercase),
 #       wrapped in ( {cash} ( ... ) ). NOT the human-readable UI format.
@@ -181,7 +181,11 @@ CHARTINK_CONFIG = {
         "latest close > 1 day ago max( 20, high ) and "
         "latest rsi( 14 ) > 60 and "
         "latest close > latest open and "
-        "latest close >= latest high * 0.98"
+        "latest close >= latest high * 0.98 and "
+        "latest close > 20 and "
+        "latest close < 50000 and "
+        "latest volume > 100000 and "
+        "market cap > 500"
         " ) )"
     ),
     'max_retries': 3,

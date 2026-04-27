@@ -77,10 +77,12 @@ class PersistenceHandler:
                 'sell_price': sell_price,
                 'backtest_metrics': backtest_metrics,
                 'recommendation_date': datetime.utcnow(),
-                # Include other detailed analysis fields...
-                'detailed_analysis': analysis_result.get('detailed_analysis', {}),
-                'market_regime': analysis_result.get('market_regime', {})
             }
+            # Conditionally add optional fields to keep DB clean
+            if 'detailed_analysis' in analysis_result:
+                doc['detailed_analysis'] = analysis_result['detailed_analysis']
+            if 'market_regime' in analysis_result:
+                doc['market_regime'] = analysis_result['market_regime']
             
             db.recommended_shares.update_one({'symbol': rec.symbol}, {'$set': doc}, upsert=True)
             return True
