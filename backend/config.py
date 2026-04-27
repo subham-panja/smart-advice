@@ -259,7 +259,8 @@ SWING_TRADING_GATES = {
         'adx_period': 14,
         'adx_threshold': 20,
         'sma_period': 200,
-        'price_above_sma': True
+        'price_above_sma': True, 
+        'require_sma_stack': False
     },
     'volatility_gate': {
         'enabled': True,
@@ -269,13 +270,13 @@ SWING_TRADING_GATES = {
     },
     'volume_confirmation': {
         'enabled': True,
+        'volume_zscore_threshold': 0.2,
         'obv_trend_periods': 10,
-        'volume_zscore_threshold': 1.0,
         'require_either': True
     },
-    'multi_timeframe': {
+    'multi_timeframe_gate': {
         'enabled': True,
-        'weekly_trend_check': True,
+        'weekly_trend_check': False,
         'weekly_sma_fast': 20,
         'weekly_sma_slow': 50
     }
