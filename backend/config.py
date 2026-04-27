@@ -32,6 +32,7 @@ NSE_CACHE_FILE = os.path.join(BACKEND_DIR, 'data', 'nse_symbols.json')
 SYMBOL_GROUPS_FILE = os.path.join(BACKEND_DIR, 'data', 'symbol_groups.json')
 FILTERED_SYMBOLS_CACHE_HOURS = 72
 FILTER_VALIDATION_PERIOD = '1y'
+CACHE_EXPIRY_DAYS = 0  # 0 means fetch fresh every time; otherwise number of days to keep cache
 
 # Performance & Pipeline optimization
 MAX_WORKER_THREADS = 10
@@ -47,7 +48,7 @@ NUM_WORKER_PROCESSES = 8
 DATA_FETCH_THREADS = 16
 
 # Maintenance
-DATA_PURGE_DAYS = 7
+DATA_PURGE_DAYS = 10
 REMOVE_OLD_DATA_ON_EACH_RUN = False
 PERSIST_LOGGING = True
 

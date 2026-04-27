@@ -9,7 +9,7 @@ from utils.logger import setup_logging
 from utils.memory_utils import optimize_dataframe_memory
 import yfinance as yf
 from nsetools import Nse
-from config import NSE_CACHE_FILE, STOCK_FILTERING, MAX_WORKER_THREADS, MAX_RETRIES, REQUEST_DELAY, TIMEOUT_SECONDS, RATE_LIMIT_DELAY, BACKOFF_MULTIPLIER, HISTORICAL_DATA_PERIOD, FILTERED_SYMBOLS_CACHE_HOURS, FILTER_VALIDATION_PERIOD, DATA_FETCH_THREADS
+from config import NSE_CACHE_FILE, STOCK_FILTERING, MAX_WORKER_THREADS, MAX_RETRIES, REQUEST_DELAY, TIMEOUT_SECONDS, RATE_LIMIT_DELAY, BACKOFF_MULTIPLIER, HISTORICAL_DATA_PERIOD, FILTERED_SYMBOLS_CACHE_HOURS, FILTER_VALIDATION_PERIOD, DATA_FETCH_THREADS, CACHE_EXPIRY_DAYS
 import requests
 from requests.exceptions import RequestException
 import random
@@ -376,15 +376,16 @@ def get_historical_data(symbol: str, period: str = '1y', interval: str = '1d', f
                         data = pd.read_csv(freshest_path, index_col=index_col, parse_dates=True)
                         logger.info(f"Loaded {len(data)} data points for {symbol} ({interval}) from cache: {os.path.basename(freshest_path)}")
                         # Freshness check (<=3 days old)
+                        # Freshness check (<=CACHE_EXPIRY_DAYS days old)
                         if not data.empty:
                             try:
                                 last_ts = data.index[-1]
                                 if isinstance(last_ts, pd.Timestamp):
                                     age_days = (pd.Timestamp.now(tz=last_ts.tz) - last_ts).days if last_ts.tzinfo else (pd.Timestamp.now() - last_ts).days
-                                    if age_days <= 3:
+                                    if age_days <= CACHE_EXPIRY_DAYS:
                                         return data
                                     else:
-                                        logger.info(f"Cache for {symbol} is stale ({age_days} days); will fetch fresh data")
+                                        logger.info(f"Cache for {symbol} is stale ({age_days} days, limit={CACHE_EXPIRY_DAYS}); will fetch fresh data")
                                 else:
                                     return data
                             except Exception:
