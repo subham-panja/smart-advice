@@ -193,7 +193,7 @@ class AutomatedStockAnalysis:
                 'recommended': False
             }
     
-    def analyze_all_stocks(self, max_stocks: int = None, batch_size: int = None, use_all_symbols: bool = True, single_threaded: bool = False, group_name: str = None):
+    def analyze_all_stocks(self, max_stocks: int = None, batch_size: int = None, use_all_symbols: bool = False, single_threaded: bool = False, group_name: str = None):
         """
         Analyze all NSE stocks using multithreading and save recommendations.
         
@@ -318,35 +318,23 @@ class AutomatedStockAnalysis:
             'BENCHMARK_INDEX': benchmark_index,
         }
         
-        # Prepare work items: convert DataFrames to dicts for pickling
         work_items = []
         for sym, df in fetched_data.items():
             company = symbol_names.get(sym, sym)
-            if hasattr(df.index, "strftime"):
-                index_strings = df.index.strftime('%Y-%m-%d %H:%M:%S').tolist()
-            else:
-                index_strings = [str(idx) for idx in df.index.tolist()]
-            work_items.append((
-                sym,
-                company,
-                df.to_dict(),           # Serializable dict
-                index_strings,          # Index as strings
-                serializable_config
-            ))
+            index_strings = df.index.strftime('%Y-%m-%d %H:%M:%S').tolist() if hasattr(df.index, "strftime") else [str(idx) for idx in df.index.tolist()]
+            work_items.append((sym, company, df.to_dict(), index_strings, serializable_config))
         
         if self.verbose:
             logger.info(f"Phase 2: Processing {len(work_items)} stocks across {num_processes} processes...")
         else:
             print(f"\rPhase 2: Analyzing {len(work_items)} stocks across {num_processes} processes...", flush=True)
         
-        # Use 'spawn' to avoid fork-safety issues with TA-Lib/numpy on macOS
         ctx = multiprocessing.get_context('spawn')
         results = []
-        
         with ctx.Pool(processes=num_processes, initializer=init_worker) as pool:
             for i, result in enumerate(pool.imap_unordered(analyze_stock_worker, work_items)):
                 results.append(result)
-                if not self.verbose:
+                if not self.verbose and len(work_items) > 0:
                     pct = ((i + 1) / len(work_items)) * 100
                     sym_name = result.get('symbol', '')
                     bar_len = 30
@@ -355,8 +343,7 @@ class AutomatedStockAnalysis:
                     print(f"\rPhase 2: |{bar}| {pct:.1f}% ({i+1}/{len(work_items)}) | {sym_name}", end='', flush=True)
         
         phase2_time = (datetime.now() - phase2_start).total_seconds()
-        if not self.verbose:
-            print()  # Newline after progress bar
+        if not self.verbose: print()
         logger.info(f"Phase 2 complete: {len(results)} analyzed in {phase2_time:.1f}s")
         
         # ---- PHASE 3: Save results (main process) ----
@@ -811,8 +798,6 @@ def main():
     
     parser = argparse.ArgumentParser(description='Automated NSE Stock Analysis')
     parser.add_argument('--max-stocks', type=int, help='Maximum number of stocks to analyze (for testing)')
-    # --test removed
-    # --all removed as it is now the default
     parser.add_argument('--purge-days', type=int, help='Number of days to keep old data (overrides config). Use 0 to remove ALL data.')
     parser.add_argument('--verbose', action='store_true', help='Enable verbose logging with detailed output')
     parser.add_argument('--single-threaded', action='store_true', help='Use single-threaded mode for debugging (slower but more stable)')
@@ -830,11 +815,7 @@ def main():
     # Set test mode parameters
     max_stocks = args.max_stocks
     if args.verbose:
-        logger.info(f"Running in PRODUCTION mode (max_stocks={max_stocks})")
-    
-    # Log symbol selection mode
-    if args.verbose:
-        logger.info("Using ALL NSE symbols for comprehensive analysis")
+        logger.info(f"Analysis starting (max_stocks={max_stocks})")
     
     try:
         # Create analyzer with correct verbose setting from the start
@@ -867,7 +848,7 @@ def main():
         
         if args.verbose:
             # Verbose mode - logging already configured in constructor
-            analyzer.run_analysis(max_stocks=max_stocks, use_all_symbols=True)
+            analyzer.run_analysis(max_stocks=max_stocks, use_all_symbols=args.all)
             logger.info("Script completed successfully")
         else:
             # Non-verbose mode - logging already configured in constructor
@@ -887,9 +868,9 @@ def main():
             
             analyzer.progress_callback = progress_callback
             
-            # Show initial message (we'll update this after getting the actual stock count)
+            # Show initial message
             print(f"Initializing analysis...")
-            analyzer.run_analysis(max_stocks=max_stocks, use_all_symbols=True)
+            analyzer.run_analysis(max_stocks=max_stocks)
             print("\n")
             
             # Show final summary in non-verbose mode

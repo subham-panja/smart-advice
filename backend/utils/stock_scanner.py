@@ -153,86 +153,45 @@ class StockScanner:
     """Handles fetching and filtering of stock symbols for analysis."""
 
     @staticmethod
-    def get_symbols(max_stocks: int = None, use_all_symbols: bool = False, group_name: str = None) -> Dict[str, Any]:
+    def get_symbols(max_stocks: int = None, use_all_symbols: bool = True, group_name: str = None) -> Dict[str, Any]:
         """Fetch stock symbols based on criteria."""
 
-        # Branch 1: If a specific group is specified
+        # 1. Specific Group Scan (e.g., --group nifty50)
         if group_name:
+            # ... (group logic remains the same)
             logger.info(f"Fetching symbols for group: {group_name}...")
             groups_file = getattr(config, 'SYMBOL_GROUPS_FILE', None)
             if not groups_file or not os.path.exists(groups_file):
                 logger.error(f"Symbol groups file not found at {groups_file}")
                 return {}
-
             try:
                 with open(groups_file, 'r') as f:
                     groups_data = json.load(f)
-
-                group_symbols = groups_data.get(group_name)
-                if not group_symbols:
-                    logger.warning(f"Group '{group_name}' not found in {groups_file}")
-                    return {}
-
-                # Convert list to dict format and strip .NS suffix if present
-                symbols = {}
-                for s in group_symbols:
-                    clean_symbol = s.replace('.NS', '').replace('.ns', '')
-                    symbols[clean_symbol] = {'symbol': clean_symbol, 'company_name': clean_symbol}
-
-                logger.info(f"Loaded {len(symbols)} symbols from group '{group_name}'")
-
+                group_symbols = groups_data.get(group_name, [])
+                symbols = {s.replace('.NS', '').replace('.ns', ''): {'symbol': s, 'company_name': s} for s in group_symbols}
+                return symbols
             except Exception as e:
-                logger.error(f"Error loading symbol group '{group_name}': {e}")
+                logger.error(f"Error loading group {group_name}: {e}")
                 return {}
 
-        # Branch 2: Legacy behavior (all or filtered)
-        elif use_all_symbols:
-            logger.info(f"Fetching all NSE symbols (max={max_stocks})...")
+        # 2. Main Logic: Try Chartink FIRST, then fallback to ALL NSE
+        use_chartink = getattr(config, 'USE_CHARTINK', True)
+        symbols = {}
+
+        if use_chartink:
+            logger.info("Chartink is enabled - checking for filtered symbols...")
+            symbols = _load_cached_external('chartink', max_stocks)
+            if not symbols:
+                symbols = _try_chartink(max_stocks)
+        
+        # 3. If Chartink is OFF or returned nothing, do the FULL MARKET SCAN
+        if not symbols:
+            logger.info("No Chartink results - performing FULL NSE market scan...")
             all_symbols = get_all_nse_symbols()
-            if not all_symbols:
-                return {}
-
-            # Convert list to dict format if needed
             if isinstance(all_symbols, list):
                 symbols = {s: {'company_name': s} for s in all_symbols}
             else:
                 symbols = all_symbols
-        else:
-            # ---------------------------------------------------------------
-            # External screener integration
-            # Priority: Chartink → Screener.in → Legacy (yfinance per-stock)
-            # ---------------------------------------------------------------
-            use_chartink = getattr(config, 'USE_CHARTINK', False)
-            use_screener = getattr(config, 'USE_SCREENER', False)
-
-            symbols = {}
-
-            # Try Chartink first
-            if use_chartink:
-                logger.info("USE_CHARTINK is enabled – attempting Chartink filter")
-                symbols = _load_cached_external('chartink', max_stocks)
-                if not symbols:
-                    symbols = _try_chartink(max_stocks)
-
-            # Try Screener.in as fallback (or primary if Chartink is off)
-            if not symbols and use_screener:
-                logger.info("USE_SCREENER is enabled – attempting Screener.in filter")
-                symbols = _load_cached_external('screener', max_stocks)
-                if not symbols:
-                    symbols = _try_screener(max_stocks)
-
-            # Fallback to legacy filtering
-            if not symbols:
-                if use_chartink or use_screener:
-                    logger.warning(
-                        "External screeners failed or returned 0 results – "
-                        "falling back to legacy yfinance filtering"
-                    )
-                else:
-                    logger.info("No external screener enabled – using legacy filtering")
-
-                logger.info(f"Fetching filtered NSE symbols (max={max_stocks})...")
-                symbols = get_filtered_nse_symbols(max_stocks)
 
         # Apply limit if specified
         if max_stocks and len(symbols) > max_stocks:
