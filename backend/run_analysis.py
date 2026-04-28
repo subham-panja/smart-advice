@@ -287,10 +287,28 @@ class AutomatedStockAnalysis:
                 else:
                     fetch_failed += 1
         
+        from scripts.data_fetcher import apply_technical_filter
+        
         phase1_time = (datetime.now() - phase1_start).total_seconds()
-        logger.info(f"Phase 1 complete: {len(fetched_data)} fetched, {fetch_failed} failed in {phase1_time:.1f}s")
-        if not self.verbose:
-            print(f"\rPhase 1 done: {len(fetched_data)} stocks fetched in {phase1_time:.1f}s", flush=True)
+        logger.info(f"Phase 1 complete: {len(fetched_data)} fetched in {phase1_time:.1f}s")
+        
+        # ---- PHASE 1.5: Technical Pre-Filtering (Identical to Chartink Scan) ----
+        if not self.app.config.get('USE_CHARTINK', False):
+            pre_filter_start = datetime.now()
+            original_count = len(fetched_data)
+            logger.info(f"Phase 1.5: Applying Technical Filter (Legacy mode) to {original_count} stocks...")
+            
+            # Use dictionary comprehension to filter
+            fetched_data = {
+                sym: data for sym, data in fetched_data.items() 
+                if apply_technical_filter(data)
+            }
+            
+            pre_filter_time = (datetime.now() - pre_filter_start).total_seconds()
+            filtered_count = len(fetched_data)
+            logger.info(f"Phase 1.5 complete: {filtered_count}/{original_count} stocks passed technical filter in {pre_filter_time:.1f}s")
+            if not self.verbose:
+                print(f"\rPhase 1.5: {filtered_count} stocks passed technical filter", flush=True)
         
         if not fetched_data:
             logger.error("No data fetched. Aborting analysis.")

@@ -24,8 +24,8 @@ MONGODB_DATABASE = os.getenv('MONGODB_DATABASE', 'super_advice')
 MIN_RECOMMENDATION_SCORE = 0.50 # Minimum technical score to consider a buy
 HISTORICAL_DATA_PERIOD = '5y' # Data lookback for backtesting
 FILTERED_SYMBOLS_CACHE_HOURS = 72 # Cache duration for stock lists
-FILTER_VALIDATION_PERIOD = '1y' # Period for validating filters
-CACHE_EXPIRY_DAYS = 0 # 0 means always fetch fresh data
+FILTER_VALIDATION_PERIOD = '5y' # Period for validating filters
+
 
 # Module Toggles
 ANALYSIS_CONFIG = {
@@ -63,7 +63,7 @@ USE_MULTIPROCESSING_PIPELINE = True # Use multiple CPUs for analysis
 NUM_WORKER_PROCESSES = 8 # Number of CPU cores to use
 
 # External Integrations
-USE_CHARTINK = True # Use Chartink for rapid stock screening
+USE_CHARTINK = False # Use Chartink for rapid stock screening
 USE_SCREENER = False # Fallback screener integration
 
 MONGODB_COLLECTIONS = {
@@ -125,11 +125,19 @@ CHARTINK_CONFIG = {
     'cache_ttl_minutes': 30,
 }
 
-# Legacy Filtering (Fallback)
+# Legacy Filtering (Fallback) - Synchronized with Chartink Scan Clause
 STOCK_FILTERING = {
     'min_volume': 100000,
     'min_price': 20.0,
     'max_price': 50000.0,
+    'min_market_cap': 500.0, # Cr
+    'require_above_sma50': True,
+    'require_above_sma200': True,
+    'require_volume_spike': 2.0, # 2x the 20-day average
+    'require_rsi_above': 50.0,
+    'require_20day_breakout': True,
+    'require_bullish_candle': True, # Close > Open
+    'require_strong_close': 0.98, # Close >= High * 0.98
 }
 
 # Swing Trading Gates (Safety Filters)

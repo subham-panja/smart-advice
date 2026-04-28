@@ -9,7 +9,7 @@ from utils.logger import setup_logging
 from utils.memory_utils import optimize_dataframe_memory
 import yfinance as yf
 from nsetools import Nse
-from config import NSE_CACHE_FILE, STOCK_FILTERING, MAX_WORKER_THREADS, MAX_RETRIES, REQUEST_DELAY, TIMEOUT_SECONDS, RATE_LIMIT_DELAY, BACKOFF_MULTIPLIER, HISTORICAL_DATA_PERIOD, FILTERED_SYMBOLS_CACHE_HOURS, FILTER_VALIDATION_PERIOD, DATA_FETCH_THREADS, CACHE_EXPIRY_DAYS
+from config import NSE_CACHE_FILE, STOCK_FILTERING, MAX_WORKER_THREADS, MAX_RETRIES, REQUEST_DELAY, TIMEOUT_SECONDS, RATE_LIMIT_DELAY, BACKOFF_MULTIPLIER, HISTORICAL_DATA_PERIOD, FILTERED_SYMBOLS_CACHE_HOURS, FILTER_VALIDATION_PERIOD, DATA_FETCH_THREADS
 import requests
 from requests.exceptions import RequestException
 import random
@@ -294,7 +294,10 @@ def _write_checksum(path: str):
         logger.warning(f"Failed to write checksum for {path}: {e}")
 
 
-def _verify_checksum(path: str) -> bool:
+def _verify_checksum(path: str, strict: bool = False) -> bool:
+    """Verify file integrity using checksum. If strict=False, skips slow hashing."""
+    if not strict:
+        return True  # Fast path: trust the file
     try:
         import hashlib
         ch_path = _cache_checksum_path(path)
@@ -370,25 +373,78 @@ def get_historical_data(symbol: str, period: str = '1y', interval: str = '1d', f
                         freshest_mtime = mtime
                         freshest_path = path
             if freshest_path:
+                # Speed Optimization: If file was modified very recently (e.g. within 12 hours), 
+                # trust it completely and skip even the delta fetch.
+                mtime = os.path.getmtime(freshest_path)
+                is_very_fresh = (time.time() - mtime) < 43200  # 12 hours
+                
                 # Try to read with different possible index column names
                 for index_col in ['Datetime', 'Date', 0]:
                     try:
-                        data = pd.read_csv(freshest_path, index_col=index_col, parse_dates=True)
+                        # Optimization: Use engine='c' and memory_map for faster reading
+                        data = pd.read_csv(freshest_path, index_col=index_col, parse_dates=True, engine='c', memory_map=True)
+                        
+                        if is_very_fresh:
+                            logger.info(f"Loaded {len(data)} points for {symbol} (Cache is very fresh, skipping delta fetch)")
+                            return data
+                            
                         logger.info(f"Loaded {len(data)} data points for {symbol} ({interval}) from cache: {os.path.basename(freshest_path)}")
-                        # Freshness check (<=3 days old)
-                        # Freshness check (<=CACHE_EXPIRY_DAYS days old)
                         if not data.empty:
                             try:
                                 last_ts = data.index[-1]
-                                if isinstance(last_ts, pd.Timestamp):
-                                    age_days = (pd.Timestamp.now(tz=last_ts.tz) - last_ts).days if last_ts.tzinfo else (pd.Timestamp.now() - last_ts).days
-                                    if age_days <= CACHE_EXPIRY_DAYS:
-                                        return data
-                                    else:
-                                        logger.info(f"Cache for {symbol} is stale ({age_days} days, limit={CACHE_EXPIRY_DAYS}); will fetch fresh data")
-                                else:
+                                today = pd.Timestamp.now(tz=last_ts.tz) if last_ts.tzinfo else pd.Timestamp.now()
+                                
+                                # Check if we need more data (delta)
+                                days_diff = (today - last_ts).days
+                                
+                                if days_diff <= 0:
+                                    logger.debug(f"Cache for {symbol} is up to date.")
                                     return data
-                            except Exception:
+                                
+                                # Fetch only the delta
+                                logger.info(f"Fetching delta for {symbol} ({days_diff} days missing)")
+                                
+                                # Use yfinance for delta (much faster than full download)
+                                # Start date is one day after last cached date
+                                start_date = (last_ts + pd.Timedelta(days=1)).strftime('%Y-%m-%d')
+                                
+                                # For simplicity, let's just fetch from the start_date to today
+                                delta_data = yf.download(f"{symbol}.NS", start=start_date, interval=interval, 
+                                                       progress=False, auto_adjust=True, timeout=TIMEOUT_SECONDS)
+                                
+                                if not delta_data.empty:
+                                    # Standardize columns
+                                    if isinstance(delta_data.columns, pd.MultiIndex):
+                                        delta_data.columns = delta_data.columns.get_level_values(-1)
+                                    
+                                    # Clean up columns to match our format
+                                    if 'Adj Close' in delta_data.columns:
+                                        delta_data['Close'] = delta_data['Adj Close']
+                                    
+                                    # Keep only relevant columns if they exist
+                                    cols_to_keep = [c for c in ['Open', 'High', 'Low', 'Close', 'Volume'] if c in delta_data.columns]
+                                    delta_data = delta_data[cols_to_keep]
+                                    
+                                    # Deduplicate both datasets to prevent reindexing errors
+                                    data = data[~data.index.duplicated(keep='last')]
+                                    delta_data = delta_data[~delta_data.index.duplicated(keep='last')]
+                                    
+                                    # Merge and optimize
+                                    combined_data = pd.concat([data, delta_data])
+                                    combined_data = combined_data[~combined_data.index.duplicated(keep='last')]
+                                    combined_data = combined_data.sort_index()
+                                    
+                                    # Save updated cache
+                                    combined_data.to_csv(freshest_path)
+                                    _write_checksum(freshest_path)
+                                    logger.info(f"Updated cache for {symbol} with {len(delta_data)} new points.")
+                                    return combined_data
+                                else:
+                                    logger.debug(f"No new data found for {symbol}, using cache.")
+                                    # Even if no delta, return deduplicated cached data
+                                    return data[~data.index.duplicated(keep='last')]
+                            except Exception as delta_e:
+                                logger.warning(f"Failed to fetch delta for {symbol}: {delta_e}. Using cached data.")
                                 return data
                     except (KeyError, ValueError):
                         continue
@@ -874,3 +930,62 @@ def get_filtered_nse_symbols(max_stocks: int = None) -> Dict[str, str]:
         logger.error(f"Error caching filtered symbols: {e}")
     
     return filtered_symbols
+
+def apply_technical_filter(df: pd.DataFrame) -> bool:
+    """
+    Applies technical filtering rules identical to the Chartink scan clause.
+    Uses settings from config.STOCK_FILTERING.
+    """
+    if df is None or len(df) < 200:
+        return False
+    
+    import config
+    rules = getattr(config, 'STOCK_FILTERING', {})
+    
+    try:
+        import talib
+        import numpy as np
+        
+        close = df['Close'].values
+        high = df['High'].values
+        open_p = df['Open'].values
+        volume = df['Volume'].values
+        
+        # 1. SMAs
+        if rules.get('require_above_sma50', True):
+            sma50 = talib.SMA(close.astype(float), timeperiod=50)[-1]
+            if close[-1] <= sma50: return False
+            
+        if rules.get('require_above_sma200', True):
+            sma200 = talib.SMA(close.astype(float), timeperiod=200)[-1]
+            if close[-1] <= sma200: return False
+            
+        # 2. Volume Spike
+        spike_mult = rules.get('require_volume_spike', 2.0)
+        if spike_mult > 0:
+            vol_sma20 = talib.SMA(volume.astype(float), timeperiod=20)[-1]
+            if volume[-1] <= (vol_sma20 * spike_mult): return False
+            
+        # 3. 20-day Breakout
+        if rules.get('require_20day_breakout', True):
+            prev_20_high = np.max(high[-21:-1])
+            if close[-1] <= prev_20_high: return False
+            
+        # 4. RSI
+        rsi_min = rules.get('require_rsi_above', 50.0)
+        if rsi_min > 0:
+            rsi = talib.RSI(close.astype(float), timeperiod=14)[-1]
+            if rsi <= rsi_min: return False
+            
+        # 5. Bullish Candle
+        if rules.get('require_bullish_candle', True):
+            if close[-1] <= open_p[-1]: return False
+            
+        # 6. Strong Close
+        close_threshold = rules.get('require_strong_close', 0.98)
+        if close[-1] < (high[-1] * close_threshold): return False
+            
+        return True
+    except Exception as e:
+        logger.debug(f"Technical filter error: {e}")
+        return False
