@@ -235,6 +235,11 @@ class StockAnalyzer:
         try:
             logger.info(f"Analyzing {symbol} ({company_name}) [with pre-fetched data]")
             
+            # Ensure strategy evaluator is using the latest config from app_config
+            if 'STRATEGY_CONFIG' in app_config:
+                self.strategy_evaluator.strategy_config = app_config['STRATEGY_CONFIG']
+                self.strategy_evaluator.load_strategies()
+            
             result = {
                 'symbol': symbol, 'company_name': company_name,
                 'technical_score': 0.0, 'fundamental_score': 0.0, 'sentiment_score': 0.0,
@@ -249,8 +254,7 @@ class StockAnalyzer:
                     tech_analysis = {'error': 'No data'}
                 else:
                     tech_analysis = self.strategy_evaluator.evaluate_strategies(symbol, historical_data, index_data=index_data)
-                    raw = tech_analysis['technical_score']
-                    result['technical_score'] = (raw * 1.5) - 0.5
+                    result['technical_score'] = tech_analysis['technical_score'] # Linear 0.0 to 1.0
             except Exception as e:
                 logger.error(f"Tech error {symbol}: {e}")
                 result['technical_score'] = -1.0

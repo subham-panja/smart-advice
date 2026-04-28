@@ -139,9 +139,9 @@ STOCK_FILTERING = {
     'min_market_cap': 500.0, # Cr
     'require_above_sma50': True,
     'require_above_sma200': True,
-    'require_volume_spike': 2.0, # 2x the 20-day average
+    'require_volume_spike': 1.2, # Relaxed from 2.0 to allow healthy moves
     'require_rsi_above': 50.0,
-    'require_20day_breakout': True,
+    'require_20day_breakout': False, # Disabled to allow pullbacks (Swing Strategy)
     'require_bullish_candle': True, # Close > Open
     'require_strong_close': 0.98, # Close >= High * 0.98
 }

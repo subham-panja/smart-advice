@@ -80,7 +80,7 @@ class ADX_Trend_Strength(BaseStrategy):
             
             # Weak trend or sideways movement
             else:
-                reason = f"Weak trend: ADX ({current_adx:.2f}) <= {self.adx_threshold}"
+                reason = f"Weak trend: ADX ({current_adx:.2f}) <= {self.adx_threshold:.1f}"
                 self.log_signal(-1, reason, data)
                 return -1
                 

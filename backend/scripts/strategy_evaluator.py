@@ -10,7 +10,7 @@ import pandas as pd
 import importlib
 from typing import Dict, List, Any
 import logging
-from config import STRATEGY_CONFIG, MIN_RECOMMENDATION_SCORE, RS_CONFIG
+from config import STRATEGY_CONFIG, MIN_RECOMMENDATION_SCORE, RS_CONFIG, SWING_TRADING_GATES
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +47,9 @@ class StrategyEvaluator:
             'RSI_Overbought_Oversold': 'scripts.strategies.rsi_overbought_oversold',
             'MACD_Signal_Crossover': 'scripts.strategies.macd_signal_crossover',
             'Bollinger_Band_Breakout': 'scripts.strategies.bollinger_band_breakout',
+            'ADX_Trend_Strength': 'scripts.strategies.adx_trend_strength',
+            'On_Balance_Volume': 'scripts.strategies.on_balance_volume',
+            'Bollinger_Band_Squeeze': 'scripts.strategies.bollinger_band_squeeze',
             'EMA_Crossover_12_26': 'scripts.strategies.ema_crossover_12_26',
             'Stochastic_Overbought_Oversold': 'scripts.strategies.stochastic_overbought_oversold',
             'ADX_Trend_Strength': 'scripts.strategies.adx_trend_strength',
@@ -186,10 +189,19 @@ class StrategyEvaluator:
                     logger.error(f"Strategy class not found for {strategy_name}: {ae}")
                     continue
                 
-                # Initialize the strategy
+                # Initialize the strategy with parameters from config if available
                 try:
-                    self.strategy_instances[strategy_name] = strategy_class()
-                    logger.info(f"Successfully loaded strategy: {strategy_name}")
+                    # Map config gates to strategy parameters
+                    params = {}
+                    if strategy_name == 'ADX_Trend_Strength':
+                        trend_params = SWING_TRADING_GATES.get('TREND_GATE', {}).get('params', {})
+                        params['adx_threshold'] = trend_params.get('adx_min', 20)
+                    elif strategy_name == 'Bollinger_Band_Squeeze':
+                        vol_params = SWING_TRADING_GATES.get('VOLATILITY_GATE', {}).get('params', {})
+                        params['squeeze_threshold'] = vol_params.get('min_percentile', 20) / 100.0
+                    
+                    self.strategy_instances[strategy_name] = strategy_class(params)
+                    logger.info(f"Successfully loaded strategy: {strategy_name} with params: {params}")
                 except Exception as init_error:
                     logger.error(f"Error initializing {strategy_name}: {init_error}")
                     continue

@@ -98,9 +98,9 @@ class BaseStrategy(ABC):
         Returns:
             Dictionary with volume filtering parameters
         """
-        # VERY STRICT: Default parameters - Require strong volume confirmation
+        # PROFESSIONAL SWING: Default parameters - Require healthy volume
         params = {
-            'min_volume_factor': 1.5,  # High volume requirement
+            'min_volume_factor': 1.1,  # Relaxed from 1.5 for better swing sensitivity
             'breakout': False,
             'level': None
         }

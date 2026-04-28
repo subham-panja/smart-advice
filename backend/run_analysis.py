@@ -193,7 +193,7 @@ class AutomatedStockAnalysis:
                 'recommended': False
             }
     
-    def analyze_all_stocks(self, max_stocks: int = None, batch_size: int = None, use_all_symbols: bool = False, single_threaded: bool = False, group_name: str = None):
+    def analyze_all_stocks(self, max_stocks: int = None, batch_size: int = None, use_all_symbols: bool = True, single_threaded: bool = False, group_name: str = None):
         """
         Analyze all NSE stocks using multithreading and save recommendations.
         
@@ -299,24 +299,6 @@ class AutomatedStockAnalysis:
         phase1_time = (datetime.now() - phase1_start).total_seconds()
         logger.info(f"Phase 1 complete: {len(fetched_data)} fetched in {phase1_time:.1f}s")
         
-        # ---- PHASE 1.5: Technical Pre-Filtering (Identical to Chartink Scan) ----
-        if not self.app.config.get('USE_CHARTINK', False):
-            pre_filter_start = datetime.now()
-            original_count = len(fetched_data)
-            logger.info(f"Phase 1.5: Applying Technical Filter (Legacy mode) to {original_count} stocks...")
-            
-            # Use dictionary comprehension to filter
-            fetched_data = {
-                sym: data for sym, data in fetched_data.items() 
-                if apply_technical_filter(data)
-            }
-            
-            pre_filter_time = (datetime.now() - pre_filter_start).total_seconds()
-            filtered_count = len(fetched_data)
-            logger.info(f"Phase 1.5 complete: {filtered_count}/{original_count} stocks passed technical filter in {pre_filter_time:.1f}s")
-            if not self.verbose:
-                print(f"\rPhase 1.5: {filtered_count} stocks passed technical filter", flush=True)
-        
         if not fetched_data:
             logger.error("No data fetched. Aborting analysis.")
             return
@@ -327,6 +309,9 @@ class AutomatedStockAnalysis:
         # Build serializable config (exclude non-picklable Flask objects)
         serializable_config = {
             'ANALYSIS_CONFIG': dict(config.ANALYSIS_CONFIG),
+            'STRATEGY_CONFIG': dict(config.STRATEGY_CONFIG),
+            'SWING_TRADING_GATES': dict(config.SWING_TRADING_GATES),
+            'RS_CONFIG': dict(config.RS_CONFIG),
             'HISTORICAL_DATA_PERIOD': config.HISTORICAL_DATA_PERIOD,
             'FRESH_DATA': self.app.config.get('FRESH_DATA', False),
             'BENCHMARK_DATA': benchmark_dict,
@@ -826,8 +811,8 @@ def main():
     
     parser = argparse.ArgumentParser(description='Automated NSE Stock Analysis')
     parser.add_argument('--max-stocks', type=int, help='Maximum number of stocks to analyze (for testing)')
-    parser.add_argument('--test', action='store_true', help='Run in test mode with limited stocks')
-    parser.add_argument('--all', action='store_true', help='Analyze all NSE stocks (not just filtered/actively traded ones)')
+    # --test removed
+    # --all removed as it is now the default
     parser.add_argument('--purge-days', type=int, help='Number of days to keep old data (overrides config). Use 0 to remove ALL data.')
     parser.add_argument('--verbose', action='store_true', help='Enable verbose logging with detailed output')
     parser.add_argument('--single-threaded', action='store_true', help='Use single-threaded mode for debugging (slower but more stable)')
@@ -843,22 +828,13 @@ def main():
     logger = setup_logging(verbose=args.verbose)
     
     # Set test mode parameters
-    if args.test:
-        max_stocks = 2
-        if args.verbose:
-            logger.info("Running in TEST mode with limited stocks")
-    else:
-        max_stocks = args.max_stocks
-        if args.verbose:
-            logger.info("Running in PRODUCTION mode with all stocks")
+    max_stocks = args.max_stocks
+    if args.verbose:
+        logger.info(f"Running in PRODUCTION mode (max_stocks={max_stocks})")
     
     # Log symbol selection mode
-    if args.all:
-        if args.verbose:
-            logger.info("Using ALL NSE symbols (including inactive/low-volume stocks)")
-    else:
-        if args.verbose:
-            logger.info("Using FILTERED NSE symbols (only actively traded stocks)")
+    if args.verbose:
+        logger.info("Using ALL NSE symbols for comprehensive analysis")
     
     try:
         # Create analyzer with correct verbose setting from the start
@@ -891,7 +867,7 @@ def main():
         
         if args.verbose:
             # Verbose mode - logging already configured in constructor
-            analyzer.run_analysis(max_stocks=max_stocks, use_all_symbols=args.all)
+            analyzer.run_analysis(max_stocks=max_stocks, use_all_symbols=True)
             logger.info("Script completed successfully")
         else:
             # Non-verbose mode - logging already configured in constructor
@@ -913,7 +889,7 @@ def main():
             
             # Show initial message (we'll update this after getting the actual stock count)
             print(f"Initializing analysis...")
-            analyzer.run_analysis(max_stocks=max_stocks, use_all_symbols=args.all)
+            analyzer.run_analysis(max_stocks=max_stocks, use_all_symbols=True)
             print("\n")
             
             # Show final summary in non-verbose mode
