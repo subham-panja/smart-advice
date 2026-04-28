@@ -30,17 +30,27 @@ class SwingTradingSignalAnalyzer:
     def __init__(self):
         """Initialize the swing trading signal analyzer"""
         
+        # Standardized Gate Accessors
+        self.trend_gate = SWING_TRADING_GATES.get('TREND_GATE', {'enabled': False, 'params': {}})
+        self.vol_gate = SWING_TRADING_GATES.get('VOLATILITY_GATE', {'enabled': False, 'params': {}})
+        self.volum_gate = SWING_TRADING_GATES.get('VOLUME_GATE', {'enabled': False, 'params': {}})
+        self.mtf_gate = SWING_TRADING_GATES.get('MTF_GATE', {'enabled': False, 'params': {}})
+
         # Signal thresholds - Loaded from SWING_TRADING_GATES in config.py
+        trend_params = self.trend_gate.get('params', {})
+        vol_params = self.vol_gate.get('params', {})
+        volum_params = self.volum_gate.get('params', {})
+
         self.thresholds = {
-            'adx_min': SWING_TRADING_GATES['trend_filter'].get('adx_threshold', 20),
-            'adx_max': 50,              # Default cap (not yet in config)
-            'trend_sma_period': SWING_TRADING_GATES['trend_filter'].get('sma_period', 200),
-            'price_above_sma': SWING_TRADING_GATES['trend_filter'].get('price_above_sma', True),
-            'atr_percentile_min': SWING_TRADING_GATES['volatility_gate'].get('min_percentile', 20),
-            'atr_percentile_max': SWING_TRADING_GATES['volatility_gate'].get('max_percentile', 80),
-            'volume_zscore_min': SWING_TRADING_GATES['volume_confirmation'].get('volume_zscore_threshold', 1.0),
-            'obv_trend_periods': SWING_TRADING_GATES['volume_confirmation'].get('obv_trend_periods', 10),
-            'rsi_pullback_min': 40,     # Standard RSI levels - keep local or move if needed
+            'adx_min': trend_params.get('adx_min', 20),
+            'adx_max': 50,              
+            'trend_sma_period': trend_params.get('sma_period', 200),
+            'price_above_sma': trend_params.get('require_price_above_sma', True),
+            'atr_percentile_min': vol_params.get('min_percentile', 20),
+            'atr_percentile_max': vol_params.get('max_percentile', 80),
+            'volume_zscore_min': volum_params.get('zscore_threshold', 0.2),
+            'obv_trend_periods': volum_params.get('obv_trend_lookback', 10),
+            'rsi_pullback_min': 40,
             'rsi_pullback_max': 60,
             'bb_squeeze_threshold': 0.05, 
             'macd_zero_buffer': 0.1
@@ -75,31 +85,35 @@ class SwingTradingSignalAnalyzer:
             plus_di = talib.PLUS_DI(df['High'], df['Low'], df['Close'], timeperiod=14)
             minus_di = talib.MINUS_DI(df['High'], df['Low'], df['Close'], timeperiod=14)
             
-            # Calculate 200 SMA for long-term trend
-            sma_200 = talib.SMA(df['Close'], timeperiod=200)
-            
-            # Calculate 50 SMA for medium-term trend
-            sma_50 = talib.SMA(df['Close'], timeperiod=50)
-            
-            # Calculate 20 EMA for short-term trend
-            ema_20 = talib.EMA(df['Close'], timeperiod=20)
+            # Calculate SMAs based on config
+            sma_period = self.thresholds.get('trend_sma_period', 200)
+            sma_slow = talib.SMA(df['Close'], timeperiod=sma_period)
+            sma_mid = talib.SMA(df['Close'], timeperiod=50)
+            ema_fast = talib.EMA(df['Close'], timeperiod=20)
             
             # Current values
             current_adx = adx.iloc[-1]
             current_price = df['Close'].iloc[-1]
-            current_sma_200 = sma_200.iloc[-1]
-            current_sma_50 = sma_50.iloc[-1]
-            current_ema_20 = ema_20.iloc[-1]
+            current_sma_slow = sma_slow.iloc[-1]
+            current_sma_mid = sma_mid.iloc[-1]
+            current_ema_fast = ema_fast.iloc[-1]
             
             # Trend conditions
             strong_trend = (
                 self.thresholds['adx_min'] <= current_adx <= self.thresholds['adx_max']
             )
             
+            # Use 'require_price_above_sma' and 'require_sma_stack' from config
+            price_condition = current_price > current_sma_slow if self.thresholds['price_above_sma'] else True
+            
+            trend_params = self.trend_gate.get('params', {})
+            stack_condition = True
+            if trend_params.get('require_sma_stack', False):
+                stack_condition = (current_ema_fast > current_sma_mid > current_sma_slow)
+            
             bullish_trend = (
-                current_price > current_sma_200 and
-                current_sma_50 > current_sma_200 and
-                current_ema_20 > current_sma_50 and
+                price_condition and
+                stack_condition and
                 plus_di.iloc[-1] > minus_di.iloc[-1]
             )
             
@@ -151,9 +165,9 @@ class SwingTradingSignalAnalyzer:
                 }
             
             # Calculate weekly indicators - Loaded from config
-            mtf_conf = SWING_TRADING_GATES.get('multi_timeframe', {})
-            fast_period = mtf_conf.get('weekly_sma_fast', 20)
-            slow_period = mtf_conf.get('weekly_sma_slow', 50)
+            mtf_params = self.mtf_gate.get('params', {})
+            fast_period = mtf_params.get('weekly_sma_fast', 20)
+            slow_period = mtf_params.get('weekly_sma_slow', 50)
             
             weekly_sma_fast = talib.SMA(weekly_df['Close'], timeperiod=fast_period)
             weekly_sma_slow = talib.SMA(weekly_df['Close'], timeperiod=slow_period)
@@ -208,9 +222,10 @@ class SwingTradingSignalAnalyzer:
             # Calculate ATR as percentage of price
             atr_pct = (atr / df['Close']) * 100
             
-            # Get current ATR percentile over last 100 days
+            # Get current ATR percentile over config lookback
             current_atr = atr.iloc[-1]
-            atr_percentile = (atr.iloc[-100:] < current_atr).sum() / min(100, len(atr)) * 100
+            lookback = self.vol_gate.get('params', {}).get('lookback_days', 100)
+            atr_percentile = (atr.iloc[-lookback:] < current_atr).sum() / min(lookback, len(atr)) * 100
             
             # Calculate historical volatility
             returns = df['Close'].pct_change()
@@ -255,8 +270,8 @@ class SwingTradingSignalAnalyzer:
             obv = talib.OBV(df['Close'], df['Volume'])
             
             # Get periods from config
-            conf = SWING_TRADING_GATES.get('volume_confirmation', {})
-            lookback = conf.get('obv_trend_periods', 10)
+            volum_params = self.volum_gate.get('params', {})
+            lookback = volum_params.get('obv_trend_lookback', 10)
             
             # Calculate OBV trend (using linear regression slope)
             if len(obv) >= lookback:
@@ -284,9 +299,9 @@ class SwingTradingSignalAnalyzer:
             price_breakout = df['Close'].iloc[-1] > df['High'].iloc[-2:-6].max()
             volume_spike = current_volume_zscore > self.thresholds['volume_zscore_min']
             
-            # Volume confirmation conditions - Respect 'require_either' config
-            require_either = conf.get('require_either', True)
-            if require_either:
+            # Volume confirmation conditions - Respect 'logic_operator' config
+            logic_operator = volum_params.get('logic_operator', 'OR')
+            if logic_operator == 'OR':
                 volume_confirmed = obv_trending_up or volume_spike
             else:
                 volume_confirmed = obv_trending_up and volume_spike
@@ -601,45 +616,32 @@ class SwingTradingSignalAnalyzer:
                 return analysis
             
             # 1. Trend Filter
-            trend_filter = self.calculate_trend_filter(daily_df)
-            analysis['gates_passed']['trend_filter'] = trend_filter['passed']
-            if trend_filter['passed']:
-                analysis['reasons'].append(f"✓ Trend Filter: {trend_filter['reason']}")
-            else:
-                analysis['reasons'].append(f"✗ Trend Filter: {trend_filter['reason']}")
+            if self.trend_gate.get('enabled', True):
+                trend_filter = self.calculate_trend_filter(daily_df)
+                analysis['gates_passed']['trend_filter'] = trend_filter['passed']
+                status = "✓" if trend_filter['passed'] else "✗"
+                analysis['reasons'].append(f"{status} Trend Filter: {trend_filter['reason']}")
             
             # 2. Multi-Timeframe Confirmation
-            mtf_config = SWING_TRADING_GATES.get('multi_timeframe_gate', {})
-            if mtf_config.get('weekly_trend_check', True):
+            if self.mtf_gate.get('enabled', False):
                 mtf_confirmation = self.calculate_multi_timeframe_confirmation(daily_df, weekly_df)
-            else:
-                mtf_confirmation = {
-                    'passed': True, 
-                    'reason': 'MTF check disabled in config',
-                    'weekly_trend_up': None,
-                    'mtf_aligned': True
-                }
-            analysis['gates_passed']['mtf_confirmation'] = mtf_confirmation['passed']
-            if mtf_confirmation['passed']:
-                analysis['reasons'].append(f"✓ MTF Confirmation: {mtf_confirmation['reason']}")
-            else:
-                analysis['reasons'].append(f"✗ MTF Confirmation: {mtf_confirmation['reason']}")
+                analysis['gates_passed']['mtf_confirmation'] = mtf_confirmation['passed']
+                status = "✓" if mtf_confirmation['passed'] else "✗"
+                analysis['reasons'].append(f"{status} MTF Confirmation: {mtf_confirmation['reason']}")
             
             # 3. Volatility Gate
-            volatility_gate = self.calculate_volatility_gate(daily_df)
-            analysis['gates_passed']['volatility_gate'] = volatility_gate['passed']
-            if volatility_gate['passed']:
-                analysis['reasons'].append(f"✓ Volatility Gate: {volatility_gate['reason']}")
-            else:
-                analysis['reasons'].append(f"✗ Volatility Gate: {volatility_gate['reason']}")
+            if self.vol_gate.get('enabled', True):
+                volatility_gate = self.calculate_volatility_gate(daily_df)
+                analysis['gates_passed']['volatility_gate'] = volatility_gate['passed']
+                status = "✓" if volatility_gate['passed'] else "✗"
+                analysis['reasons'].append(f"{status} Volatility Gate: {volatility_gate['reason']}")
             
             # 4. Volume Confirmation
-            volume_confirmation = self.calculate_volume_confirmation(daily_df)
-            analysis['gates_passed']['volume_confirmation'] = volume_confirmation['passed']
-            if volume_confirmation['passed']:
-                analysis['reasons'].append(f"✓ Volume Confirmation: {volume_confirmation['reason']}")
-            else:
-                analysis['reasons'].append(f"✗ Volume Confirmation: {volume_confirmation['reason']}")
+            if self.volum_gate.get('enabled', True):
+                volume_confirmation = self.calculate_volume_confirmation(daily_df)
+                analysis['gates_passed']['volume_confirmation'] = volume_confirmation['passed']
+                status = "✓" if volume_confirmation['passed'] else "✗"
+                analysis['reasons'].append(f"{status} Volume Confirmation: {volume_confirmation['reason']}")
             
             # Check if all gates passed
             all_gates_passed = all(analysis['gates_passed'].values())

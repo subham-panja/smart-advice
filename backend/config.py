@@ -63,7 +63,7 @@ USE_MULTIPROCESSING_PIPELINE = True # Use multiple CPUs for analysis
 NUM_WORKER_PROCESSES = 8 # Number of CPU cores to use
 
 # External Integrations
-USE_CHARTINK = False # Use Chartink for rapid stock screening
+USE_CHARTINK = True # Use Chartink for rapid stock screening
 USE_SCREENER = False # Fallback screener integration
 
 MONGODB_COLLECTIONS = {
@@ -104,11 +104,10 @@ ANALYSIS_WEIGHTS = {
 STRATEGY_CONFIG = {
     'RSI_Overbought_Oversold': False, # Momentum continuation mode
     'MACD_Signal_Crossover': True, # Trend momentum confirmation
-    'EMA_Crossover_12_26': True, # Trend direction confirmation
     'ADX_Trend_Strength': True, # Trend strength filter
     'On_Balance_Volume': True, # Volume-based confirmation
-    'MACD_Zero_Line_Crossover': True, # Bullish regime confirmation
     'Bollinger_Band_Squeeze': True, # Volatility contraction pattern
+    'Relative_Strength_Comparison': True, # Outperformance vs Nifty 50
 }
 
 RECOMMENDATION_THRESHOLDS = {
@@ -123,6 +122,13 @@ RECOMMENDATION_THRESHOLDS = {
 CHARTINK_CONFIG = {
     'scan_clause': "( {cash} ( latest close > latest sma( close,50 ) and latest close > latest sma( close,200 ) and latest volume > latest sma( volume,20 ) * 2 and latest close > 1 day ago max( 20, high ) and latest rsi( 14 ) > 50 and latest close > latest open and latest close >= latest high * 0.98 and latest close > 20 and latest close < 50000 and latest volume > 100000 and market cap > 500 ) )",
     'cache_ttl_minutes': 30,
+}
+
+# Relative Strength (RS) Parameters
+RS_CONFIG = {
+    'benchmark_index': '^NSEI', # Nifty 50
+    'period': 55, # Standard RS55 timeframe
+    'threshold': 0.0, # Positive value means outperforming
 }
 
 # Legacy Filtering (Fallback) - Synchronized with Chartink Scan Clause
@@ -142,22 +148,37 @@ STOCK_FILTERING = {
 
 # Swing Trading Gates (Safety Filters)
 SWING_TRADING_GATES = {
-    'trend_filter': {
-        'price_above_sma': True, # Long-term uptrend requirement
-        'require_sma_stack': False, # More relaxed SMA stacking
-        'adx_threshold': 20, # Minimum trend strength
+    'TREND_GATE': {
+        'enabled': True,
+        'params': {
+            'adx_min': 20,
+            'sma_period': 200,
+            'require_price_above_sma': True,
+            'require_sma_stack': False, 
+        }
     },
-    'volatility_gate': {
-        'enabled': True, # Enable volatility filtering
-        'min_percentile': 20, # Reject bottom 20% volatility
-        'max_percentile': 80, # Reject top 20% volatility
+    'VOLATILITY_GATE': {
+        'enabled': True,
+        'params': {
+            'min_percentile': 20, # Avoid "dead" stocks
+            'max_percentile': 80, # Avoid "erratic" stocks
+            'lookback_days': 100
+        }
     },
-    'volume_confirmation': {
-        'volume_zscore_threshold': 0.2, # Minimum volume breakout strength
-        'require_either': True, # Either OBV or Z-Score must pass
+    'VOLUME_GATE': {
+        'enabled': True,
+        'params': {
+            'zscore_threshold': 0.2,
+            'obv_trend_lookback': 10,
+            'logic_operator': 'OR', # Either Z-Score spike OR OBV trend
+        }
     },
-    'multi_timeframe_gate': {
-        'weekly_trend_check': False, # Focus on Daily momentum
+    'MTF_GATE': {
+        'enabled': False,
+        'params': {
+            'weekly_trend_check': False,
+            'rsi_alignment_min': 40
+        }
     }
 }
 

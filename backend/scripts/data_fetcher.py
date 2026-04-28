@@ -9,7 +9,7 @@ from utils.logger import setup_logging
 from utils.memory_utils import optimize_dataframe_memory
 import yfinance as yf
 from nsetools import Nse
-from config import NSE_CACHE_FILE, STOCK_FILTERING, MAX_WORKER_THREADS, MAX_RETRIES, REQUEST_DELAY, TIMEOUT_SECONDS, RATE_LIMIT_DELAY, BACKOFF_MULTIPLIER, HISTORICAL_DATA_PERIOD, FILTERED_SYMBOLS_CACHE_HOURS, FILTER_VALIDATION_PERIOD, DATA_FETCH_THREADS
+from config import NSE_CACHE_FILE, STOCK_FILTERING, MAX_WORKER_THREADS, MAX_RETRIES, REQUEST_DELAY, TIMEOUT_SECONDS, RATE_LIMIT_DELAY, BACKOFF_MULTIPLIER, HISTORICAL_DATA_PERIOD, FILTERED_SYMBOLS_CACHE_HOURS, FILTER_VALIDATION_PERIOD, DATA_FETCH_THREADS, RS_CONFIG
 import requests
 from requests.exceptions import RequestException
 import random
@@ -946,46 +946,75 @@ def apply_technical_filter(df: pd.DataFrame) -> bool:
         import talib
         import numpy as np
         
-        close = df['Close'].values
-        high = df['High'].values
-        open_p = df['Open'].values
-        volume = df['Volume'].values
+        # Ensure data is clean and handles NaNs
+        close = df['Close'].ffill().values.astype(float)
+        high = df['High'].ffill().values.astype(float)
+        open_p = df['Open'].ffill().values.astype(float)
+        volume = df['Volume'].fillna(0).values.astype(float)
         
+        # If latest volume is 0 (after hours/market just opened), 
+        # use the previous row for checking momentum conditions
+        idx = -1
+        if volume[-1] == 0 and len(df) > 1:
+            idx = -2
+            
         # 1. SMAs
         if rules.get('require_above_sma50', True):
-            sma50 = talib.SMA(close.astype(float), timeperiod=50)[-1]
-            if close[-1] <= sma50: return False
+            sma50 = talib.SMA(close, timeperiod=50)[idx]
+            if np.isnan(sma50) or close[idx] <= sma50: return False
             
         if rules.get('require_above_sma200', True):
-            sma200 = talib.SMA(close.astype(float), timeperiod=200)[-1]
-            if close[-1] <= sma200: return False
+            sma200 = talib.SMA(close, timeperiod=200)[idx]
+            if np.isnan(sma200) or close[idx] <= sma200: return False
             
         # 2. Volume Spike
         spike_mult = rules.get('require_volume_spike', 2.0)
         if spike_mult > 0:
-            vol_sma20 = talib.SMA(volume.astype(float), timeperiod=20)[-1]
-            if volume[-1] <= (vol_sma20 * spike_mult): return False
+            vol_sma20 = talib.SMA(volume, timeperiod=20)[idx]
+            if np.isnan(vol_sma20) or volume[idx] <= (vol_sma20 * spike_mult): return False
             
         # 3. 20-day Breakout
         if rules.get('require_20day_breakout', True):
-            prev_20_high = np.max(high[-21:-1])
-            if close[-1] <= prev_20_high: return False
+            # Check if close is above the high of the PREVIOUS 20 days
+            start_range = idx - 20
+            end_range = idx
+            if len(high) < abs(start_range): return False
+            prev_20_high = np.max(high[start_range:end_range])
+            if np.isnan(prev_20_high) or close[idx] <= prev_20_high: return False
             
         # 4. RSI
         rsi_min = rules.get('require_rsi_above', 50.0)
         if rsi_min > 0:
-            rsi = talib.RSI(close.astype(float), timeperiod=14)[-1]
-            if rsi <= rsi_min: return False
+            rsi = talib.RSI(close, timeperiod=14)[idx]
+            if np.isnan(rsi) or rsi <= rsi_min: return False
             
         # 5. Bullish Candle
         if rules.get('require_bullish_candle', True):
-            if close[-1] <= open_p[-1]: return False
+            if close[idx] <= open_p[idx]: return False
             
         # 6. Strong Close
         close_threshold = rules.get('require_strong_close', 0.98)
-        if close[-1] < (high[-1] * close_threshold): return False
+        if close[idx] < (high[idx] * close_threshold): return False
             
         return True
     except Exception as e:
         logger.debug(f"Technical filter error: {e}")
         return False
+    except Exception as e:
+        logger.debug(f"Technical filter error: {e}")
+        return False
+def get_benchmark_data(period: str = '5y') -> pd.DataFrame:
+    """
+    Fetch historical data for the benchmark index (Nifty 50).
+    """
+    benchmark_symbol = RS_CONFIG.get('benchmark_index', '^NSEI')
+    logger.info(f"Fetching benchmark data for {benchmark_symbol}...")
+    
+    try:
+        data = get_historical_data(benchmark_symbol, period)
+        if data.empty:
+            logger.error(f"Benchmark data for {benchmark_symbol} is empty!")
+        return data
+    except Exception as e:
+        logger.error(f"Error fetching benchmark data: {e}")
+        return pd.DataFrame()

@@ -10,7 +10,7 @@ import pandas as pd
 import importlib
 from typing import Dict, List, Any
 import logging
-from config import STRATEGY_CONFIG, MIN_RECOMMENDATION_SCORE
+from config import STRATEGY_CONFIG, MIN_RECOMMENDATION_SCORE, RS_CONFIG
 
 logger = logging.getLogger(__name__)
 
@@ -201,7 +201,45 @@ class StrategyEvaluator:
         
         logger.info(f"Strategy loading complete. Loaded {len(self.strategy_instances)} strategies")
                     
-    def evaluate_strategies(self, symbol: str, data: pd.DataFrame) -> Dict[str, Any]:
+    def calculate_relative_strength(self, data: pd.DataFrame, index_data: pd.DataFrame) -> Dict[str, Any]:
+        """
+        Calculate Mansfield Relative Strength (RS) against the index.
+        Formula: ((Ratio / SMA(Ratio, 55)) - 1) * 100
+        """
+        try:
+            if data.empty or index_data.empty:
+                return {'rs_score': 0.0, 'is_bullish': False, 'error': 'Missing data'}
+            
+            # Synchronize data frames on dates
+            combined = pd.DataFrame({
+                'stock': data['Close'],
+                'index': index_data['Close']
+            }).dropna()
+            
+            if combined.empty:
+                return {'rs_score': 0.0, 'is_bullish': False, 'error': 'No overlapping data'}
+            
+            # 1. Dorsey RS (Ratio)
+            combined['ratio'] = (combined['stock'] / combined['index']) * 100
+            
+            # 2. Mansfield RS
+            period = RS_CONFIG.get('period', 55)
+            combined['ratio_sma'] = combined['ratio'].rolling(window=period).mean()
+            combined['mansfield_rs'] = ((combined['ratio'] / combined['ratio_sma']) - 1) * 100
+            
+            current_rs = combined['mansfield_rs'].iloc[-1]
+            is_bullish = current_rs > RS_CONFIG.get('threshold', 0.0)
+            
+            return {
+                'rs_score': current_rs,
+                'is_bullish': is_bullish,
+                'period': period
+            }
+        except Exception as e:
+            logger.error(f"RS calculation error: {e}")
+            return {'rs_score': 0.0, 'is_bullish': False, 'error': str(e)}
+
+    def evaluate_strategies(self, symbol: str, data: pd.DataFrame, index_data: pd.DataFrame = None) -> Dict[str, Any]:
         """
         Evaluate all loaded strategies against the given data.
         
@@ -240,7 +278,6 @@ class StrategyEvaluator:
                 total_strategies += 1
                 if signal == 1:
                     positive_signals += 1
-                    
             except Exception as e:
                 logger.error(f"Error running strategy {strategy_name} for {symbol}: {e}")
                 strategy_results[strategy_name] = {
@@ -249,6 +286,21 @@ class StrategyEvaluator:
                     'error': str(e)
                 }
                 total_strategies += 1
+
+        # Add Relative Strength if enabled (Global check, outside the loop)
+        if self.strategy_config.get('Relative_Strength_Comparison') and index_data is not None:
+            try:
+                rs_results = self.calculate_relative_strength(data, index_data)
+                strategy_results['Relative_Strength_Comparison'] = {
+                    'signal': 1 if rs_results.get('is_bullish') else 0,
+                    'rs_score': rs_results.get('rs_score', 0.0),
+                    'signal_type': 'BUY' if rs_results.get('is_bullish') else 'HOLD'
+                }
+                total_strategies += 1
+                if rs_results.get('is_bullish'):
+                    positive_signals += 1
+            except Exception as rs_e:
+                logger.error(f"Error in Relative Strength analysis for {symbol}: {rs_e}")
         
         # Calculate technical score
         technical_score = positive_signals / total_strategies if total_strategies > 0 else 0.0

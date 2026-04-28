@@ -275,7 +275,9 @@ def view_recommendations_command(message, today_only=False):
         # Build query
         query = {'is_recommended': True}
         if today_only:
-            today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+            from datetime import timezone
+            now = datetime.now(timezone.utc)
+            today = now.replace(hour=0, minute=0, second=0, microsecond=0)
             query['recommendation_date'] = {'$gte': today}
             
         recs = list(db.recommended_shares.find(query).sort('combined_score', -1))

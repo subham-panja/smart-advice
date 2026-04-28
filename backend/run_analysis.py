@@ -260,9 +260,16 @@ class AutomatedStockAnalysis:
         num_processes = config.NUM_WORKER_PROCESSES
         fetch_threads = config.DATA_FETCH_THREADS
         
-        logger.info(f"=== MULTIPROCESSING PIPELINE ===")
-        logger.info(f"Phase 1: {fetch_threads} threads for data fetching")
         logger.info(f"Phase 2: {num_processes} processes for analysis")
+        
+        # ---- PHASE 0: Fetch Benchmark Data (Nifty 50) ----
+        from scripts.data_fetcher import get_benchmark_data
+        benchmark_df = get_benchmark_data(config.HISTORICAL_DATA_PERIOD)
+        benchmark_dict = {}
+        benchmark_index = []
+        if not benchmark_df.empty:
+            benchmark_dict = benchmark_df.to_dict()
+            benchmark_index = benchmark_df.index.strftime('%Y-%m-%d %H:%M:%S').tolist() if hasattr(benchmark_df.index, 'strftime') else [str(idx) for idx in benchmark_df.index.tolist()]
         
         # ---- PHASE 1: Threaded data fetch ----
         phase1_start = datetime.now()
@@ -322,6 +329,8 @@ class AutomatedStockAnalysis:
             'ANALYSIS_CONFIG': dict(config.ANALYSIS_CONFIG),
             'HISTORICAL_DATA_PERIOD': config.HISTORICAL_DATA_PERIOD,
             'FRESH_DATA': self.app.config.get('FRESH_DATA', False),
+            'BENCHMARK_DATA': benchmark_dict,
+            'BENCHMARK_INDEX': benchmark_index,
         }
         
         # Prepare work items: convert DataFrames to dicts for pickling

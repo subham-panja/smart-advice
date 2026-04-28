@@ -220,7 +220,8 @@ class StockAnalyzer:
             return {'symbol': symbol, 'is_recommended': False, 'error': str(e)}
     
     def analyze_stock_with_data(self, symbol: str, company_name: str, 
-                                 historical_data: pd.DataFrame, app_config: Dict[str, Any]) -> Dict[str, Any]:
+                                 historical_data: pd.DataFrame, app_config: Dict[str, Any],
+                                 index_data: pd.DataFrame = None) -> Dict[str, Any]:
         """
         Analyze a stock using pre-fetched historical data.
         Used by the multiprocessing pipeline where data is fetched in Phase 1.
@@ -247,7 +248,7 @@ class StockAnalyzer:
                     result['technical_score'] = -1.0
                     tech_analysis = {'error': 'No data'}
                 else:
-                    tech_analysis = self.strategy_evaluator.evaluate_strategies(symbol, historical_data)
+                    tech_analysis = self.strategy_evaluator.evaluate_strategies(symbol, historical_data, index_data=index_data)
                     raw = tech_analysis['technical_score']
                     result['technical_score'] = (raw * 1.5) - 0.5
             except Exception as e:

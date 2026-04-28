@@ -63,13 +63,22 @@ def analyze_stock_worker(args: Tuple) -> Dict[str, Any]:
         else:
             historical_data = pd.DataFrame()
 
+        # Reconstruct benchmark DataFrame
+        benchmark_dict = app_config_dict.get('BENCHMARK_DATA', {})
+        benchmark_index = app_config_dict.get('BENCHMARK_INDEX', [])
+        benchmark_data = pd.DataFrame()
+        if benchmark_dict and benchmark_index:
+            benchmark_data = pd.DataFrame.from_dict(benchmark_dict)
+            benchmark_data.index = pd.to_datetime(benchmark_index)
+            benchmark_data.index.name = 'Date'
+
         with _worker_app.app_context():
             # Build app_config from the serialized config
             app_config = dict(_worker_app.config)
             app_config.update(app_config_dict)
 
             result = _worker_analyzer.analyze_stock_with_data(
-                symbol, company_name, historical_data, app_config
+                symbol, company_name, historical_data, app_config, index_data=benchmark_data
             )
             success = 'error' not in result
 
