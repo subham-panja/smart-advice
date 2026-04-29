@@ -99,9 +99,10 @@ class StockAnalyzer:
             if ANALYSIS_CONFIG.get("fundamental_analysis", True):
                 res["fundamental_score"] = self.fundamental_analyzer.perform_fundamental_analysis(symbol)
 
-            mrd = MarketRegimeDetection().get_simple_regime_check()
-            if not mrd["passed"]:
-                res["technical_score"] = min(res["technical_score"], -0.5)
+            if ANALYSIS_CONFIG.get("market_regime_detection", True):
+                mrd = MarketRegimeDetection().get_simple_regime_check()
+                if not mrd["passed"]:
+                    res["technical_score"] = min(res["technical_score"], -0.5)
 
             # Combine & Trade Plan
             res = self._combine(res)

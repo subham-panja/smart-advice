@@ -26,10 +26,15 @@ class RiskManager:
         rules = SWING_PATTERNS.get("exit_rules", {})
         sl = entry - (atr * rules.get("atr_stop_multiplier", 2.0))
 
-        # Position Sizing
+        # Position Sizing based on Risk
         risk_amt = self.balance * self.risk_per_trade
         risk_per_share = entry - sl
         size = int(risk_amt / risk_per_share) if risk_per_share > 0 else 0
+
+        # Enforce Max Position Capital Cap (e.g., 10%)
+        max_pos_pct = RISK_MANAGEMENT.get("position_sizing", {}).get("max_position_pct", 0.10)
+        max_size = int((self.balance * max_pos_pct) / entry)
+        size = min(size, max_size)
 
         # Targets
         t1_m, t2_m = rules.get("target_1_atr", 2.0), rules.get("target_2_atr", 4.0)
