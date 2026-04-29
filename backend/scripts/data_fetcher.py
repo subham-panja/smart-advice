@@ -175,7 +175,7 @@ def get_historical_data_with_retry(symbol: str, period: str = '1y', interval: st
             
             # Download data using yfinance with enhanced error handling
             data = yf.download(yf_symbol, period=period, interval=interval, progress=False, 
-                             auto_adjust=True, timeout=TIMEOUT_SECONDS,
+                             auto_adjust=False, timeout=TIMEOUT_SECONDS,
                              threads=False, group_by=None)  # Don't group by ticker to avoid MultiIndex
 
             # Ensure we have a DataFrame
@@ -206,9 +206,9 @@ def get_historical_data_with_retry(symbol: str, period: str = '1y', interval: st
                 expected_cols = ['Open', 'High', 'Low', 'Close', 'Adj Close', 'Volume']
                 if len(data.columns) == len(expected_cols):
                     data.columns = expected_cols
-                    # Use Adj Close as Close if it exists
-                    data['Close'] = data['Adj Close']
-                    data = data[['Open', 'High', 'Low', 'Close', 'Volume']]
+                    # Keep both raw Close and Adj Close if we need them later
+                    # For now, we use the raw market Close as the primary price
+                    data = data[['Open', 'High', 'Low', 'Close', 'Adj Close', 'Volume']]
             
             # Data quality checks (relaxed for testing)
             min_data_points = 5 if period in ['5d', '1w'] else 10  # Lower requirement for short periods
@@ -386,7 +386,7 @@ def get_historical_data(symbol: str, period: str = '1y', interval: str = '1d', f
                         
                         if is_very_fresh:
                             logger.info(f"Loaded {len(data)} points for {symbol} (Cache is very fresh, skipping delta fetch)")
-                            return data
+                            return data.dropna()
                             
                         logger.info(f"Loaded {len(data)} data points for {symbol} ({interval}) from cache: {os.path.basename(freshest_path)}")
                         if not data.empty:
@@ -399,7 +399,7 @@ def get_historical_data(symbol: str, period: str = '1y', interval: str = '1d', f
                                 
                                 if days_diff <= 0:
                                     logger.debug(f"Cache for {symbol} is up to date.")
-                                    return data
+                                    return data.dropna()
                                 
                                 # Fetch only the delta
                                 logger.info(f"Fetching delta for {symbol} ({days_diff} days missing)")
@@ -410,7 +410,7 @@ def get_historical_data(symbol: str, period: str = '1y', interval: str = '1d', f
                                 
                                 # For simplicity, let's just fetch from the start_date to today
                                 delta_data = yf.download(f"{symbol}.NS", start=start_date, interval=interval, 
-                                                       progress=False, auto_adjust=True, timeout=TIMEOUT_SECONDS)
+                                                       progress=False, auto_adjust=False, timeout=TIMEOUT_SECONDS)
                                 
                                 if not delta_data.empty:
                                     # Standardize columns
@@ -438,14 +438,14 @@ def get_historical_data(symbol: str, period: str = '1y', interval: str = '1d', f
                                     combined_data.to_csv(freshest_path)
                                     _write_checksum(freshest_path)
                                     logger.info(f"Updated cache for {symbol} with {len(delta_data)} new points.")
-                                    return combined_data
+                                    return combined_data.dropna()
                                 else:
                                     logger.debug(f"No new data found for {symbol}, using cache.")
                                     # Even if no delta, return deduplicated cached data
-                                    return data[~data.index.duplicated(keep='last')]
+                                    return data[~data.index.duplicated(keep='last')].dropna()
                             except Exception as delta_e:
                                 logger.warning(f"Failed to fetch delta for {symbol}: {delta_e}. Using cached data.")
-                                return data
+                                return data.dropna()
                     except (KeyError, ValueError):
                         continue
                 # Fallback generic read
@@ -455,7 +455,7 @@ def get_historical_data(symbol: str, period: str = '1y', interval: str = '1d', f
                         first_col = data.columns[0]
                         if 'date' in first_col.lower():
                             data.set_index(first_col, inplace=True)
-                            return data
+                            return data.dropna()
                 except Exception:
                     pass
                 logger.warning(f"Could not properly load cached data for {symbol}, will fetch fresh data")
@@ -514,6 +514,12 @@ def get_historical_data(symbol: str, period: str = '1y', interval: str = '1d', f
         # Optimize memory usage
         data = optimize_dataframe_memory(data)
 
+        # Drop any rows with NaN values to ensure technical indicators work correctly
+        initial_len = len(data)
+        data = data.dropna()
+        if len(data) < initial_len:
+            logger.info(f"Dropped {initial_len - len(data)} NaN rows for {symbol}")
+
         # Save to cache with better error handling
         try:
             os.makedirs(os.path.dirname(cache_dir), exist_ok=True)
@@ -560,7 +566,7 @@ def get_current_price(symbol: str) -> Optional[float]:
             return float(hist['Close'].iloc[-1])
         
         # Fallback 2: direct download of 1d
-        data = yf.download(yf_symbol, period='1d', interval='1d', progress=False, auto_adjust=True, threads=False)
+        data = yf.download(yf_symbol, period='1d', interval='1d', progress=False, auto_adjust=False, threads=False)
         if not data.empty and 'Close' in data.columns:
             return float(data['Close'].iloc[-1])
         

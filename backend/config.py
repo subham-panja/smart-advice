@@ -13,7 +13,7 @@ os.environ['MKL_NUM_THREADS'] = LIBRARY_MAX_THREADS
 os.environ['VECLIB_MAXIMUM_THREADS'] = LIBRARY_MAX_THREADS
 os.environ['NUMEXPR_NUM_THREADS'] = LIBRARY_MAX_THREADS
 SECRET_KEY = 'your_super_secret_key_here'
-PERSIST_LOGGING = True
+PERSIST_LOGGING = False
 
 # Database configuration
 MONGODB_HOST = os.getenv('MONGODB_HOST', '127.0.0.1')
@@ -111,7 +111,7 @@ STRATEGY_CONFIG = {
 }
 
 RECOMMENDATION_THRESHOLDS = {
-    'buy_combined': 0.50, # Minimum total score for a BUY
+    'buy_combined': 0.40, # Minimum total score for a BUY
     'technical_minimum': 0.35, # Minimum technical score floor
     'fundamental_minimum': 0.05, # Minimum fundamental health floor
     'require_all_gates': False, # Allow trade if core trend is strong
@@ -152,6 +152,8 @@ SWING_TRADING_GATES = {
         'enabled': True,
         'params': {
             'adx_min': 20,
+            'adx_max': 50,
+            'macd_zero_buffer': 0.1,
             'sma_period': 200,
             'require_price_above_sma': True,
             'require_sma_stack': False, 
@@ -184,6 +186,43 @@ SWING_TRADING_GATES = {
 
 # Exit Rules & Trade Management
 SWING_PATTERNS = {
+    'entry_patterns': [
+        {
+            'name': 'pullback_to_ema',
+            'enabled': True,
+            'ema_period': 20,
+            'rsi_range': [40, 60],
+            'bullish_candle_required': True
+        },
+        {
+            'name': 'bollinger_squeeze_breakout',
+            'enabled': True,
+            'bb_period': 20,
+            'bb_std': 2,
+            'squeeze_threshold': 0.05,
+            'retest_required': True
+        },
+        {
+            'name': 'macd_zero_cross',
+            'enabled': True,
+            'fast': 12,
+            'slow': 26,
+            'signal': 9,
+            'above_zero_only': True
+        },
+        {
+            'name': 'higher_low_structure',
+            'enabled': True,
+            'pivot_lookback': 5,
+            'min_swings': 2
+        },
+        {
+            'name': 'volatility_contraction',
+            'enabled': True,
+            'min_contractions': 2,
+            'volume_dry_up_required': True
+        }
+    ],
     'exit_rules': {
         'atr_stop_multiplier': 2.0, # Initial stop loss distance
         'target_1_atr': 2.0, # First profit target distance

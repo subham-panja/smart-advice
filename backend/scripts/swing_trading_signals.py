@@ -43,17 +43,14 @@ class SwingTradingSignalAnalyzer:
 
         self.thresholds = {
             'adx_min': trend_params.get('adx_min', 20),
-            'adx_max': 50,              
+            'adx_max': trend_params.get('adx_max', 50),              
             'trend_sma_period': trend_params.get('sma_period', 200),
             'price_above_sma': trend_params.get('require_price_above_sma', True),
             'atr_percentile_min': vol_params.get('min_percentile', 20),
             'atr_percentile_max': vol_params.get('max_percentile', 80),
             'volume_zscore_min': volum_params.get('zscore_threshold', 0.2),
             'obv_trend_periods': volum_params.get('obv_trend_lookback', 10),
-            'rsi_pullback_min': 40,
-            'rsi_pullback_max': 60,
-            'bb_squeeze_threshold': 0.05, 
-            'macd_zero_buffer': 0.1
+            'macd_zero_buffer': trend_params.get('macd_zero_buffer', 0.1)
         }
         
         # Risk management parameters - Loaded from SWING_PATTERNS and RISK_MANAGEMENT

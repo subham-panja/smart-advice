@@ -395,7 +395,8 @@ class AutomatedStockAnalysis:
                         self.persistence.save_swing_gate_results(
                             symbol=analysis_result.get('symbol', r.get('symbol')),
                             gate_results=gate_results,
-                            scan_run_id=scan_run_id
+                            scan_run_id=scan_run_id,
+                            is_recommended=analysis_result.get('is_recommended', False)
                         )
                     except Exception as e:
                         logger.debug(f"Failed to save swing gate results: {e}")
@@ -553,7 +554,8 @@ class AutomatedStockAnalysis:
                                     self.persistence.save_swing_gate_results(
                                         symbol=analysis_result.get('symbol', symbol),
                                         gate_results=gate_results,
-                                        scan_run_id=scan_run_id
+                                        scan_run_id=scan_run_id,
+                                        is_recommended=analysis_result.get('is_recommended', False)
                                     )
                                 except Exception:
                                     pass
@@ -638,7 +640,8 @@ class AutomatedStockAnalysis:
                                         self.persistence.save_swing_gate_results(
                                             symbol=analysis_result.get('symbol', symbol),
                                             gate_results=gate_results,
-                                            scan_run_id=scan_run_id
+                                            scan_run_id=scan_run_id,
+                                            is_recommended=analysis_result.get('is_recommended', False)
                                         )
                                     except Exception:
                                         pass
@@ -848,7 +851,7 @@ def main():
         
         if args.verbose:
             # Verbose mode - logging already configured in constructor
-            analyzer.run_analysis(max_stocks=max_stocks, use_all_symbols=args.all)
+            analyzer.run_analysis(max_stocks=max_stocks)
             logger.info("Script completed successfully")
         else:
             # Non-verbose mode - logging already configured in constructor

@@ -57,7 +57,8 @@ class PersistenceHandler:
             )
             
             trade_plan = analysis_result.get('trade_plan', {})
-            buy_price = trade_plan.get('buy_price', 0.0) if trade_plan else analysis_result.get('buy_price', 0.0)
+            # Fix: Check both buy_price and entry_price from trade_plan or main result
+            buy_price = trade_plan.get('buy_price') or trade_plan.get('entry_price') or analysis_result.get('buy_price') or analysis_result.get('current_price', 0.0)
             sell_price = trade_plan.get('sell_price', 0.0) if trade_plan else analysis_result.get('sell_price', 0.0)
             
             backtest_metrics = self._extract_detailed_backtest_metrics(analysis_result)
@@ -179,8 +180,14 @@ class PersistenceHandler:
     # ─── NEW MULTI-STAGE PERSISTENCE METHODS ────────────────────────────────
 
     def save_analysis_snapshot(self, analysis_result: Dict[str, Any], scan_run_id=None) -> bool:
-        """Save analysis snapshot for EVERY stock (pass or fail) for debugging."""
+        """Save analysis snapshot for recommended stocks only."""
         try:
+            # Skip if not recommended or is HOLD
+            is_recommended = analysis_result.get('is_recommended', False)
+            recommendation = analysis_result.get('recommendation_strength', 'HOLD')
+            if not is_recommended or recommendation == 'HOLD':
+                return True
+                
             db = get_mongodb()
             
             # Extract strategy signals detail
@@ -234,9 +241,13 @@ class PersistenceHandler:
             logger.error(f"Error saving analysis snapshot: {e}")
             return False
 
-    def save_swing_gate_results(self, symbol: str, gate_results: Dict[str, Any], scan_run_id=None) -> bool:
-        """Save swing gate pass/fail results for debugging."""
+    def save_swing_gate_results(self, symbol: str, gate_results: Dict[str, Any], scan_run_id=None, is_recommended: bool = False) -> bool:
+        """Save swing gate pass/fail results for recommended stocks only."""
         try:
+            # Skip if not recommended
+            if not is_recommended:
+                return True
+                
             db = get_mongodb()
             
             doc = {
