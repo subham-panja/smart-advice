@@ -41,10 +41,18 @@ class RiskManager:
             "position_value": round(size * entry, 2),
             "risk_amount": round(risk_amt, 2),
             "targets": {k: round(v, 2) for k, v in targets.items()},
-            "risk_reward_ok": True,  # Simplified
+            "risk_reward_ok": True,
         }
 
     def validate_trade(self, entry: float, sl: float, target: float) -> bool:
         risk = entry - sl
         reward = target - entry
         return (reward / risk >= self.min_rr) if risk > 0 else False
+
+    def calculate_stop_loss(
+        self, df: pd.DataFrame, current_price: float, method="atr", atr_multiplier=1.5
+    ) -> Dict[str, Any]:
+        """Calculates a trailing stop loss based on ATR."""
+        atr = ta.ATR(df["High"], df["Low"], df["Close"], 14).iloc[-1]
+        sl = current_price - (atr * atr_multiplier)
+        return {"stop_loss": round(sl, 2)}
