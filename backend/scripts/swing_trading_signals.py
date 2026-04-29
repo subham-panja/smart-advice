@@ -364,20 +364,35 @@ class SwingTradingSignalAnalyzer:
                 bb_std = p_config.get('bb_std', 2)
                 bb_upper, bb_middle, bb_lower = talib.BBANDS(df['Close'], timeperiod=bb_period, nbdevup=bb_std, nbdevdn=bb_std)
                 bb_width = (bb_upper - bb_lower) / bb_middle
-                bb_squeeze = bb_width.iloc[-1] < bb_width.iloc[-20:].quantile(p_config.get('squeeze_threshold', 0.25))
                 
-                # Check for retest if required
+                # Check for squeeze
+                squeeze_threshold = p_config.get('squeeze_threshold', 0.05)
+                is_squeezed = bb_width.iloc[-1] < bb_width.iloc[-20:].quantile(squeeze_threshold)
+                
+                # Squeeze duration check (Avoid "forever-flat" stocks)
+                max_squeeze_days = p_config.get('max_squeeze_duration_days', 40)
+                squeeze_series = bb_width < bb_width.rolling(window=60).quantile(squeeze_threshold)
+                current_squeeze_duration = 0
+                for i in range(1, min(len(squeeze_series), 100)):
+                    if squeeze_series.iloc[-i]:
+                        current_squeeze_duration += 1
+                    else:
+                        break
+                
+                duration_ok = current_squeeze_duration <= max_squeeze_days
+                
+                # Check for breakout
                 breakout_valid = df['Close'].iloc[-1] > bb_upper.iloc[-1]
                 if p_config.get('retest_required', False):
                     # Simplified retest: price was above upper band in previous 3 bars but also close to it
                     breakout_valid = breakout_valid and df['Low'].iloc[-3:].min() <= bb_upper.iloc[-1] * 1.01
                 
-                bb_breakout = breakout_valid and bb_squeeze
+                bb_breakout = breakout_valid and is_squeezed and duration_ok
                 
                 patterns['bb_squeeze_breakout'] = {
                     'detected': bb_breakout,
                     'strength': 0.7 if bb_breakout else 0,
-                    'description': 'Bollinger Band squeeze' + (' with retested breakout' if bb_breakout else '')
+                    'description': 'Bollinger Band squeeze' + (' with retested breakout' if bb_breakout else '') + (f' (Duration: {current_squeeze_duration}d)' if bb_breakout else '')
                 }
             
             # 3. MACD signal cross above zero

@@ -155,7 +155,8 @@ def get_historical_data_with_retry(symbol: str, period: str = '1y', interval: st
     """
     Fetch historical data with enhanced retry mechanism and monitoring.
     """
-    yf_symbol = f"{symbol}.NS"
+    # Fix: Don't append .NS to index tickers (starting with ^)
+    yf_symbol = symbol if symbol.startswith('^') else f"{symbol}.NS"
     
     # Track retry statistics
     retry_stats = {'http_errors': 0, 'timeout_errors': 0, 'data_quality_issues': 0}
@@ -408,8 +409,11 @@ def get_historical_data(symbol: str, period: str = '1y', interval: str = '1d', f
                                 # Start date is one day after last cached date
                                 start_date = (last_ts + pd.Timedelta(days=1)).strftime('%Y-%m-%d')
                                 
+                                # Fix: Don't append .NS to index tickers
+                                delta_yf_symbol = symbol if symbol.startswith('^') else f"{symbol}.NS"
+                                
                                 # For simplicity, let's just fetch from the start_date to today
-                                delta_data = yf.download(f"{symbol}.NS", start=start_date, interval=interval, 
+                                delta_data = yf.download(delta_yf_symbol, start=start_date, interval=interval, 
                                                        progress=False, auto_adjust=False, timeout=TIMEOUT_SECONDS)
                                 
                                 if not delta_data.empty:
@@ -551,7 +555,8 @@ def get_current_price(symbol: str) -> Optional[float]:
                 logger.debug(f"Alternative price fetch failed for {symbol}: {e}")
         
         # Fallback to yfinance methods
-        yf_symbol = f"{symbol}.NS"
+        # Fix: Don't append .NS to index tickers
+        yf_symbol = symbol if symbol.startswith('^') else f"{symbol}.NS"
         
         # Primary: yfinance info
         ticker = yf.Ticker(yf_symbol)
@@ -628,7 +633,8 @@ def get_stock_info_with_retry(symbol: str, max_retries: int = MAX_RETRIES) -> Di
     """
     for attempt in range(max_retries):
         try:
-            yf_symbol = f"{symbol}.NS"
+            # Fix: Don't append .NS to index tickers
+            yf_symbol = symbol if symbol.startswith('^') else f"{symbol}.NS"
             
             # Let yfinance handle sessions automatically to avoid curl_cffi errors
             ticker = yf.Ticker(yf_symbol)

@@ -173,6 +173,19 @@ class StockAnalyzer:
             
             # 3. Sector & Market Modules
             analysis_config = app_config.get('ANALYSIS_CONFIG', {})
+            
+            # Market Regime Detection (Global Index Filter)
+            market_regime_passed = True
+            if analysis_config.get('market_regime_detection', True):
+                mrd = MarketRegimeDetection()
+                market_status = mrd.get_simple_regime_check()
+                result['market_regime'] = market_status
+                
+                from config import MARKET_REGIME_CONFIG
+                if not market_status['passed'] and MARKET_REGIME_CONFIG.get('pause_buying_if_bearish', True):
+                    market_regime_passed = False
+                    result['reason'].append(f"PAUSED: Broader Market is Bearish ({market_status['index']} below SMA 200)")
+
             if analysis_config.get('sector_analysis'):
                 if not self.sector_analyzer: self.sector_analyzer = SectorAnalyzer()
                 # Get comprehensive analysis
@@ -191,6 +204,10 @@ class StockAnalyzer:
                         result['reason'].append(f"Leading Sector Tailwinds: {sector_res.get('sector', 'Unknown')}")
             else:
                 result['sector_score'] = 0.0
+            
+            # Apply global market gate
+            if not market_regime_passed:
+                result['technical_score'] = min(result['technical_score'], -0.5) # Force non-recommendation
             # 4. Preliminary Combination
             result = self._combine_analysis_results(result, consider_backtest=False, keep_reason_as_list=True)
             
@@ -315,6 +332,18 @@ class StockAnalyzer:
                 result['sentiment_score'] = 0.0
             
             # 3. Preliminary Combination
+            # Market Regime check for pre-fetched pipeline
+            analysis_config = app_config.get('ANALYSIS_CONFIG', {})
+            if analysis_config.get('market_regime_detection', True):
+                mrd = MarketRegimeDetection()
+                market_status = mrd.get_simple_regime_check()
+                result['market_regime'] = market_status
+                
+                from config import MARKET_REGIME_CONFIG
+                if not market_status['passed'] and MARKET_REGIME_CONFIG.get('pause_buying_if_bearish', True):
+                    result['technical_score'] = min(result['technical_score'], -0.5)
+                    result['reason'].append(f"PAUSED: Bear Market Regime ({market_status['index']})")
+            
             result = self._combine_analysis_results(result, consider_backtest=False, keep_reason_as_list=True)
             
             # 4. Trade & Backtest

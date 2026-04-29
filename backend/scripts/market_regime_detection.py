@@ -11,6 +11,7 @@ import warnings
 warnings.filterwarnings('ignore', category=FutureWarning)
 
 import logging
+from typing import Dict, Any
 logger = logging.getLogger(__name__)
 from scripts.data_fetcher import get_historical_data
 
@@ -21,12 +22,12 @@ class MarketRegimeDetection:
     - GARCH models for volatility regime switching
     - Advanced clustering algorithms
     """
-    def __init__(self, symbol, n_regimes=3, lookback_period="2y"):
+    def __init__(self, symbol='^NSEI', n_regimes=3, lookback_period="2y"):
         """
         Args:
-            symbol (str): The stock symbol to analyze.
-            n_regimes (int): The number of hidden market regimes to detect (e.g., 3 for Bull, Bear, Neutral).
-            lookback_period (str): The period to fetch historical data for (e.g., "1y", "5y").
+            symbol (str): The stock symbol or index to analyze. Defaults to Nifty 50.
+            n_regimes (int): The number of hidden market regimes to detect.
+            lookback_period (str): The period to fetch historical data for.
         """
         self.symbol = symbol
         self.n_regimes = n_regimes
@@ -37,6 +38,39 @@ class MarketRegimeDetection:
         self.volatility_regimes = None
         self.clustering_regimes = None
         self.data = None
+
+    def get_simple_regime_check(self) -> Dict[str, Any]:
+        """
+        Performs a simple SMA-based regime check (e.g., Price > SMA 200).
+        Used for broader market index filtering.
+        """
+        try:
+            from config import MARKET_REGIME_CONFIG
+            index_symbol = MARKET_REGIME_CONFIG.get('index', '^NSEI')
+            
+            # Fetch index data
+            data = get_historical_data(index_symbol, period='1y')
+            if data is None or data.empty:
+                return {'passed': True, 'reason': 'Market data unavailable'}
+
+            # Calculate SMA 200
+            sma_200 = data['Close'].rolling(window=200).mean()
+            latest_close = data['Close'].iloc[-1]
+            latest_sma = sma_200.iloc[-1]
+            
+            is_bullish = latest_close > latest_sma
+            
+            return {
+                'passed': is_bullish,
+                'index': index_symbol,
+                'latest_close': latest_close,
+                'sma_200': latest_sma,
+                'status': 'BULLISH' if is_bullish else 'BEARISH',
+                'reason': f"Index {index_symbol} is {'above' if is_bullish else 'below'} 200 SMA"
+            }
+        except Exception as e:
+            logger.error(f"Error in simple regime check: {e}")
+            return {'passed': True, 'reason': f"Error: {str(e)}"}
 
     def _prepare_enhanced_data(self):
         """

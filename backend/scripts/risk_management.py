@@ -737,30 +737,43 @@ class RiskManager:
         )
     
     def calculate_pyramid_adjustment(self, current_price: float, entry_price: float, 
-                                   original_size: int, atr: float) -> Dict[str, Any]:
+                                   original_size: int, atr: float, num_adds: int = 0) -> Dict[str, Any]:
         """
-        Calculate if and how much to add to an existing winning position.
+        Calculate if and how much to add to an existing winning position (Tapered Pyramiding).
         """
         if not self.pyramid_enabled:
             return {'should_add': False, 'reason': 'Pyramiding disabled'}
 
         # Calculate move in ATR terms
         atr_move = (current_price - entry_price) / atr if atr > 0 else 0
-        trigger_step = self.pyramid_config.get('trigger_step_atr', 1.5)
         
-        # Simple logic: Add if we've moved at least one step in the right direction
-        if atr_move >= trigger_step:
-            add_pct = self.pyramid_config.get('add_size_pct', 0.5)
-            new_size = int(original_size * add_pct)
+        max_adds = self.pyramid_config.get('max_adds', 2)
+        if num_adds >= max_adds:
+            return {'should_add': False, 'reason': f'Max adds ({max_adds}) already reached'}
+
+        # Each add is triggered by an incremental ATR move (e.g., 1.5, 3.0, 4.5...)
+        trigger_step = self.pyramid_config.get('trigger_step_atr', 1.5)
+        required_move = trigger_step * (num_adds + 1)
+        
+        if atr_move >= required_move:
+            # Use tapered steps if available, else fallback to flat pct
+            steps = self.pyramid_config.get('add_size_pct_steps', [])
+            if steps and num_adds < len(steps):
+                add_pct = steps[num_adds]
+            else:
+                add_pct = self.pyramid_config.get('add_size_pct', 0.5)
+                
+            add_quantity = int(original_size * add_pct)
             
             return {
                 'should_add': True,
-                'add_quantity': new_size,
+                'add_quantity': add_quantity,
                 'atr_move': atr_move,
-                'reason': f"Price moved {atr_move:.1f} ATR from entry"
+                'next_num_adds': num_adds + 1,
+                'reason': f"Price moved {atr_move:.1f} ATR (Step {num_adds + 1} trigger: {required_move} ATR)"
             }
         
-        return {'should_add': False, 'reason': f"Move {atr_move:.1f} ATR < {trigger_step} ATR threshold"}
+        return {'should_add': False, 'reason': f"Move {atr_move:.1f} ATR < {required_move} ATR threshold"}
 
     def get_optimal_position_size(self, entry_price: float, stop_loss: float,
                                 data: pd.DataFrame, **kwargs) -> Dict[str, Any]:

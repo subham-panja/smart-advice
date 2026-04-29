@@ -68,7 +68,7 @@ USE_SCREENER = False # Fallback screener integration
 
 # Chartink Momentum-Breakout Query
 CHARTINK_CONFIG = {
-    'scan_clause': "( {cash} ( latest close > latest sma( close,50 ) and latest close > latest sma( close,200 ) and latest volume > latest sma( volume,20 ) * 2 and latest close > 1 day ago max( 20, high ) and latest rsi( 14 ) > 50 and latest close > latest open and latest close >= latest high * 0.98 and latest close > 20 and latest close < 50000 and latest volume > 100000 and market cap > 500 ) )",
+    'scan_clause': "( {cash} ( latest close > latest sma( close,50 ) and latest close > latest sma( close,200 ) and latest volume > latest sma( volume,20 ) * 2 and latest close > 1 day ago max( 20, high ) and latest rsi( 14 ) > 60 and latest close > latest open and latest close >= latest high * 0.98 and latest close > 20 and latest close < 50000 and latest volume > 100000 and market cap > 500 ) )",
     'cache_ttl_minutes': 30,
 }
 
@@ -77,6 +77,13 @@ RS_CONFIG = {
     'benchmark_index': '^NSEI', # Nifty 50
     'period': 55, # Standard RS55 timeframe
     'threshold': 0.0, # Positive value means outperforming
+}
+
+# Market Regime Detection (Weinstein Rule)
+MARKET_REGIME_CONFIG = {
+    'index': '^NSEI', # Nifty 50
+    'bull_market_rule': 'latest close > sma(200)',
+    'pause_buying_if_bearish': True 
 }
 
 # NSE Options OI Filter Settings
@@ -151,8 +158,8 @@ STOCK_FILTERING = {
     'min_market_cap': 5000.0, # Cr
     'require_above_sma50': True,
     'require_above_sma200': True,
-    'require_volume_spike': 1.2, # Relaxed from 2.0 to allow healthy moves
-    'require_rsi_above': 50.0,
+    'require_volume_spike': 2.0, # Increased from 1.2 to 2.0 for institutional footprint
+    'require_rsi_above': 60.0, # Increased from 50 to 60 for momentum velocity
     'require_20day_breakout': False, # Disabled to allow pullbacks (Swing Strategy)
     'require_bullish_candle': True, # Close > Open
     'require_strong_close': 0.98, # Close >= High * 0.98
@@ -193,7 +200,7 @@ SWING_TRADING_GATES = {
             'weekly_trend_check': True,
             'weekly_sma_fast': 10,
             'weekly_sma_slow': 30,
-            'rsi_alignment_min': 50
+            'rsi_alignment_min': 60 # Increased from 50 for momentum velocity
         }
     }
 }
@@ -214,7 +221,8 @@ SWING_PATTERNS = {
             'bb_period': 20,
             'bb_std': 2,
             'squeeze_threshold': 0.05,
-            'retest_required': True
+            'retest_required': True,
+            'max_squeeze_duration_days': 20 # Avoid dead stocks
         },
         {
             'name': 'macd_zero_cross',
@@ -238,9 +246,9 @@ SWING_PATTERNS = {
         }
     ],
     'exit_rules': {
-        'atr_stop_multiplier': 2.0, # Initial stop loss distance
-        'target_1_atr': 2.0, # First profit target distance
-        'target_2_atr': 3.0, # Second profit target
+        'atr_stop_multiplier': 1.5, # Reduced from 2.0 to 1.5 for tighter risk
+        'target_1_atr': 3.0, # Increased from 2.0 to 3.0 to achieve 1:2 RR
+        'target_2_atr': 4.5, # Scaled accordingly
         'trail_stop_atr': 3.0, # Trailing stop distance
         'time_stop_bars': 15, # Max hold time without target hit
         'breakeven_at_target_1': True, # Move SL to entry after T1
@@ -251,7 +259,7 @@ SWING_PATTERNS = {
 RISK_MANAGEMENT = {
     'position_sizing': {
         'risk_per_trade': 0.01, # 1% risk per trade rule
-        'max_position_pct': 0.20, # Max 20% of capital per stock
+        'max_position_pct': 0.10, # Max 20% of capital per stock
     },
     'portfolio_constraints': {
         'max_concurrent_positions': 5, # Max 5 active trades
@@ -261,6 +269,6 @@ RISK_MANAGEMENT = {
         'enabled': True,
         'max_adds': 2,
         'trigger_step_atr': 1.5, # Add more every 1.5 ATR move
-        'add_size_pct': 0.5, # Add 50% of original size
+        'add_size_pct_steps': [0.5, 0.25], # Tapered adds: 50% then 25%
     }
 }
