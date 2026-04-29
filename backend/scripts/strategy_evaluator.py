@@ -1,407 +1,59 @@
-"""
-Strategy Evaluator for Technical Analysis
-File: scripts/strategy_evaluator.py
-
-This module evaluates multiple trading strategies and combines their signals
-to generate overall technical analysis scores.
-"""
-
 import pandas as pd
 import importlib
-from typing import Dict, List, Any
 import logging
-from config import STRATEGY_CONFIG, MIN_RECOMMENDATION_SCORE, RS_CONFIG, SWING_TRADING_GATES
+from typing import Dict, Any
+from config import STRATEGY_CONFIG, RS_CONFIG
 
 logger = logging.getLogger(__name__)
 
 class StrategyEvaluator:
-    """
-    Evaluates multiple trading strategies and combines their signals.
-    """
+    """Dynamically loads and runs trading strategies."""
     
-    def __init__(self, strategy_config: Dict[str, bool] = None):
-        """
-        Initialize the strategy evaluator.
+    def __init__(self, cfg: Dict[str, bool] = None):
+        self.cfg = cfg or STRATEGY_CONFIG
+        self.instances = {}
+        self._load()
         
-        Args:
-            strategy_config: Dictionary of strategy names and their enabled status
-        """
-        self.strategy_config = strategy_config or STRATEGY_CONFIG
-        self.strategy_instances = {}
-        self.load_strategies()
-        
-    def load_strategies(self):
-        """
-        Load and initialize all enabled strategies.
-        """
-        import signal
-        import time
-        
-        # Define timeout handler
-        def timeout_handler(signum, frame):
-            raise TimeoutError("Strategy loading timed out")
-        
-        strategy_mapping = {
-            # Core strategies
-            'MA_Crossover_50_200': 'scripts.strategies.ma_crossover_50_200',
-            'RSI_Overbought_Oversold': 'scripts.strategies.rsi_overbought_oversold',
+    def _load(self):
+        map = {
             'MACD_Signal_Crossover': 'scripts.strategies.macd_signal_crossover',
-            'Bollinger_Band_Breakout': 'scripts.strategies.bollinger_band_breakout',
             'ADX_Trend_Strength': 'scripts.strategies.adx_trend_strength',
             'On_Balance_Volume': 'scripts.strategies.on_balance_volume',
             'Bollinger_Band_Squeeze': 'scripts.strategies.bollinger_band_squeeze',
-            'EMA_Crossover_12_26': 'scripts.strategies.ema_crossover_12_26',
-            'Stochastic_Overbought_Oversold': 'scripts.strategies.stochastic_overbought_oversold',
-            'ADX_Trend_Strength': 'scripts.strategies.adx_trend_strength',
-            
-            # High-priority swing trading strategies
-            'Volume_Breakout': 'scripts.strategies.volume_breakout',
-            'Support_Resistance_Breakout': 'scripts.strategies.support_resistance_breakout',
-            'Fibonacci_Retracement': 'scripts.strategies.fibonacci_retracement',
-            'Multi_Timeframe_RSI': 'scripts.strategies.multi_timeframe_rsi',
-            
-            # Advanced strategies (newly enabled)
-            'DEMA_Crossover': 'scripts.strategies.dema_crossover',
-            'Gap_Trading': 'scripts.strategies.gap_trading',
-            'Channel_Trading': 'scripts.strategies.channel_trading',
-            
-            # PHASE 1 ADVANCED PATTERN RECOGNITION STRATEGIES
-            'Chart_Patterns': 'scripts.strategies.chart_patterns',
-            'Volume_Profile': 'scripts.strategies.volume_profile',
-            
-            # Newly implemented strategies
-            'SMA_Crossover_20_50': 'scripts.strategies.sma_crossover_20_50',
-            'Williams_Percent_R_Overbought_Oversold': 'scripts.strategies.williams_percent_r_strategy',
-            'Volume_Price_Trend': 'scripts.strategies.volume_price_trend',
-            'On_Balance_Volume': 'scripts.strategies.on_balance_volume',
-            'Momentum_Oscillator': 'scripts.strategies.momentum_oscillator',
-            'ROC_Rate_of_Change': 'scripts.strategies.roc_rate_of_change',
-            'ATR_Volatility': 'scripts.strategies.atr_volatility',
-            'Keltner_Channels_Breakout': 'scripts.strategies.keltner_channels_breakout',
-            'TEMA_Crossover': 'scripts.strategies.tema_crossover',
-            'RSI_Bullish_Divergence': 'scripts.strategies.rsi_bullish_divergence',
-            'MACD_Zero_Line_Crossover': 'scripts.strategies.macd_zero_line_crossover',
-            'Bollinger_Band_Squeeze': 'scripts.strategies.bollinger_band_squeeze',
-            'Stochastic_K_D_Crossover': 'scripts.strategies.stochastic_k_d_crossover',
-            'CCI_Crossover': 'scripts.strategies.cci_crossover',
-            'Aroon_Oscillator': 'scripts.strategies.aroon_oscillator',
-            'Ultimate_Oscillator_Buy': 'scripts.strategies.ultimate_oscillator_buy',
-            'Money_Flow_Index_Oversold': 'scripts.strategies.money_flow_index_oversold',
-            'Parabolic_SAR_Reversal': 'scripts.strategies.parabolic_sar_reversal',
-            'Chaikin_Oscillator': 'scripts.strategies.chaikin_oscillator',
-            'Accumulation_Distribution_Line': 'scripts.strategies.accumulation_distribution_line',
-            'Triple_Moving_Average': 'scripts.strategies.triple_moving_average',
-            'Vortex_Indicator': 'scripts.strategies.vortex_indicator',
-            
-            # Missing strategies - now implemented
-            'Candlestick_Hammer': 'scripts.strategies.candlestick_hammer',
-            'Candlestick_Bullish_Engulfing': 'scripts.strategies.candlestick_bullish_engulfing',
-            'Candlestick_Doji': 'scripts.strategies.candlestick_doji',
-            'Commodity_Channel_Index': 'scripts.strategies.commodity_channel_index',
-            'DI_Crossover': 'scripts.strategies.di_crossover',
-            'Elder_Ray_Index': 'scripts.strategies.elder_ray_index',
-            'Ichimoku_Cloud_Breakout': 'scripts.strategies.ichimoku_cloud_breakout',
-            'Ichimoku_Kijun_Tenkan_Crossover': 'scripts.strategies.ichimoku_kijun_tenkan_crossover',
-            'Keltner_Channel_Squeeze': 'scripts.strategies.keltner_channel_squeeze',
-            'Linear_Regression_Channel': 'scripts.strategies.linear_regression_channel',
-            'OBV_Bullish_Divergence': 'scripts.strategies.obv_bullish_divergence',
-            'Pivot_Points_Bounce': 'scripts.strategies.pivot_points_bounce',
-            'Price_Volume_Trend': 'scripts.strategies.price_volume_trend',
             'Pocket_Pivot_Entry': 'scripts.strategies.pocket_pivot_entry',
+            'Volume_Breakout': 'scripts.strategies.volume_breakout',
+            'Chart_Patterns': 'scripts.strategies.chart_patterns',
+            'RSI_Overbought_Oversold': 'scripts.strategies.rsi_overbought_oversold'
         }
-        
-        # Track loading progress
-        strategies_to_load = [(name, strategy_mapping[name]) 
-                             for name, enabled in self.strategy_config.items() 
-                             if enabled and name in strategy_mapping]
-        
-        logger.info(f"Will attempt to load {len(strategies_to_load)} strategies")
-        
-        for strategy_name, module_path in strategies_to_load:
-            try:
-                logger.info(f"Loading strategy {strategy_name} from {module_path}...")
-                
-                # Import the strategy module with timeout protection
-                import sys
-                
-                # Skip strategies that might cause hangs during import
-                skip_strategies = []
-                
-                if strategy_name in skip_strategies:
-                    logger.warning(f"Temporarily skipping {strategy_name} to avoid potential hang")
-                    continue
-                
-                # Add timeout protection for problematic strategies
-                import signal
-                import time
-                import threading
-                
-                is_main_thread = threading.current_thread() is threading.main_thread()
-                
-                def strategy_timeout_handler(signum, frame):
-                    raise TimeoutError(f"Strategy {strategy_name} import timed out")
-                
-                # Set timeout for strategy import (10 seconds) - ONLY if in main thread
-                old_handler = None
-                if is_main_thread:
-                    try:
-                        old_handler = signal.signal(signal.SIGALRM, strategy_timeout_handler)
-                        signal.alarm(10)
-                    except ValueError:
-                        is_main_thread = False # Fallback if signal not supported
-                
+        for name, enabled in self.cfg.items():
+            if enabled and name in map:
                 try:
-                    module = importlib.import_module(module_path)
-                    logger.debug(f"Successfully imported module for {strategy_name}")
-                except (TimeoutError, ImportError) as e:
-                    logger.error(f"Known error importing {strategy_name}: {e}")
-                    continue
-                except Exception as e:
-                    logger.error(f"Unexpected error importing {strategy_name}: {e}")
-                    continue
-                finally:
-                    # Clean up alarm
-                    if is_main_thread:
-                        try:
-                            signal.alarm(0)
-                            if old_handler:
-                                signal.signal(signal.SIGALRM, old_handler)
-                        except: pass
-                
-                # Get the strategy class - handle different class naming conventions
-                try:
-                    if strategy_name == 'Volume_Breakout':
-                        strategy_class = getattr(module, 'VolumeBreakoutStrategy')
-                    elif strategy_name == 'Support_Resistance_Breakout':
-                        strategy_class = getattr(module, 'SupportResistanceBreakoutStrategy')
-                    elif strategy_name == 'Fibonacci_Retracement':
-                        strategy_class = getattr(module, 'FibonacciRetracementStrategy')
-                    elif strategy_name == 'Chart_Patterns':
-                        strategy_class = getattr(module, 'ChartPatterns')
-                    elif strategy_name == 'Volume_Profile':
-                        strategy_class = getattr(module, 'VolumeProfile')
-                    elif strategy_name == 'Multi_Timeframe_RSI':
-                        strategy_class = getattr(module, 'MultiTimeframeRSI')
-                    else:
-                        strategy_class = getattr(module, strategy_name)
-                    
-                    logger.debug(f"Found strategy class for {strategy_name}")
-                except AttributeError as ae:
-                    logger.error(f"Strategy class not found for {strategy_name}: {ae}")
-                    continue
-                
-                # Initialize the strategy with parameters from config if available
-                try:
-                    # Map config gates to strategy parameters
-                    params = {}
-                    if strategy_name == 'ADX_Trend_Strength':
-                        trend_params = SWING_TRADING_GATES.get('TREND_GATE', {}).get('params', {})
-                        params['adx_threshold'] = trend_params.get('adx_min', 20)
-                    elif strategy_name == 'Bollinger_Band_Squeeze':
-                        vol_params = SWING_TRADING_GATES.get('VOLATILITY_GATE', {}).get('params', {})
-                        params['squeeze_threshold'] = vol_params.get('min_percentile', 20) / 100.0
-                    
-                    self.strategy_instances[strategy_name] = strategy_class(params)
-                    logger.info(f"Successfully loaded strategy: {strategy_name} with params: {params}")
-                except Exception as init_error:
-                    logger.error(f"Error initializing {strategy_name}: {init_error}")
-                    continue
-                    
-            except Exception as e:
-                logger.error(f"Failed to load strategy {strategy_name}: {e}")
-                import traceback
-                logger.error(f"Full traceback for {strategy_name}: {traceback.format_exc()}")
-        
-        logger.info(f"Strategy loading complete. Loaded {len(self.strategy_instances)} strategies")
-                    
-    def calculate_relative_strength(self, data: pd.DataFrame, index_data: pd.DataFrame) -> Dict[str, Any]:
-        """
-        Calculate Mansfield Relative Strength (RS) against the index.
-        Formula: ((Ratio / SMA(Ratio, 55)) - 1) * 100
-        """
-        try:
-            if data.empty or index_data.empty:
-                return {'rs_score': 0.0, 'is_bullish': False, 'error': 'Missing data'}
-            
-            # Synchronize data frames on dates
-            combined = pd.DataFrame({
-                'stock': data['Close'],
-                'index': index_data['Close']
-            }).dropna()
-            
-            if combined.empty:
-                return {'rs_score': 0.0, 'is_bullish': False, 'error': 'No overlapping data'}
-            
-            # 1. Dorsey RS (Ratio)
-            combined['ratio'] = (combined['stock'] / combined['index']) * 100
-            
-            # 2. Mansfield RS
-            period = RS_CONFIG.get('period', 55)
-            combined['ratio_sma'] = combined['ratio'].rolling(window=period).mean()
-            combined['mansfield_rs'] = ((combined['ratio'] / combined['ratio_sma']) - 1) * 100
-            
-            current_rs = combined['mansfield_rs'].iloc[-1]
-            is_bullish = current_rs > RS_CONFIG.get('threshold', 0.0)
-            
-            return {
-                'rs_score': current_rs,
-                'is_bullish': is_bullish,
-                'period': period
-            }
-        except Exception as e:
-            logger.error(f"RS calculation error: {e}")
-            return {'rs_score': 0.0, 'is_bullish': False, 'error': str(e)}
+                    mod = importlib.import_module(map[name])
+                    cls = getattr(mod, 'ChartPatterns' if name == 'Chart_Patterns' else name)
+                    self.instances[name] = cls({})
+                except Exception as e: logger.error(f"Load error {name}: {e}")
 
-    def evaluate_strategies(self, symbol: str, data: pd.DataFrame, index_data: pd.DataFrame = None) -> Dict[str, Any]:
-        """
-        Evaluate all loaded strategies against the given data.
+    def evaluate_strategies(self, symbol: str, df: pd.DataFrame, index_data: pd.DataFrame = None) -> Dict[str, Any]:
+        if df.empty: return {'symbol': symbol, 'technical_score': 0.0}
         
-        Args:
-            symbol: Stock symbol
-            data: Historical stock data
-            
-        Returns:
-            Dictionary containing evaluation results
-        """
-        if data.empty:
-            logger.warning(f"No data provided for {symbol}")
-            return {
-                'symbol': symbol,
-                'technical_score': 0.0,
-                'positive_signals': 0,
-                'total_strategies': 0,
-                'strategy_results': {},
-                'recommendation': 'HOLD'
-            }
-        
-        strategy_results = {}
-        positive_signals = 0
-        total_strategies = 0
-        
-        for strategy_name, strategy_instance in self.strategy_instances.items():
+        pos, total = 0, 0
+        for name, inst in self.instances.items():
             try:
-                # Run the strategy
-                signal = strategy_instance.run_strategy(data.copy())
-                
-                strategy_results[strategy_name] = {
-                    'signal': signal,
-                    'signal_type': 'BUY' if signal == 1 else 'SELL/HOLD'
-                }
-                
-                total_strategies += 1
-                if signal == 1:
-                    positive_signals += 1
-            except Exception as e:
-                logger.error(f"Error running strategy {strategy_name} for {symbol}: {e}")
-                strategy_results[strategy_name] = {
-                    'signal': -1,
-                    'signal_type': 'ERROR',
-                    'error': str(e)
-                }
-                total_strategies += 1
+                sig = inst.run_strategy(df.copy())
+                if sig == 1: pos += 1
+                total += 1
+            except Exception as e: logger.error(f"Strategy error {name} on {symbol}: {e}")
 
-        # Add Relative Strength if enabled (Global check, outside the loop)
-        if self.strategy_config.get('Relative_Strength_Comparison') and index_data is not None:
+        if self.cfg.get('Relative_Strength_Comparison') and index_data is not None:
             try:
-                rs_results = self.calculate_relative_strength(data, index_data)
-                strategy_results['Relative_Strength_Comparison'] = {
-                    'signal': 1 if rs_results.get('is_bullish') else 0,
-                    'rs_score': rs_results.get('rs_score', 0.0),
-                    'signal_type': 'BUY' if rs_results.get('is_bullish') else 'HOLD'
-                }
-                total_strategies += 1
-                if rs_results.get('is_bullish'):
-                    positive_signals += 1
-            except Exception as rs_e:
-                logger.error(f"Error in Relative Strength analysis for {symbol}: {rs_e}")
+                combined = pd.DataFrame({'s': df['Close'], 'i': index_data['Close']}).dropna()
+                if not combined.empty:
+                    r = (combined['s'] / combined['i']) * 100
+                    r_sma = r.rolling(RS_CONFIG.get('period', 55)).mean()
+                    rs = ((r / r_sma) - 1) * 100
+                    if rs.iloc[-1] > RS_CONFIG.get('threshold', 0): pos += 1
+                    total += 1
+            except: pass
         
-        # Calculate technical score
-        technical_score = positive_signals / total_strategies if total_strategies > 0 else 0.0
-        
-        # Determine recommendation
-        if technical_score >= MIN_RECOMMENDATION_SCORE:
-            recommendation = 'BUY'
-        elif technical_score >= 0.5:
-            recommendation = 'HOLD'
-        else:
-            recommendation = 'SELL'
-        
-        logger.info(f"Technical analysis for {symbol}: {positive_signals}/{total_strategies} positive signals, score: {technical_score:.2f}")
-        
-        return {
-            'symbol': symbol,
-            'technical_score': technical_score,
-            'positive_signals': positive_signals,
-            'total_strategies': total_strategies,
-            'strategy_results': strategy_results,
-            'recommendation': recommendation
-        }
-    
-    def get_strategy_summary(self) -> Dict[str, Any]:
-        """
-        Get a summary of loaded strategies.
-        
-        Returns:
-            Dictionary with strategy summary information
-        """
-        return {
-            'total_configured': len(self.strategy_config),
-            'total_enabled': sum(1 for enabled in self.strategy_config.values() if enabled),
-            'total_loaded': len(self.strategy_instances),
-            'loaded_strategies': list(self.strategy_instances.keys()),
-            'failed_strategies': [
-                name for name, enabled in self.strategy_config.items() 
-                if enabled and name not in self.strategy_instances
-            ]
-        }
-
-
-def evaluate_single_strategy(strategy_name: str, data: pd.DataFrame, params: Dict[str, Any] = None) -> Dict[str, Any]:
-    """
-    Evaluate a single strategy against the given data.
-    
-    Args:
-        strategy_name: Name of the strategy to evaluate
-        data: Historical stock data
-        params: Strategy parameters
-        
-    Returns:
-        Dictionary containing strategy evaluation results
-    """
-    strategy_mapping = {
-        'MA_Crossover_50_200': 'scripts.strategies.ma_crossover_50_200',
-        'RSI_Overbought_Oversold': 'scripts.strategies.rsi_overbought_oversold',
-        'MACD_Signal_Crossover': 'scripts.strategies.macd_signal_crossover',
-        'Bollinger_Band_Breakout': 'scripts.strategies.bollinger_band_breakout',
-    }
-    
-    if strategy_name not in strategy_mapping:
-        return {
-            'strategy_name': strategy_name,
-            'signal': -1,
-            'error': f"Strategy {strategy_name} not found"
-        }
-    
-    try:
-        # Import and initialize the strategy
-        module_path = strategy_mapping[strategy_name]
-        module = importlib.import_module(module_path)
-        strategy_class = getattr(module, strategy_name)
-        strategy_instance = strategy_class(params)
-        
-        # Run the strategy
-        signal = strategy_instance.run_strategy(data)
-        
-        return {
-            'strategy_name': strategy_name,
-            'signal': signal,
-            'signal_type': 'BUY' if signal == 1 else 'SELL/HOLD'
-        }
-        
-    except Exception as e:
-        logger.error(f"Error evaluating strategy {strategy_name}: {e}")
-        return {
-            'strategy_name': strategy_name,
-            'signal': -1,
-            'error': str(e)
-        }
+        score = pos / total if total > 0 else 0.0
+        return {'symbol': symbol, 'technical_score': score, 'pos': pos, 'total': total}

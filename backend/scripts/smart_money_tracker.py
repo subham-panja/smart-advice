@@ -1,6 +1,5 @@
 import urllib.request
 import urllib.parse
-import urllib.error
 import json
 import logging
 from http.cookiejar import CookieJar
@@ -8,68 +7,29 @@ from http.cookiejar import CookieJar
 logger = logging.getLogger(__name__)
 
 class SmartMoneyTracker:
-    """
-    Advanced tracking of Institutional footprints on the NSE:
-    1. FII/DII Net Buying Data
-    2. Stock-specific Delivery Volume %
-    """
+    """Tracks FII/DII data and delivery volumes from NSE."""
+    
     def __init__(self):
-        self.headers = {
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'application/json, text/javascript, */*; q=0.01',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Referer': 'https://www.nseindia.com/'
-        }
-        self.cookie_jar = CookieJar()
-        self.opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(self.cookie_jar))
-        self._init_session()
+        self.hdr = {'User-Agent': 'Mozilla/5.0', 'Referer': 'https://www.nseindia.com/'}
+        self.opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(CookieJar()))
+        try: self.opener.open(urllib.request.Request('https://www.nseindia.com', headers=self.hdr), timeout=5)
+        except: pass
 
-    def _init_session(self):
-        """Ping the main page to get cookies."""
+    def get_fii_dii_status(self) -> dict:
         try:
-            req = urllib.request.Request('https://www.nseindia.com', headers=self.headers)
-            self.opener.open(req, timeout=10)
+            res = self.opener.open(urllib.request.Request('https://www.nseindia.com/api/fiidiiTradeReact', headers=self.hdr), timeout=10)
+            data = json.loads(res.read())
+            fii = next((i for i in data if i['category'] == 'FII/FPI'), {})
+            net = float(fii.get('netValue', '0').replace(',', ''))
+            return {'fii_net': net, 'is_bullish': net > -2000}
         except Exception as e:
-            logger.warning(f"Could not initialize NSE session: {e}")
+            logger.error(f"FII Error: {e}")
+            return {'fii_net': 0, 'is_bullish': True}
 
-    def get_fii_dii_status(self):
-        """Checks if FIIs are net buyers or sellers today."""
+    def get_delivery_volume(self, symbol: str) -> float:
         try:
-            req = urllib.request.Request('https://www.nseindia.com/api/fiidiiTradeReact', headers=self.headers)
-            response = self.opener.open(req, timeout=10).read()
-            data = json.loads(response)
-            
-            fii_data = next((item for item in data if item['category'] == 'FII/FPI'), None)
-            dii_data = next((item for item in data if item['category'] == 'DII'), None)
-            
-            fii_net = float(fii_data.get('netValue', '0').replace(',', '')) if fii_data else 0.0
-            dii_net = float(dii_data.get('netValue', '0').replace(',', '')) if dii_data else 0.0
-            
-            # Determine if the institutional sentiment is extremely bearish (e.g. FII selling > 1500Cr)
-            is_bullish = fii_net > -1500
-            
-            return {
-                'fii_net': fii_net,
-                'dii_net': dii_net,
-                'is_bullish': is_bullish
-            }
-        except Exception as e:
-            logger.error(f"FII/DII Fetch Error: {e}")
-            return {'fii_net': 0, 'dii_net': 0, 'is_bullish': True} # Default to bullish on error to not block pipeline
-
-    def get_delivery_volume(self, symbol):
-        """Gets the delivery percentage for a specific stock."""
-        try:
-            # Clean symbol (e.g., RELIANCE.NS -> RELIANCE)
-            clean_symbol = symbol.replace('.NS', '').replace('.BO', '')
-            clean_symbol = urllib.parse.quote(clean_symbol)
-            
-            req = urllib.request.Request(f'https://www.nseindia.com/api/quote-equity?symbol={clean_symbol}&section=trade_info', headers=self.headers)
-            response = self.opener.open(req, timeout=10).read()
-            data = json.loads(response)
-            
-            delivery_pct = data.get('securityWiseDP', {}).get('deliveryToTradedQuantity', 0)
-            return float(delivery_pct) if delivery_pct else 0.0
-        except Exception as e:
-            logger.warning(f"Delivery Volume Error for {symbol}: {e}")
-            return 0.0
+            s = urllib.parse.quote(symbol.replace('.NS', ''))
+            url = f'https://www.nseindia.com/api/quote-equity?symbol={s}&section=trade_info'
+            data = json.loads(self.opener.open(urllib.request.Request(url, headers=self.hdr), timeout=10).read())
+            return float(data.get('securityWiseDP', {}).get('deliveryToTradedQuantity', 0))
+        except: return 0.0

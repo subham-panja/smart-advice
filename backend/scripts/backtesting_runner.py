@@ -1,626 +1,71 @@
-"""
-Backtesting Runner
-File: scripts/backtesting_runner.py
-
-This module provides a comprehensive backtesting runner that:
-1. Accepts symbol, historical DataFrame, and strategy class list
-2. Instantiates BacktestingEngine and runs each strategy
-3. Calculates metrics: CAGR, win rate, max drawdown
-"""
-
 import pandas as pd
 import numpy as np
-from typing import List, Dict, Any, Type, Optional
+import importlib
+import logging
+from typing import List, Dict, Any, Optional
 from scripts.backtesting import BacktestingEngine
 from scripts.strategies.base_strategy import BacktraderStrategy
-from utils.logger import setup_logging
-import importlib
 
-logger = setup_logging()
+logger = logging.getLogger(__name__)
 
 class BacktestingRunner:
-    """
-    Comprehensive backtesting runner that evaluates multiple strategies
-    and calculates performance metrics.
-    """
+    """Evaluates multiple strategies and calculates CAGR, Win Rate, Expectancy, and Profit Factor."""
     
     def __init__(self, initial_cash: float = 100000.0, commission: float = 0.001):
-        """
-        Initialize the backtesting runner.
-        
-        Args:
-            initial_cash: Starting cash for backtesting
-            commission: Commission per trade
-        """
         self.initial_cash = initial_cash
         self.commission = commission
         
-    def run(self, symbol: str, historical_data: pd.DataFrame, 
-            strategy_classes: Optional[List[str]] = None) -> Dict[str, Any]:
-        """
-        Run backtesting for multiple strategies and calculate performance metrics.
+    def run(self, symbol: str, df: pd.DataFrame, strategy_classes: Optional[List[str]] = None) -> Dict[str, Any]:
+        if len(df) < 60: return {'symbol': symbol, 'status': 'insufficient_data'}
         
-        Args:
-            symbol: Stock symbol
-            historical_data: Historical price data DataFrame
-            strategy_classes: List of strategy class names to test
-            
-        Returns:
-            Dictionary containing backtesting results and metrics
-        """
-        try:
-            # Check if sufficient data is available
-            if len(historical_data) < 60:  # Minimum 60 days for meaningful backtest
-                logger.warning(f"Insufficient data for backtesting {symbol}: {len(historical_data)} days")
-                return {
-                    'symbol': symbol,
-                    'status': 'insufficient_data',
-                    'message': f'Need at least 60 days of data, got {len(historical_data)} days',
-                    'data_length': len(historical_data)
-                }
-            
-            # Default strategy classes if none provided: derive from config
-            if strategy_classes is None:
-                try:
-                    from config import STRATEGY_CONFIG
-                    supported = {
-                        'MA_Crossover_50_200',
-                        'RSI_Overbought_Oversold',
-                        'MACD_Signal_Crossover',
-                        'Bollinger_Band_Breakout',
-                        'EMA_Crossover_12_26',
-                        'Stochastic_Overbought_Oversold',
-                        'ADX_Trend_Strength'
-                    }
-                    strategy_classes = [name for name, enabled in STRATEGY_CONFIG.items() if enabled and name in supported]
-                    if not strategy_classes:
-                        # Fallback to core set
-                        strategy_classes = [
-                            'MA_Crossover_50_200',
-                            'RSI_Overbought_Oversold',
-                            'MACD_Signal_Crossover',
-                            'Bollinger_Band_Breakout'
-                        ]
-                except Exception:
-                    strategy_classes = [
-                        'MA_Crossover_50_200',
-                        'RSI_Overbought_Oversold',
-                        'MACD_Signal_Crossover',
-                        'Bollinger_Band_Breakout'
-                    ]
-            
-            # Filter strategies to only include those with enough data
-            min_data_requirements = {
-                'MA_Crossover_50_200': 200,
-                'RSI_Overbought_Oversold': 30,
-                'MACD_Signal_Crossover': 35,
-                'Bollinger_Band_Breakout': 25,
-                'EMA_Crossover_12_26': 30,
-                'Stochastic_Overbought_Oversold': 20,
-                'ADX_Trend_Strength': 25
-            }
-            
-            valid_strategies = []
-            for strategy in strategy_classes:
-                min_required = min_data_requirements.get(strategy, 30)
-                if len(historical_data) >= min_required:
-                    valid_strategies.append(strategy)
-                else:
-                    logger.info(f"Skipping {strategy} - needs {min_required} days, got {len(historical_data)}")
-            
-            if not valid_strategies:
-                return {
-                    'symbol': symbol,
-                    'status': 'no_valid_strategies',
-                    'message': 'No strategies have sufficient data for backtesting',
-                    'data_length': len(historical_data)
-                }
-            
-            # Prepare data for backtesting
-            backtest_data = self._prepare_backtest_data(historical_data)
-            
-            # Run backtesting for each strategy
-            strategy_results = {}
-            for strategy_name in valid_strategies:
-                try:
-                    result = self._run_strategy_backtest(strategy_name, backtest_data, symbol)
-                    strategy_results[strategy_name] = result
-                    
-                    cagr_val = result.get('cagr', 0)
-                    trades_val = result.get('total_trades', 0)
-                    logger.info(f"BACKTEST_DEBUG | {symbol} | {strategy_name} | CAGR: {cagr_val}% | Trades: {trades_val}")
-                    
-                    logger.info(f"Completed backtest for {strategy_name} on {symbol}")
-                except Exception as e:
-                    logger.error(f"Error backtesting {strategy_name} on {symbol}: {e}")
-                    strategy_results[strategy_name] = {
-                        'error': str(e),
-                        'status': 'failed'
-                    }
-            
-            # Calculate combined metrics
-            combined_metrics = self._calculate_combined_metrics(strategy_results)
-            
-            # Generate summary
-            summary = self._generate_backtest_summary(strategy_results, combined_metrics)
-            
-            # Safely format dates - handle case where index might be strings already
+        if strategy_classes is None:
+            strategy_classes = ['MA_Crossover_50_200', 'RSI_Overbought_Oversold', 'MACD_Signal_Crossover', 'Bollinger_Band_Breakout']
+
+        results = {}
+        for name in strategy_classes:
             try:
-                if hasattr(historical_data.index[0], 'strftime'):
-                    start_date = historical_data.index[0].strftime('%Y-%m-%d')
-                else:
-                    start_date = str(historical_data.index[0])[:10]  # Take first 10 chars for YYYY-MM-DD
-                
-                if hasattr(historical_data.index[-1], 'strftime'):
-                    end_date = historical_data.index[-1].strftime('%Y-%m-%d')
-                else:
-                    end_date = str(historical_data.index[-1])[:10]  # Take first 10 chars for YYYY-MM-DD
-                
-                period_str = f"{start_date} to {end_date}"
+                engine = BacktestingEngine(self.initial_cash, self.commission)
+                bt = engine.run_backtest(self._create_strategy(name), df)
+                results[name] = self._calc_metrics(bt, df)
             except Exception as e:
-                logger.warning(f"Error formatting dates for {symbol}: {e}")
-                period_str = f"Data length: {len(historical_data)} days"
-            
-            return {
-                'symbol': symbol,
-                'status': 'completed',
-                'data_length': len(historical_data),
-                'period': period_str,
-                'strategies_tested': len(valid_strategies),
-                'strategy_results': strategy_results,
-                'combined_metrics': combined_metrics,
-                'summary': summary
-            }
-            
-        except Exception as e:
-            logger.error(f"Error in backtesting runner for {symbol}: {e}")
-            return {
-                'symbol': symbol,
-                'status': 'error',
-                'error': str(e)
-            }
-    
-    def _prepare_backtest_data(self, historical_data: pd.DataFrame) -> pd.DataFrame:
-        """
-        Prepare data for backtesting by ensuring proper format.
-        
-        Args:
-            historical_data: Raw historical data
-            
-        Returns:
-            Prepared DataFrame for backtesting
-        """
-        # Make a copy to avoid modifying original data
-        data = historical_data.copy()
-        
-        # Ensure required columns exist
-        required_columns = ['Open', 'High', 'Low', 'Close', 'Volume']
-        for col in required_columns:
-            if col not in data.columns:
-                if col == 'Volume':
-                    data[col] = 0  # Default volume if missing
-                else:
-                    raise ValueError(f"Missing required column: {col}")
-        
-        # Sort by date
-        data = data.sort_index()
-        
-        # Remove any NaN values
-        data = data.dropna()
-        
-        return data
-    
-    def _run_strategy_backtest(self, strategy_name: str, data: pd.DataFrame, symbol: str) -> Dict[str, Any]:
-        """
-        Run backtest for a single strategy.
-        
-        Args:
-            strategy_name: Name of the strategy
-            data: Historical data
-            symbol: Stock symbol
-            
-        Returns:
-            Dictionary with backtest results
-        """
-        try:
-            # Create strategy class dynamically
-            strategy_class = self._create_backtest_strategy(strategy_name)
-            
-            # Initialize backtesting engine
-            engine = BacktestingEngine(self.initial_cash, self.commission)
-            
-            # Run backtest
-            bt_results = engine.run_backtest(strategy_class, data)
-            
-            # Calculate additional metrics
-            metrics = self._calculate_strategy_metrics(bt_results, data, symbol)
-            
-            return {
-                'strategy_name': strategy_name,
-                'status': 'completed',
-                'initial_cash': bt_results['initial_cash'],
-                'final_value': bt_results['final_portfolio_value'],
-                'profit_loss': bt_results['profit_loss'],
-                'roi': bt_results['roi'],
-                'cagr': metrics['cagr'],
-                'win_rate': metrics['win_rate'],
-                'max_drawdown': metrics['max_drawdown'],
-                'sharpe_ratio': metrics['sharpe_ratio'],
-                'sortino_ratio': metrics.get('sortino_ratio', 0),
-                'calmar_ratio': metrics.get('calmar_ratio', 0),
-                'volatility': metrics.get('volatility', 0),
-                'total_trades': metrics['total_trades'],
-                'winning_trades': metrics.get('winning_trades', 0),
-                'losing_trades': metrics.get('losing_trades', 0),
-                'avg_profit_per_trade': metrics.get('avg_profit_per_trade', 0),
-                'avg_loss_per_trade': metrics.get('avg_loss_per_trade', 0),
-                'avg_trade_duration': metrics.get('avg_trade_duration', 0),
-                'largest_win': metrics.get('largest_win', 0),
-                'largest_loss': metrics.get('largest_loss', 0),
-                'avg_trade_return': metrics['avg_trade_return'],
-                'start_date': metrics.get('start_date'),
-                'end_date': metrics.get('end_date'),
-                'initial_capital': metrics.get('initial_capital'),
-                'final_capital': metrics.get('final_capital'),
-                'expectancy': metrics.get('expectancy', 0.0),
-                'profit_factor': metrics.get('profit_factor', 0.0),
-                'recovery_factor': metrics.get('recovery_factor', 0.0),
-            }
-            
-        except Exception as e:
-            logger.error(f"Error running backtest for {strategy_name}: {e}")
-            return {
-                'strategy_name': strategy_name,
-                'status': 'failed',
-                'error': str(e)
-            }
-    
-    def _create_backtest_strategy(self, strategy_name: str) -> Type[BacktraderStrategy]:
-        """
-        Create a Backtrader-compatible strategy class.
-        
-        Args:
-            strategy_name: Name of the strategy
-            
-        Returns:
-            Strategy class compatible with Backtrader
-        """
-        # Map strategy names to modules
-        strategy_mapping = {
+                logger.error(f"Backtest {name} error: {e}")
+
+        combined = self._combine(results)
+        return {'symbol': symbol, 'status': 'completed', 'strategy_results': results, 'combined_metrics': combined}
+
+    def _create_strategy(self, name: str):
+        mapping = {
             'MA_Crossover_50_200': 'scripts.strategies.ma_crossover_50_200',
             'RSI_Overbought_Oversold': 'scripts.strategies.rsi_overbought_oversold',
             'MACD_Signal_Crossover': 'scripts.strategies.macd_signal_crossover',
-            'Bollinger_Band_Breakout': 'scripts.strategies.bollinger_band_breakout',
-            'EMA_Crossover_12_26': 'scripts.strategies.ema_crossover_12_26',
-            'Stochastic_Overbought_Oversold': 'scripts.strategies.stochastic_overbought_oversold',
-            'ADX_Trend_Strength': 'scripts.strategies.adx_trend_strength'
+            'Bollinger_Band_Breakout': 'scripts.strategies.bollinger_band_breakout'
         }
-        
-        if strategy_name not in strategy_mapping:
-            raise ValueError(f"Unknown strategy: {strategy_name}")
-        
-        # Create a simple backtrader strategy that uses our existing strategy logic
-        class BacktestStrategy(BacktraderStrategy):
-            def __init__(self):
-                super().__init__()
-                self.lookback_period = 250  # Increased lookback for strategies requiring more data
-                
-            def _execute_strategy_logic(self, data: pd.DataFrame) -> int:
-                """Execute the specific strategy logic (required by BaseStrategy abstract method)"""
-                try:
-                    # Import and instantiate the strategy
-                    module_path = strategy_mapping[strategy_name]
-                    module = importlib.import_module(module_path)
-                    strategy_class = getattr(module, strategy_name)
-                    strategy_instance = strategy_class()
-                    
-                    # Run the strategy (use _execute_strategy_logic to avoid double volume filtering)
-                    return strategy_instance._execute_strategy_logic(data)
-                    
-                except Exception as e:
-                    logger.error(f"Error in strategy {strategy_name}: {e}")
-                    return -1
-        
-        return BacktestStrategy
-    
-    def _calculate_strategy_metrics(self, bt_results: Dict[str, Any], 
-                                  data: pd.DataFrame, symbol: str) -> Dict[str, Any]:
-        """
-        Calculate additional performance metrics using real backtest data.
-        """
-        try:
-            # Basic values
-            initial_value = bt_results['initial_cash']
-            final_value = bt_results['final_portfolio_value']
-            days = len(data)
-            years = days / 365.25
-            
-            # Extract real data from analyzers
-            trades = bt_results.get('trade_analysis', {})
-            drawdown = bt_results.get('drawdown_analysis', {})
-            sharpe = bt_results.get('sharpe_analysis', {})
-            
-            # 1. Total return
-            total_return = bt_results['roi']
-            
-            # 2. CAGR
-            if years > 0 and initial_value > 0:
-                cagr = ((final_value / initial_value) ** (1/years) - 1) * 100
-                logger.debug(f"CAGR_CALC | {symbol} | Years: {years:.2f} | Initial: {initial_value:.2f} | Final: {final_value:.2f} | Result: {cagr:.4f}%")
-            else:
-                cagr = 0.0
-                logger.debug(f"CAGR_CALC | {symbol} | Years: {years:.2f} | Initial: {initial_value:.2f} | Final: {final_value:.2f} | Result: 0.0 (Invalid inputs)")
-            
-            # 3. Trade Metrics
-            total_trades = trades.get('total', {}).get('total', 0)
-            won_trades = trades.get('won', {}).get('total', 0)
-            lost_trades = trades.get('lost', {}).get('total', 0)
-            
-            win_rate = (won_trades / total_trades * 100) if total_trades > 0 else 0.0
-            
-            # 4. Profit/Loss Metrics
-            pnl_total = trades.get('pnl', {}).get('net', {}).get('total', 0)
-            
-            # Safely extract won/lost PnL
-            won_data = trades.get('won', {})
-            lost_data = trades.get('lost', {})
-            
-            won_pnl = won_data.get('pnl', {}).get('total', 0.0)
-            lost_pnl = abs(lost_data.get('pnl', {}).get('total', 0.0))
-            
-            # logger.info(f"DEBUG_PNL | {symbol} | {strategy_name} | Won: {won_pnl} | Lost: {lost_pnl}")
-            
-            avg_profit = (won_pnl / won_trades) if won_trades > 0 else 0.0
-            avg_loss = (lost_pnl / lost_trades) if lost_trades > 0 else 0.0
-            
-            # 5. Expectancy (Swing Trading Core Metric)
-            # Expectancy = (Win% * AvgWin) - (Loss% * AvgLoss)
-            win_prob = win_rate / 100
-            loss_prob = (1 - win_prob) if total_trades > 0 else 0
-            expectancy = (win_prob * avg_profit) - (loss_prob * avg_loss)
-            
-            # 6. Profit Factor (Swing Trading Key Metric)
-            # Gross Profit / Gross Loss — tells you how much you earn per Rs lost
-            if lost_pnl > 0:
-                profit_factor = won_pnl / lost_pnl
-            else:
-                profit_factor = float('inf') if won_pnl > 0 else 0.0
-            
-            # 7. Risk Metrics
-            max_drawdown = drawdown.get('max', {}).get('drawdown', 0.0)
-            sharpe_ratio = sharpe.get('sharperatio', 0.0) or 0.0
-            
-            # 8. Recovery Factor (Net Profit / Max Drawdown)
-            recovery_factor = (pnl_total / max_drawdown) if max_drawdown > 0 else 0.0
-            
-            # 9. Duration & Rotation
-            # Backtrader trade analyzer doesn't give duration easily, so we estimate holding days
-            avg_trade_duration = round(days / max(1, total_trades), 1) if total_trades > 0 else 0
-            
-            # Dates
-            try:
-                start_date = data.index[0].strftime('%Y-%m-%d') if hasattr(data.index[0], 'strftime') else str(data.index[0])[:10]
-                end_date = data.index[-1].strftime('%Y-%m-%d') if hasattr(data.index[-1], 'strftime') else str(data.index[-1])[:10]
-            except Exception:
-                start_date = None
-                end_date = None
+        class BTStrategy(BacktraderStrategy):
+            def _execute_strategy_logic(self, data):
+                mod = importlib.import_module(mapping[name])
+                return getattr(mod, name)()._execute_strategy_logic(data)
+        return BTStrategy
 
-            return {
-                'cagr': round(float(cagr), 2),
-                'win_rate': round(float(win_rate), 2),
-                'max_drawdown': round(float(max_drawdown), 2),
-                'sharpe_ratio': round(float(sharpe_ratio), 2),
-                'expectancy': round(float(expectancy), 2),
-                'profit_factor': round(float(min(profit_factor, 999.0)), 2),
-                'recovery_factor': round(float(recovery_factor), 2),
-                'total_trades': int(total_trades),
-                'winning_trades': int(won_trades),
-                'losing_trades': int(lost_trades),
-                'avg_profit_per_trade': round(float(avg_profit), 2),
-                'avg_loss_per_trade': round(float(avg_loss), 2),
-                'avg_trade_return': round(float(pnl_total / max(1, total_trades)), 2),
-                'avg_trade_duration': avg_trade_duration,
-                'largest_win': round(float(trades.get('won', {}).get('pnl', {}).get('max', 0.0)), 2),
-                'largest_loss': round(float(abs(trades.get('lost', {}).get('pnl', {}).get('max', 0.0))), 2),
-                'start_date': start_date,
-                'end_date': end_date,
-                'initial_capital': round(float(initial_value), 2),
-                'final_capital': round(float(final_value), 2),
-                'roi': round(float(total_return), 2)
-            }
-
-            
-        except Exception as e:
-            logger.error(f"Error calculating metrics: {e}")
-            return {
-                'cagr': 0.0,
-                'win_rate': 0.0,
-                'max_drawdown': 0.0,
-                'sharpe_ratio': 0.0,
-                'profit_factor': 0.0,
-                'recovery_factor': 0.0,
-                'total_trades': 0,
-                'avg_trade_return': 0.0
-            }
-    
-    def _calculate_combined_metrics(self, strategy_results: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Calculate combined metrics across all strategies.
+    def _calc_metrics(self, bt: dict, df: pd.DataFrame) -> dict:
+        t = bt.get('trade_analysis', {})
+        won, lost, total = t.get('won', {}).get('total', 0), t.get('lost', {}).get('total', 0), t.get('total', {}).get('total', 0)
+        p_won, p_lost = t.get('won', {}).get('pnl', {}).get('total', 0), abs(t.get('lost', {}).get('pnl', {}).get('total', 0))
         
-        Args:
-            strategy_results: Results from all strategies
-            
-        Returns:
-            Dictionary with combined metrics
-        """
-        try:
-            successful_results = [
-                result for result in strategy_results.values()
-                if result.get('status') == 'completed'
-            ]
-            
-            if not successful_results:
-                return {
-                    'avg_cagr': 0.0,
-                    'avg_win_rate': 0.0,
-                    'avg_max_drawdown': 0.0,
-                    'avg_sharpe_ratio': 0.0,
-                    'best_strategy': None,
-                    'worst_strategy': None
-                }
-            
-            # Calculate averages
-            avg_cagr = sum(r['cagr'] for r in successful_results) / len(successful_results)
-            avg_win_rate = sum(r['win_rate'] for r in successful_results) / len(successful_results)
-            avg_max_drawdown = sum(r['max_drawdown'] for r in successful_results) / len(successful_results)
-            avg_sharpe_ratio = sum(r['sharpe_ratio'] for r in successful_results) / len(successful_results)
-            
-            # Add more aggregated metrics
-            total_trades = sum(r.get('total_trades', 0) for r in successful_results)
-            winning_trades = sum(r.get('winning_trades', 0) for r in successful_results)
-            losing_trades = sum(r.get('losing_trades', 0) for r in successful_results)
-            
-            avg_roi = sum(r.get('roi', 0) for r in successful_results) / len(successful_results)
-            avg_final_value = sum(r.get('final_value', 0) for r in successful_results) / len(successful_results)
-            avg_profit = sum(r.get('avg_profit_per_trade', 0) for r in successful_results) / len(successful_results)
-            avg_loss = sum(r.get('avg_loss_per_trade', 0) for r in successful_results) / len(successful_results)
-            
-            # Find best and worst strategies
-            best_strategy = max(successful_results, key=lambda x: x['cagr'])['strategy_name']
-            worst_strategy = min(successful_results, key=lambda x: x['cagr'])['strategy_name']
-
-            # Aggregate swing metrics
-            avg_expectancy = sum(r.get('expectancy', 0) for r in successful_results) / len(successful_results)
-            avg_trade_duration = sum(r.get('avg_trade_duration', 0) for r in successful_results) / len(successful_results)
-            largest_win = max((r.get('largest_win', 0) for r in successful_results), default=0)
-            largest_loss = max((r.get('largest_loss', 0) for r in successful_results), default=0)
-            
-            # Profit Factor & Recovery Factor aggregation
-            avg_profit_factor = sum(r.get('profit_factor', 0) for r in successful_results) / len(successful_results)
-            avg_recovery_factor = sum(r.get('recovery_factor', 0) for r in successful_results) / len(successful_results)
-            
-            # Find best strategy by EXPECTANCY instead of CAGR
-            best_strategy = max(successful_results, key=lambda x: x.get('expectancy', 0))['strategy_name']
-            worst_strategy = min(successful_results, key=lambda x: x.get('expectancy', 0))['strategy_name']
-
-            return {
-                'avg_cagr': round(avg_cagr, 2),
-                'avg_win_rate': round(avg_win_rate, 2),
-                'avg_max_drawdown': round(avg_max_drawdown, 2),
-                'avg_expectancy': round(avg_expectancy, 2),
-                'avg_profit_factor': round(avg_profit_factor, 2),
-                'avg_recovery_factor': round(avg_recovery_factor, 2),
-                'avg_sharpe_ratio': round(avg_sharpe_ratio, 2),
-                'total_trades': total_trades,
-                'winning_trades': winning_trades,
-                'losing_trades': losing_trades,
-                'avg_roi': round(avg_roi, 2),
-                'avg_final_value': round(avg_final_value, 2),
-                'avg_profit_per_trade': round(avg_profit, 2),
-                'avg_loss_per_trade': round(avg_loss, 2),
-                'avg_trade_duration': round(avg_trade_duration, 1),
-                'largest_win': round(largest_win, 2),
-                'largest_loss': round(largest_loss, 2),
-                'best_strategy': best_strategy,
-                'worst_strategy': worst_strategy,
-                'strategies_tested': len(successful_results)
-            }
-            
-        except Exception as e:
-            logger.error(f"Error calculating combined metrics: {e}")
-            return {
-                'avg_cagr': 0.0,
-                'avg_win_rate': 0.0,
-                'avg_max_drawdown': 0.0,
-                'avg_sharpe_ratio': 0.0,
-                'avg_profit_factor': 0.0,
-                'avg_recovery_factor': 0.0,
-                'best_strategy': None,
-                'worst_strategy': None
-            }
-    
-    def _generate_backtest_summary(self, strategy_results: Dict[str, Any], 
-                                 combined_metrics: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Generate a summary of backtesting results.
+        wr = (won / total * 100) if total > 0 else 0
+        pf = (p_won / p_lost) if p_lost > 0 else (999.0 if p_won > 0 else 0)
+        exp = ((wr/100 * (p_won/won if won > 0 else 0)) - ((1-wr/100) * (p_lost/lost if lost > 0 else 0))) if total > 0 else 0
         
-        Args:
-            strategy_results: Results from all strategies
-            combined_metrics: Combined metrics
-            
-        Returns:
-            Dictionary with summary information
-        """
-        try:
-            total_strategies = len(strategy_results)
-            successful_strategies = sum(1 for r in strategy_results.values() if r.get('status') == 'completed')
-            failed_strategies = total_strategies - successful_strategies
-            
-            # Performance classification
-            # Uses BOTH expectancy AND profit_factor for more robust rating
-            avg_expectancy = combined_metrics.get('avg_expectancy', 0)
-            win_rate = combined_metrics.get('avg_win_rate', 0)
-            avg_pf = combined_metrics.get('avg_profit_factor', 0)
-            
-            if (avg_expectancy > 500 and win_rate > 60) or (avg_pf > 2.0 and win_rate > 55):
-                performance_rating = 'Excellent'
-            elif (avg_expectancy > 200 and win_rate > 50) or (avg_pf > 1.5 and win_rate > 45):
-                performance_rating = 'Good'
-            elif avg_expectancy > 0 or avg_pf > 1.0:
-                performance_rating = 'Average'
-            else:
-                performance_rating = 'Poor'
-            
-            # Risk assessment
-            avg_max_drawdown = combined_metrics.get('avg_max_drawdown', 0)
-            if avg_max_drawdown < 10:
-                risk_rating = 'Low'
-            elif avg_max_drawdown < 20:
-                risk_rating = 'Moderate'
-            else:
-                risk_rating = 'High'
-            
-            # Recommendation uses both expectancy AND profit_factor
-            if (avg_expectancy > 100 and win_rate > 50) or (avg_pf > 1.5 and win_rate > 45):
-                recommendation = 'BUY'
-            elif avg_expectancy >= 0 or avg_pf > 1.0:
-                recommendation = 'HOLD'
-            else:
-                recommendation = 'SELL'
-            
-            return {
-                'total_strategies': total_strategies,
-                'successful_strategies': successful_strategies,
-                'failed_strategies': failed_strategies,
-                'performance_rating': performance_rating,
-                'risk_rating': risk_rating,
-                'recommendation': recommendation
-            }
-            
-        except Exception as e:
-            logger.error(f"Error generating summary: {e}")
-            return {
-                'total_strategies': 0,
-                'successful_strategies': 0,
-                'failed_strategies': 0,
-                'performance_rating': 'Unknown',
-                'risk_rating': 'Unknown',
-                'recommendation': 'HOLD'
-            }
-
-
-def run_backtest(symbol: str, historical_data: pd.DataFrame, 
-                strategy_classes: Optional[List[str]] = None) -> Dict[str, Any]:
-    """
-    Convenience function to run backtesting.
-    
-    Args:
-        symbol: Stock symbol
-        historical_data: Historical price data
-        strategy_classes: List of strategy classes to test
+        years = len(df) / 365.25
+        cagr = ((bt['final_portfolio_value'] / bt['initial_cash']) ** (1/years) - 1) * 100 if years > 0 else 0
         
-    Returns:
-        Backtesting results
-    """
-    runner = BacktestingRunner()
-    return runner.run(symbol, historical_data, strategy_classes)
+        return {'cagr': round(cagr, 2), 'win_rate': round(wr, 2), 'expectancy': round(exp, 2), 'profit_factor': round(min(pf, 999.0), 2), 'total_trades': total}
+
+    def _combine(self, results: dict) -> dict:
+        res = [r for r in results.values()]
+        if not res: return {}
+        return {
+            'avg_cagr': round(sum(r['cagr'] for r in res) / len(res), 2),
+            'avg_win_rate': round(sum(r['win_rate'] for r in res) / len(res), 2),
+            'avg_expectancy': round(sum(r['expectancy'] for r in res) / len(res), 2),
+            'avg_profit_factor': round(sum(r['profit_factor'] for r in res) / len(res), 2)
+        }
