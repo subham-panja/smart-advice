@@ -138,7 +138,7 @@ RECOMMENDATION_THRESHOLDS = {
     'buy_combined': 0.40, # Minimum total score for a BUY
     'technical_minimum': 0.35, # Minimum technical score floor
     'fundamental_minimum': 0.05, # Minimum fundamental health floor
-    'require_all_gates': False, # Allow trade if core trend is strong
+    'require_all_gates': True, # Allow trade if core trend is strong
     'min_risk_reward_ratio': 2, # Minimum RR requirement
 }
 
