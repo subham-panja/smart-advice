@@ -85,14 +85,14 @@ class SwingTradingSignalAnalyzer:
             
             # Calculate SMAs based on config
             sma_period = self.thresholds.get('trend_sma_period', 200)
-            sma_slow = talib.SMA(df['Close'], timeperiod=sma_period)
+            sma_200 = talib.SMA(df['Close'], timeperiod=sma_period)
             sma_mid = talib.SMA(df['Close'], timeperiod=50)
             ema_fast = talib.EMA(df['Close'], timeperiod=20)
             
             # Current values
             current_adx = adx.iloc[-1]
             current_price = df['Close'].iloc[-1]
-            current_sma_slow = sma_slow.iloc[-1]
+            current_sma_200 = sma_200.iloc[-1]
             current_sma_mid = sma_mid.iloc[-1]
             current_ema_fast = ema_fast.iloc[-1]
             
@@ -102,12 +102,12 @@ class SwingTradingSignalAnalyzer:
             )
             
             # Use 'require_price_above_sma' and 'require_sma_stack' from config
-            price_condition = current_price > current_sma_slow if self.thresholds['price_above_sma'] else True
+            price_condition = current_price > current_sma_200 if self.thresholds['price_above_sma'] else True
             
             trend_params = self.trend_gate.get('params', {})
             stack_condition = True
             if trend_params.get('require_sma_stack', False):
-                stack_condition = (current_ema_fast > current_sma_mid > current_sma_slow)
+                stack_condition = (current_ema_fast > current_sma_mid > current_sma_200)
             
             bullish_trend = (
                 price_condition and

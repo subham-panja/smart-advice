@@ -22,6 +22,14 @@ def get_mongodb():
     client = MongoClient(config.MONGODB_HOST, config.MONGODB_PORT)
     return client[config.MONGODB_DATABASE]
 
+def _get_db_internal():
+    """Internal helper to get DB connection regardless of context."""
+    try:
+        return get_db()
+    except (RuntimeError, AttributeError):
+        # Fallback for non-Flask context
+        return get_mongodb()
+
 def close_db(e=None):
     """Close MongoDB database connection."""
     client = g.pop('client', None)
@@ -132,6 +140,72 @@ def update_share_analytics(symbol, buy_price=None, sell_price=None, est_time_to_
             {'symbol': symbol},
             {'$set': update_doc}
         )
+
+def insert_position(symbol, quantity, entry_price, stop_loss, target, recomm_id=None):
+    """Insert a new open position into the portfolio."""
+    db = _get_db_internal()
+    collection = db['positions']
+    
+    document = {
+        'symbol': symbol,
+        'quantity': quantity,
+        'entry_price': entry_price,
+        'entry_date': datetime.now(),
+        'current_stop_loss': stop_loss,
+        'current_target': target,
+        'status': 'OPEN',
+        'recomm_id': recomm_id,
+        'vtt_details': {},
+        'pnl_pct': 0.0,
+        'days_held': 0,
+        'last_updated': datetime.now()
+    }
+    
+    return collection.insert_one(document)
+
+def update_position(symbol, update_data):
+    """Update an existing position."""
+    db = _get_db_internal()
+    collection = db['positions']
+    
+    update_data['last_updated'] = datetime.now()
+    
+    return collection.update_one(
+        {'symbol': symbol, 'status': 'OPEN'},
+        {'$set': update_data}
+    )
+
+def get_open_positions():
+    """Fetch all currently open positions."""
+    db = _get_db_internal()
+    collection = db['positions']
+    return list(collection.find({'status': 'OPEN'}))
+
+def close_position(symbol, exit_price, exit_reason):
+    """Mark a position as closed."""
+    db = _get_db_internal()
+    collection = db['positions']
+    
+    # First get the position to calculate final PnL
+    pos = collection.find_one({'symbol': symbol, 'status': 'OPEN'})
+    if not pos:
+        return None
+        
+    pnl_pct = ((exit_price - pos['entry_price']) / pos['entry_price']) * 100
+    
+    return collection.update_one(
+        {'_id': pos['_id']},
+        {
+            '$set': {
+                'status': 'CLOSED',
+                'exit_price': exit_price,
+                'exit_date': datetime.now(),
+                'exit_reason': exit_reason,
+                'pnl_pct': pnl_pct,
+                'last_updated': datetime.now()
+            }
+        }
+    )
 
 def insert_backtest_result(symbol, period, cagr, win_rate, max_drawdown, **kwargs):
     """Insert a new backtest result with enhanced fields."""
