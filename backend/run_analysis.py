@@ -193,25 +193,21 @@ class AutomatedStockAnalysis:
                 'recommended': False
             }
     
-    def analyze_all_stocks(self, max_stocks: int = None, batch_size: int = None, use_all_symbols: bool = False, single_threaded: bool = False, group_name: str = None):
+    def analyze_all_stocks(self, batch_size: int = None, use_all_symbols: bool = False):
         """
         Analyze all NSE stocks using multithreading and save recommendations.
         
         Args:
-            max_stocks: Maximum number of stocks to analyze (for testing)
             batch_size: Number of stocks to process in each batch (from config if None)
             use_all_symbols: If True, use all NSE symbols instead of filtered ones
-            single_threaded: If True, process stocks one by one without threading (for debugging)
-            group_name: Optional name of symbol group to scan (e.g. 'nifty50')
         """
-        mode_str = "single-threaded" if single_threaded else "multithreading"
-        log_ctx = f"group={group_name}" if group_name else f"use_all_symbols={use_all_symbols}"
+        log_ctx = f"use_all_symbols={use_all_symbols}"
         if self.verbose:
-            logger.info(f"Starting automated stock analysis with {mode_str} (max_stocks={max_stocks}, {log_ctx})")
+            logger.info(f"Starting automated stock analysis with multithreading ({log_ctx})")
         
         # Fetch symbols using the new StockScanner
-        if not hasattr(self, '_cached_symbols') or group_name:
-            self._cached_symbols = StockScanner.get_symbols(max_stocks=max_stocks, use_all_symbols=use_all_symbols, group_name=group_name)
+        if not hasattr(self, '_cached_symbols'):
+            self._cached_symbols = StockScanner.get_symbols(use_all_symbols=use_all_symbols)
         
         filtered_symbols = self._cached_symbols
         if not filtered_symbols:
@@ -229,12 +225,8 @@ class AutomatedStockAnalysis:
         else:
             print(f"\rAnalyzing {total_stocks} {symbol_type} stocks...", flush=True)
         
-        # Branch: Multiprocessing pipeline vs legacy threading
-        use_mp = config.USE_MULTIPROCESSING_PIPELINE and not single_threaded
-        if use_mp:
-            self._run_multiprocessing_pipeline(symbols_list, filtered_symbols, total_stocks)
-        else:
-            self._run_legacy_threaded(symbols_list, total_stocks, batch_size, single_threaded)
+        # Always use multiprocessing pipeline
+        self._run_multiprocessing_pipeline(symbols_list, filtered_symbols, total_stocks)
     
     def _fetch_single_stock_data(self, symbol: str) -> Dict[str, Any]:
         """Fetch historical data for one stock (used by Phase 1 threads)."""
@@ -497,249 +489,11 @@ class AutomatedStockAnalysis:
         except Exception as e:
             logger.error(f"Error getting total recommendations count: {e}")
     
-    def _run_legacy_threaded(self, symbols_list, total_stocks, batch_size, single_threaded):
-        """Original threaded approach (fallback when USE_MULTIPROCESSING_PIPELINE = False)."""
-        logger.info(f"Using LEGACY threaded pipeline")
-        
-        processed_count = 0
-        recommended_count = 0
-        not_recommended_count = 0
-        failed_count = 0
-        
-        if batch_size is None:
-            batch_size = BATCH_SIZE
-        
-        effective_threads = MAX_WORKER_THREADS
-        
-        if self.verbose:
-            logger.info(f"Using {effective_threads} threads for processing {total_stocks} stocks")
-        
-        # Process stocks in batches
-        for i in range(0, total_stocks, batch_size):
-            batch = symbols_list[i:i + batch_size]
-            batch_num = i // batch_size + 1
-            
-            logger.info(f"Processing batch {batch_num}: stocks {i+1}-{min(i+batch_size, total_stocks)}")
-            
-            if single_threaded:
-                # Single-threaded mode for debugging
-                logger.info("Using SINGLE-THREADED mode for debugging")
-                for j, symbol in enumerate(batch):
-                    try:
-                        logger.info(f"Processing {symbol} in single-threaded mode...")
-                        result = self.analyze_single_stock(symbol, total_stocks, i + j + 1)
-                        logger.debug(f"Received result for {symbol}: {result}")
-                        processed_count += 1
-                        
-                        if result['success']:
-                            analysis_result = result['result']
-                            scan_run_id = getattr(self, 'scan_run_id', None)
-                            
-                            # ── Multi-stage saves (same as multiprocessing path) ──
-                            try:
-                                self.persistence.save_analysis_snapshot(analysis_result, scan_run_id=scan_run_id)
-                            except Exception:
-                                pass
-                            
-                            swing_analysis = analysis_result.get('swing_analysis', analysis_result.get('detailed_analysis', {}).get('swing_gates', {}))
-                            if swing_analysis and 'gates_passed' in swing_analysis:
-                                gate_results = {
-                                    'all_gates_passed': swing_analysis.get('all_gates_passed', False),
-                                    'gate_1_trend': swing_analysis.get('detailed_metrics', {}).get('trend', {}),
-                                    'gate_2_mtf': swing_analysis.get('detailed_metrics', {}).get('mtf', {}),
-                                    'gate_3_volatility': swing_analysis.get('detailed_metrics', {}).get('volatility', {}),
-                                    'gate_4_volume': swing_analysis.get('detailed_metrics', {}).get('volume', {}),
-                                }
-                                try:
-                                    self.persistence.save_swing_gate_results(
-                                        symbol=analysis_result.get('symbol', symbol),
-                                        gate_results=gate_results,
-                                        scan_run_id=scan_run_id,
-                                        is_recommended=analysis_result.get('is_recommended', False)
-                                    )
-                                except Exception:
-                                    pass
-                            
-                            trade_plan = analysis_result.get('trade_plan', {})
-                            if analysis_result.get('is_recommended') and trade_plan:
-                                try:
-                                    swing_entry = (swing_analysis or {}).get('entry_patterns', {})
-                                    swing_exit = (swing_analysis or {}).get('exit_rules', {})
-                                    self.persistence.save_trade_signal(
-                                        symbol=analysis_result.get('symbol', symbol),
-                                        signal_data={
-                                            'entry_price': trade_plan.get('buy_price'),
-                                            'entry_pattern': swing_entry.get('strongest_pattern', 'strategy_signal'),
-                                            'patterns': swing_entry.get('patterns', {}),
-                                            'stop_loss': trade_plan.get('stop_loss') or swing_exit.get('stop_loss'),
-                                            'take_profit_1': swing_exit.get('take_profit_1', trade_plan.get('sell_price')),
-                                            'take_profit_2': swing_exit.get('take_profit_2'),
-                                            'atr': swing_exit.get('atr'),
-                                            'risk_reward_1': swing_exit.get('risk_reward_1', trade_plan.get('risk_reward_ratio')),
-                                        },
-                                        scan_run_id=scan_run_id
-                                    )
-                                except Exception:
-                                    pass
-                            
-                            # Save backtest results regardless of recommendation
-                            self.save_backtest_results(result['result'])
-                            
-                            # Save recommendation only if it's a BUY/STRONG_BUY
-                            if self.save_recommendation(result['result']):
-                                if result['recommended']:
-                                    recommended_count += 1
-                                else:
-                                    not_recommended_count += 1
-                            else:
-                                failed_count += 1
-                        else:
-                            failed_count += 1
-                            
-                    except Exception as e:
-                        logger.exception(f"Error in single-threaded processing for {symbol}: {e}")
-                        failed_count += 1
-                        processed_count += 1
-            else:
-                # Multi-threaded mode with timeout handling
-                with ThreadPoolExecutor(max_workers=effective_threads) as executor:
-                    # Submit all tasks for this batch
-                    future_to_symbol = {
-                        executor.submit(self.analyze_single_stock, symbol, total_stocks, i + j + 1): symbol
-                        for j, symbol in enumerate(batch)
-                    }
-                    
-                    # Process completed tasks with reduced timeout for faster processing
-                    for future in as_completed(future_to_symbol, timeout=120):  # 2 minute timeout per stock
-                        symbol = future_to_symbol[future]
-                        try:
-                            result = future.result(timeout=30)  # 30 second timeout to get result
-                            logger.debug(f"Received result for {symbol}: {result}")
-                            processed_count += 1
-                            
-                            if result['success']:
-                                analysis_result = result['result']
-                                scan_run_id = getattr(self, 'scan_run_id', None)
-                                
-                                # ── Multi-stage saves (same as multiprocessing path) ──
-                                try:
-                                    self.persistence.save_analysis_snapshot(analysis_result, scan_run_id=scan_run_id)
-                                except Exception:
-                                    pass
-                                
-                                swing_analysis = analysis_result.get('swing_analysis', analysis_result.get('detailed_analysis', {}).get('swing_gates', {}))
-                                if swing_analysis and 'gates_passed' in swing_analysis:
-                                    gate_results = {
-                                        'all_gates_passed': swing_analysis.get('all_gates_passed', False),
-                                        'gate_1_trend': swing_analysis.get('detailed_metrics', {}).get('trend', {}),
-                                        'gate_2_mtf': swing_analysis.get('detailed_metrics', {}).get('mtf', {}),
-                                        'gate_3_volatility': swing_analysis.get('detailed_metrics', {}).get('volatility', {}),
-                                        'gate_4_volume': swing_analysis.get('detailed_metrics', {}).get('volume', {}),
-                                    }
-                                    try:
-                                        self.persistence.save_swing_gate_results(
-                                            symbol=analysis_result.get('symbol', symbol),
-                                            gate_results=gate_results,
-                                            scan_run_id=scan_run_id,
-                                            is_recommended=analysis_result.get('is_recommended', False)
-                                        )
-                                    except Exception:
-                                        pass
-                                
-                                trade_plan = analysis_result.get('trade_plan', {})
-                                if analysis_result.get('is_recommended') and trade_plan:
-                                    try:
-                                        swing_entry = (swing_analysis or {}).get('entry_patterns', {})
-                                        swing_exit = (swing_analysis or {}).get('exit_rules', {})
-                                        self.persistence.save_trade_signal(
-                                            symbol=analysis_result.get('symbol', symbol),
-                                            signal_data={
-                                                'entry_price': trade_plan.get('buy_price'),
-                                                'entry_pattern': swing_entry.get('strongest_pattern', 'strategy_signal'),
-                                                'patterns': swing_entry.get('patterns', {}),
-                                                'stop_loss': trade_plan.get('stop_loss') or swing_exit.get('stop_loss'),
-                                                'take_profit_1': swing_exit.get('take_profit_1', trade_plan.get('sell_price')),
-                                                'take_profit_2': swing_exit.get('take_profit_2'),
-                                                'atr': swing_exit.get('atr'),
-                                                'risk_reward_1': swing_exit.get('risk_reward_1', trade_plan.get('risk_reward_ratio')),
-                                            },
-                                            scan_run_id=scan_run_id
-                                        )
-                                    except Exception:
-                                        pass
-                                
-                                # Save backtest results regardless of recommendation
-                                self.save_backtest_results(result['result'])
-                                
-                                # Save recommendation only if it's a BUY/STRONG_BUY
-                                if self.save_recommendation(result['result']):
-                                    if result['recommended']:
-                                        recommended_count += 1
-                                    else:
-                                        not_recommended_count += 1
-                                else:
-                                    failed_count += 1
-                            else:
-                                failed_count += 1
-                                
-                        except TimeoutError:
-                            logger.error(f"Timeout processing {symbol} - skipping")
-                            failed_count += 1
-                            processed_count += 1
-                        except Exception as e:
-                            logger.exception(f"Error in ThreadPoolExecutor for {symbol}: {e}")
-                            failed_count += 1
-                            processed_count += 1
-            
-            # Log progress and trigger optimized garbage collection after each batch
-            elapsed_time = (datetime.now() - self.start_time).total_seconds()
-            avg_time_per_stock = elapsed_time / processed_count if processed_count > 0 else 0
-            estimated_remaining = (total_stocks - processed_count) * avg_time_per_stock
-
-            # Optimized garbage collection - only when needed
-            if batch_num % 2 == 0:  # Every 2 batches instead of every batch
-                gc.collect()
-
-            if self.verbose:
-                logger.info(f"Progress: {processed_count}/{total_stocks} stocks processed, "
-                           f"{recommended_count} recommendations, {not_recommended_count} not recommended, {failed_count} failed, "
-                           f"~{estimated_remaining/60:.1f} minutes remaining")
-            elif self.progress_callback:
-                # Call progress callback for non-verbose mode
-                current_stock_symbol = batch[-1] if batch else ''
-                self.progress_callback(processed_count, total_stocks, recommended_count, current_stock_symbol)
-            else:
-                # Fallback progress display if no callback is set
-                progress_percent = (processed_count / total_stocks) * 100
-                current_stock_symbol = batch[-1] if batch else ''
-                print(f"\rProgress: {progress_percent:.1f}% ({processed_count}/{total_stocks}) | {current_stock_symbol} | {recommended_count} recs", end='', flush=True)
-        
-        # Final summary
-        total_time = (datetime.now() - self.start_time).total_seconds()
-        
-        logger.info(f"Analysis complete!")
-        logger.info(f"Total stocks processed: {processed_count}")
-        logger.info(f"Recommendations generated: {recommended_count}")
-        logger.info(f"Stocks not recommended: {not_recommended_count}")
-        logger.info(f"Analysis failures: {failed_count}")
-        logger.info(f"Total time: {total_time/60:.1f} minutes")
-        logger.info(f"Average time per stock: {total_time/processed_count:.1f} seconds")
-        
-        # Log current recommendations count
-        try:
-            from database import get_mongodb
-            db = get_mongodb()
-            total_recommendations = db.recommended_shares.count_documents({})
-            logger.info(f"Total recommendations in MongoDB: {total_recommendations}")
-        except Exception as e:
-            logger.error(f"Error getting total recommendations count: {e}")
-    
-    def run_analysis(self, max_stocks: int = None, use_all_symbols: bool = False):
+    def run_analysis(self, use_all_symbols: bool = False):
         """
         Run the complete analysis process.
         
         Args:
-            max_stocks: Maximum number of stocks to analyze (for testing)
             use_all_symbols: If True, use all NSE symbols instead of filtered ones
         """
         with self.app.app_context():
@@ -780,10 +534,7 @@ class AutomatedStockAnalysis:
                 logger.info("Starting stock analysis...")
                 
                 self.analyze_all_stocks(
-                    max_stocks=max_stocks, 
-                    use_all_symbols=use_all_symbols, 
-                    single_threaded=getattr(self, 'single_threaded', False),
-                    group_name=getattr(self, 'group_name', None)
+                    use_all_symbols=use_all_symbols
                 )
                 logger.info("Stock analysis completed")
                 
@@ -800,13 +551,7 @@ def main():
     import logging
     
     parser = argparse.ArgumentParser(description='Automated NSE Stock Analysis')
-    parser.add_argument('--max-stocks', type=int, help='Maximum number of stocks to analyze (for testing)')
-    parser.add_argument('--purge-days', type=int, help='Number of days to keep old data (overrides config). Use 0 to remove ALL data.')
     parser.add_argument('--verbose', action='store_true', help='Enable verbose logging with detailed output')
-    parser.add_argument('--single-threaded', action='store_true', help='Use single-threaded mode for debugging (slower but more stable)')
-    parser.add_argument('--disable-volume-filter', action='store_true', help='Disable volume-based filtering for analysis')
-    parser.add_argument('--fresh-data', action='store_true', help='Force fresh data fetch (no cache for today)')
-    parser.add_argument('--group', type=str, help='Analyze aspecific group of stocks from symbol_groups.json (e.g. nifty50)')
     
     args = parser.parse_args()
     
@@ -815,43 +560,15 @@ def main():
     global logger
     logger = setup_logging(verbose=args.verbose)
     
-    # Set test mode parameters
-    max_stocks = args.max_stocks
     if args.verbose:
-        logger.info(f"Analysis starting (max_stocks={max_stocks})")
+        logger.info("Analysis starting...")
     
     try:
         # Create analyzer with correct verbose setting from the start
         analyzer = AutomatedStockAnalysis(verbose=args.verbose)
         
-        # Set flags
-        analyzer.single_threaded = args.single_threaded
-        analyzer.group_name = args.group
-        if args.single_threaded and args.verbose:
-            logger.info("Single-threaded mode enabled for debugging")
-        
-        # Override config if CLI argument provided
-        if args.purge_days is not None:
-            analyzer.app.config['DATA_PURGE_DAYS'] = args.purge_days
-            if args.verbose:
-                logger.info(f"Data purge days set to {args.purge_days} (from CLI argument)")
-        
-        # Override config if disable-volume-filter provided
-        if args.disable_volume_filter:
-            analyzer.app.config['ENABLE_VOLUME_FILTER'] = False
-            config.ENABLE_VOLUME_FILTER = False
-            if args.verbose:
-                logger.info("Volume filter disabled via CLI argument")
-        
-        # Set fresh data flag
-        if args.fresh_data:
-            analyzer.app.config['FRESH_DATA'] = True
-            if args.verbose:
-                logger.info("Fresh data mode enabled - bypassing cache")
-        
         if args.verbose:
-            # Verbose mode - logging already configured in constructor
-            analyzer.run_analysis(max_stocks=max_stocks)
+            analyzer.run_analysis()
             logger.info("Script completed successfully")
         else:
             # Non-verbose mode - logging already configured in constructor
@@ -873,7 +590,7 @@ def main():
             
             # Show initial message
             print(f"Initializing analysis...")
-            analyzer.run_analysis(max_stocks=max_stocks)
+            analyzer.run_analysis()
             print("\n")
             
             # Show final summary in non-verbose mode
