@@ -1,40 +1,64 @@
-import requests
 import logging
-from typing import Dict, Any
+from typing import Any, Dict
+
+import requests
+
+from config import OPTIONS_OI_CONFIG
 
 logger = logging.getLogger(__name__)
 
+
 class OptionsAnalyzer:
     """Analyzes NSE Option Chain for institutional support and short squeeze signals."""
+
     def __init__(self):
-        self.headers = {'User-Agent': 'Mozilla/5.0', 'Referer': 'https://www.nseindia.com/option-chain'}
+        self.cfg = OPTIONS_OI_CONFIG
+        self.headers = {"User-Agent": "Mozilla/5.0", "Referer": "https://www.nseindia.com/option-chain"}
         self.session = requests.Session()
-        try: self.session.get("https://www.nseindia.com", headers=self.headers, timeout=5)
-        except: pass
+        try:
+            self.session.get("https://www.nseindia.com", headers=self.headers, timeout=5)
+        except Exception:
+            pass
 
     def get_oi_analysis(self, symbol: str) -> Dict[str, Any]:
         try:
-            is_idx = symbol in ['NIFTY', 'BANKNIFTY']
+            if not self.cfg.get("enabled", True):
+                return {"passed": False}
+            is_idx = symbol in ["NIFTY", "BANKNIFTY"]
             url = f"https://www.nseindia.com/api/option-chain-{'indices' if is_idx else 'equities'}?symbol={symbol}"
             res = self.session.get(url, headers=self.headers, timeout=10)
-            if res.status_code != 200: return {'passed': False}
+            if res.status_code != 200:
+                return {"passed": False}
 
             data = res.json()
-            ce_oi, pe_oi = data['filtered']['CE']['totOI'], data['filtered']['PE']['totOI']
+            if "filtered" not in data:
+                return {"passed": False, "reason": "Not in F&O"}
+
+            ce_oi = data["filtered"].get("CE", {}).get("totOI", 0)
+            pe_oi = data["filtered"].get("PE", {}).get("totOI", 0)
             pcr = pe_oi / ce_oi if ce_oi > 0 else 0
-            
-            # Check for CE unwinding near ATM
-            underlying = data['records']['underlyingValue']
-            filtered = data['filtered']['data']
-            atm_idx = min(range(len(filtered)), key=lambda i: abs(filtered[i]['strikePrice'] - underlying))
-            unwinding = any(filtered[i].get('CE', {}).get('changeinOpenInterest', 0) < 0 for i in range(atm_idx, min(atm_idx+3, len(filtered))))
 
+            underlying = data.get("records", {}).get("underlyingValue", 0)
+            f_data = data["filtered"].get("data", [])
+            if not f_data or underlying == 0:
+                return {"passed": True, "pcr": round(pcr, 2), "sentiment": "Neutral"}
+
+            atm_idx = min(range(len(f_data)), key=lambda i: abs(f_data[i]["strikePrice"] - underlying))
+            unwinding = any(
+                f_data[i].get("CE", {}).get("changeinOpenInterest", 0) < 0
+                for i in range(atm_idx, min(atm_idx + 3, len(f_data)))
+            )
+
+            bull_t = self.cfg.get("pcr_bullish_threshold", 1.2)
             return {
-                'passed': True, 'pcr': round(pcr, 2), 'unwinding': unwinding,
-                'sentiment': 'Bullish' if pcr > 1.2 or unwinding else 'Neutral'
+                "passed": True,
+                "pcr": round(pcr, 2),
+                "unwinding": unwinding,
+                "sentiment": "Bullish" if pcr > bull_t or unwinding else "Neutral",
             }
-        except Exception as e:
-            logger.error(f"OI Error {symbol}: {e}")
-            return {'passed': False}
+        except Exception:
+            return {"passed": False}
 
-def analyze_oi(symbol: str) -> Dict[str, Any]: return OptionsAnalyzer().get_oi_analysis(symbol)
+
+def analyze_oi(symbol: str) -> Dict[str, Any]:
+    return OptionsAnalyzer().get_oi_analysis(symbol)
