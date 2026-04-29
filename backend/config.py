@@ -66,6 +66,29 @@ NUM_WORKER_PROCESSES = 8 # Number of CPU cores to use
 USE_CHARTINK = True # Use Chartink for rapid stock screening
 USE_SCREENER = False # Fallback screener integration
 
+# Chartink Momentum-Breakout Query
+CHARTINK_CONFIG = {
+    'scan_clause': "( {cash} ( latest close > latest sma( close,50 ) and latest close > latest sma( close,200 ) and latest volume > latest sma( volume,20 ) * 2 and latest close > 1 day ago max( 20, high ) and latest rsi( 14 ) > 50 and latest close > latest open and latest close >= latest high * 0.98 and latest close > 20 and latest close < 50000 and latest volume > 100000 and market cap > 500 ) )",
+    'cache_ttl_minutes': 30,
+}
+
+# Relative Strength (RS) Parameters
+RS_CONFIG = {
+    'benchmark_index': '^NSEI', # Nifty 50
+    'period': 55, # Standard RS55 timeframe
+    'threshold': 0.0, # Positive value means outperforming
+}
+
+# NSE Options OI Filter Settings
+OPTIONS_OI_CONFIG = {
+    'enabled': True,
+    'weight': 0.15, # Score bonus for positive OI signature
+    'min_unwinding_pct': 5.0, # Min drop in Call OI for short squeeze
+    'pcr_bullish_threshold': 1.2, # Bullish Put-Call Ratio
+    'pcr_bearish_threshold': 0.7, # Bearish Put-Call Ratio
+    'expiry_type': 'CURRENT', # CURRENT, NEXT, or MONTHLY
+}
+
 MONGODB_COLLECTIONS = {
     'recommended_shares': 'recommended_shares',
     'backtest_results': 'backtest_results',
@@ -108,6 +131,7 @@ STRATEGY_CONFIG = {
     'On_Balance_Volume': True, # Volume-based confirmation
     'Bollinger_Band_Squeeze': True, # Volatility contraction pattern
     'Relative_Strength_Comparison': True, # Outperformance vs Nifty 50
+    'Pocket_Pivot_Entry': True, # Early entry volume signature
 }
 
 RECOMMENDATION_THRESHOLDS = {
@@ -115,28 +139,16 @@ RECOMMENDATION_THRESHOLDS = {
     'technical_minimum': 0.35, # Minimum technical score floor
     'fundamental_minimum': 0.05, # Minimum fundamental health floor
     'require_all_gates': False, # Allow trade if core trend is strong
-    'min_risk_reward_ratio': 1.8, # Minimum RR requirement
+    'min_risk_reward_ratio': 2, # Minimum RR requirement
 }
 
-# Chartink Momentum-Breakout Query
-CHARTINK_CONFIG = {
-    'scan_clause': "( {cash} ( latest close > latest sma( close,50 ) and latest close > latest sma( close,200 ) and latest volume > latest sma( volume,20 ) * 2 and latest close > 1 day ago max( 20, high ) and latest rsi( 14 ) > 50 and latest close > latest open and latest close >= latest high * 0.98 and latest close > 20 and latest close < 50000 and latest volume > 100000 and market cap > 500 ) )",
-    'cache_ttl_minutes': 30,
-}
-
-# Relative Strength (RS) Parameters
-RS_CONFIG = {
-    'benchmark_index': '^NSEI', # Nifty 50
-    'period': 55, # Standard RS55 timeframe
-    'threshold': 0.0, # Positive value means outperforming
-}
 
 # Legacy Filtering (Fallback) - Synchronized with Chartink Scan Clause
 STOCK_FILTERING = {
     'min_volume': 100000,
     'min_price': 20.0,
-    'max_price': 50000.0,
-    'min_market_cap': 500.0, # Cr
+    'max_price': 3000.0,
+    'min_market_cap': 5000.0, # Cr
     'require_above_sma50': True,
     'require_above_sma200': True,
     'require_volume_spike': 1.2, # Relaxed from 2.0 to allow healthy moves
@@ -176,10 +188,12 @@ SWING_TRADING_GATES = {
         }
     },
     'MTF_GATE': {
-        'enabled': False,
+        'enabled': True,
         'params': {
-            'weekly_trend_check': False,
-            'rsi_alignment_min': 40
+            'weekly_trend_check': True,
+            'weekly_sma_fast': 10,
+            'weekly_sma_slow': 30,
+            'rsi_alignment_min': 50
         }
     }
 }
@@ -228,7 +242,7 @@ SWING_PATTERNS = {
         'target_1_atr': 2.0, # First profit target distance
         'target_2_atr': 3.0, # Second profit target
         'trail_stop_atr': 3.0, # Trailing stop distance
-        'time_stop_bars': 30, # Max hold time without target hit
+        'time_stop_bars': 15, # Max hold time without target hit
         'breakeven_at_target_1': True, # Move SL to entry after T1
     }
 }
@@ -242,5 +256,11 @@ RISK_MANAGEMENT = {
     'portfolio_constraints': {
         'max_concurrent_positions': 5, # Max 5 active trades
         'daily_loss_limit': 0.03, # 3% portfolio loss limit per day
+    },
+    'pyramiding': {
+        'enabled': True,
+        'max_adds': 2,
+        'trigger_step_atr': 1.5, # Add more every 1.5 ATR move
+        'add_size_pct': 0.5, # Add 50% of original size
     }
 }

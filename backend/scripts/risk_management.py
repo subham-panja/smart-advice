@@ -46,6 +46,10 @@ class RiskManager:
         self.min_risk_reward = rr_config.get('min_ratio', 1.5)
         self.optimal_risk_reward = rr_config.get('optimal_ratio', 2.5)
         
+        # Pyramiding settings
+        self.pyramid_config = RISK_MANAGEMENT.get('pyramiding', {})
+        self.pyramid_enabled = self.pyramid_config.get('enabled', False)
+        
         self.open_positions = {}  # Track open positions for portfolio risk
         
         # Initialize advanced position sizer with volatility awareness
@@ -732,6 +736,32 @@ class RiskManager:
             market_condition=market_condition
         )
     
+    def calculate_pyramid_adjustment(self, current_price: float, entry_price: float, 
+                                   original_size: int, atr: float) -> Dict[str, Any]:
+        """
+        Calculate if and how much to add to an existing winning position.
+        """
+        if not self.pyramid_enabled:
+            return {'should_add': False, 'reason': 'Pyramiding disabled'}
+
+        # Calculate move in ATR terms
+        atr_move = (current_price - entry_price) / atr if atr > 0 else 0
+        trigger_step = self.pyramid_config.get('trigger_step_atr', 1.5)
+        
+        # Simple logic: Add if we've moved at least one step in the right direction
+        if atr_move >= trigger_step:
+            add_pct = self.pyramid_config.get('add_size_pct', 0.5)
+            new_size = int(original_size * add_pct)
+            
+            return {
+                'should_add': True,
+                'add_quantity': new_size,
+                'atr_move': atr_move,
+                'reason': f"Price moved {atr_move:.1f} ATR from entry"
+            }
+        
+        return {'should_add': False, 'reason': f"Move {atr_move:.1f} ATR < {trigger_step} ATR threshold"}
+
     def get_optimal_position_size(self, entry_price: float, stop_loss: float,
                                 data: pd.DataFrame, **kwargs) -> Dict[str, Any]:
         """

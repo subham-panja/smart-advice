@@ -107,6 +107,7 @@ class StrategyEvaluator:
             'OBV_Bullish_Divergence': 'scripts.strategies.obv_bullish_divergence',
             'Pivot_Points_Bounce': 'scripts.strategies.pivot_points_bounce',
             'Price_Volume_Trend': 'scripts.strategies.price_volume_trend',
+            'Pocket_Pivot_Entry': 'scripts.strategies.pocket_pivot_entry',
         }
         
         # Track loading progress

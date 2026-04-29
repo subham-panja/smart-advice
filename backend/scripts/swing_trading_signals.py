@@ -50,7 +50,8 @@ class SwingTradingSignalAnalyzer:
             'atr_percentile_max': vol_params.get('max_percentile', 80),
             'volume_zscore_min': volum_params.get('zscore_threshold', 0.2),
             'obv_trend_periods': volum_params.get('obv_trend_lookback', 10),
-            'macd_zero_buffer': trend_params.get('macd_zero_buffer', 0.1)
+            'macd_zero_buffer': trend_params.get('macd_zero_buffer', 0.1),
+            'weekly_rsi_min': self.mtf_gate.get('params', {}).get('rsi_alignment_min', 50)
         }
         
         # Risk management parameters - Loaded from SWING_PATTERNS and RISK_MANAGEMENT
@@ -178,7 +179,7 @@ class SwingTradingSignalAnalyzer:
             weekly_trend_up = (
                 weekly_sma_fast.iloc[-1] > weekly_sma_slow.iloc[-1] and
                 weekly_df['Close'].iloc[-1] > weekly_sma_fast.iloc[-1] and
-                weekly_rsi.iloc[-1] > 50
+                weekly_rsi.iloc[-1] >= self.thresholds.get('weekly_rsi_min', 50)
             )
             
             daily_trend_up = (
@@ -456,6 +457,26 @@ class SwingTradingSignalAnalyzer:
                         'detected': vcp_detected,
                         'strength': 0.95 if vcp_detected else 0,
                         'description': 'Volatility Contraction Pattern (VCP) Breakout'
+                    }
+
+            # 7. Pocket Pivot Entry
+            p_config = config_patterns.get('Pocket_Pivot_Entry', {'enabled': True, 'lookback': 10})
+            if p_config['enabled']:
+                lookback = p_config.get('lookback', 10)
+                if len(df) > lookback + 1:
+                    close = df['Close'].values
+                    volume = df['Volume'].values
+                    max_down_vol = 0
+                    for i in range(-lookback - 1, -1):
+                        if close[i] < close[i-1]:
+                            max_down_vol = max(max_down_vol, volume[i])
+                    
+                    pp_detected = volume[-1] > max_down_vol and close[-1] > ta.SMA(close, 50)[-1]
+                    
+                    patterns['pocket_pivot'] = {
+                        'detected': pp_detected,
+                        'strength': 0.9 if pp_detected else 0,
+                        'description': 'Pocket Pivot Volume Signature'
                     }
 
             # 6. Volume-supported breakout

@@ -36,6 +36,7 @@ from scripts.predictor import PricePredictor
 from scripts.rl_trading_agent import RLTradingAgent
 from scripts.trade_logic import TradeLogic
 from scripts.backtest_utils import BacktestUtils
+from scripts.options_analyzer import analyze_oi
 
 logger = setup_logging()
 
@@ -127,6 +128,23 @@ class StockAnalyzer:
             except Exception as e:
                 logger.warning(f"Failed to fetch delivery volume for {symbol}: {e}")
                 result['delivery_volume_pct'] = 0.0
+
+            # 1.6 NSE Options OI Analysis
+            try:
+                from config import OPTIONS_OI_CONFIG
+                if OPTIONS_OI_CONFIG.get('enabled', True):
+                    oi_analysis = analyze_oi(symbol)
+                    result['options_oi'] = oi_analysis
+                    if oi_analysis.get('passed', False):
+                        oi_bonus = OPTIONS_OI_CONFIG.get('weight', 0.15)
+                        if oi_analysis.get('sentiment') == 'Bullish' or oi_analysis.get('unwinding_detected'):
+                            result['technical_score'] += oi_bonus
+                            result['reason'].append(f"Bullish Options Signature (OI Unwinding/PCR: {oi_analysis.get('pcr')})")
+                        elif oi_analysis.get('sentiment') == 'Bearish':
+                            result['technical_score'] -= oi_bonus
+                            result['reason'].append(f"Caution: Bearish Options Sentiment (PCR: {oi_analysis.get('pcr')})")
+            except Exception as e:
+                logger.warning(f"Options OI analysis failed for {symbol}: {e}")
 
             result['detailed_analysis']['technical'] = tech_analysis
             result['detailed_analysis']['swing_gates'] = swing_gate_res
@@ -260,6 +278,23 @@ class StockAnalyzer:
                 result['technical_score'] = -1.0
                 tech_analysis = {'error': str(e)}
             result['detailed_analysis']['technical'] = tech_analysis
+            
+            # 1.6 NSE Options OI Analysis
+            try:
+                from config import OPTIONS_OI_CONFIG
+                if OPTIONS_OI_CONFIG.get('enabled', True):
+                    oi_analysis = analyze_oi(symbol)
+                    result['options_oi'] = oi_analysis
+                    if oi_analysis.get('passed', False):
+                        oi_bonus = OPTIONS_OI_CONFIG.get('weight', 0.15)
+                        if oi_analysis.get('sentiment') == 'Bullish' or oi_analysis.get('unwinding_detected'):
+                            result['technical_score'] += oi_bonus
+                            result['reason'].append(f"Bullish Options Signature (OI Unwinding/PCR: {oi_analysis.get('pcr')})")
+                        elif oi_analysis.get('sentiment') == 'Bearish':
+                            result['technical_score'] -= oi_bonus
+                            result['reason'].append(f"Caution: Bearish Options Sentiment (PCR: {oi_analysis.get('pcr')})")
+            except Exception as e:
+                logger.warning(f"Options OI analysis failed for {symbol}: {e}")
             
             # 2. Fundamental & Sentiment (Optional)
             skip_fundamental = (app_config.get('SKIP_FUNDAMENTAL') or 
