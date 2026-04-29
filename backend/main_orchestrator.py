@@ -1,12 +1,12 @@
 import logging
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timezone
 
-from config import ANALYSIS_CONFIG, TRADING_OPTIONS
-from database import get_open_positions
-from scripts.analyzer import StockAnalyzer
+from config import TRADING_OPTIONS
+from database import get_mongodb, get_open_positions
+from run_analysis import AutomatedStockAnalysis
 
+# Dynamic Engine Loading
 IS_PAPER = TRADING_OPTIONS.get("is_paper_trading", True)
-
 if IS_PAPER:
     from scripts.execution_engine_paper import ExecutionEngine
     from scripts.portfolio_monitor_paper import PortfolioMonitor
@@ -18,62 +18,63 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger("Orchestrator")
 
 
-def analyze_and_execute(symbol, analyzer, engine, open_positions):
-    if symbol in open_positions:
-        return f"Skipped {symbol}: Held"
+def run_trading_cycle():
+    logger.info("=== STARTING UNIFIED TRADING CYCLE ===")
 
-    res = analyzer.analyze_stock(symbol, {"ANALYSIS_CONFIG": ANALYSIS_CONFIG, "FRESH_DATA": True})
-    if res.get("is_recommended"):
-        logger.info(f"🔥 RECOMMENDATION: {symbol}")
-        from utils.persistence_handler import PersistenceHandler
+    # Phase 1: Monitor Existing Portfolio
+    if PortfolioMonitor:
+        logger.info("Phase 1: Monitoring existing positions...")
+        PortfolioMonitor().monitor_all_positions()
 
-        recomm_id = PersistenceHandler().save_recommendation(res)
+    # Phase 2: Run Full Market Analysis (Unified with run_analysis.py)
+    logger.info("Phase 2: Running full market analysis...")
+    analysis_engine = AutomatedStockAnalysis(verbose=False)
+    analysis_engine.run()
+
+    # Phase 3: Execute New Recommendations from DB
+    logger.info("Phase 3: Executing new recommendations...")
+    db = get_mongodb()
+    today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+
+    # Get all recommendations generated today
+    recs = list(db.recommended_shares.find({"recommendation_date": {"$gte": today_start}}))
+
+    if not recs:
+        logger.info("No new recommendations found for today.")
+        return
+
+    engine = ExecutionEngine() if ExecutionEngine else None
+    open_pos_symbols = {p["symbol"] for p in get_open_positions()}
+
+    for r in recs:
+        symbol = r["symbol"]
+
+        if symbol in open_pos_symbols:
+            logger.info(f"⏭️ Skipping {symbol}: Already in portfolio.")
+            continue
 
         if TRADING_OPTIONS.get("auto_execute", False) or IS_PAPER:
             if engine is None:
-                logger.error("CRITICAL: Live Execution Engine requested but not implemented!")
-                return "Failed: No Engine"
+                logger.error(f"❌ Cannot execute {symbol}: Live engine not implemented.")
+                continue
 
-            tp = res.get("trade_plan", {})
-            rm = res.get("risk_management", {})
-            quantity = rm.get("position_size", 1)
+            # In unified mode, the DB already has the correct sizing/targets
+            quantity = r.get("backtest_metrics", {}).get("suggested_quantity", 1)
+            # If quantity isn't in DB yet, fallback to a safe 1 or re-calculate
+            if quantity <= 0:
+                quantity = 1
 
+            logger.info(f"🚀 Executing BUY for {symbol} | Qty: {quantity}")
             engine.execute_buy(
                 symbol,
                 quantity=quantity,
-                price=tp.get("buy_price", res.get("buy_price")),
-                stop_loss=tp.get("stop_loss", rm.get("stop_loss")),
-                target=tp.get("sell_price", tp.get("target", rm.get("targets", {}).get("T1"))),
-                recomm_id=recomm_id,
+                price=r["buy_price"],
+                stop_loss=r["stop_loss"],
+                target=r["sell_price"],
+                recomm_id=r["_id"],
             )
-            return f"Executed {symbol}"
-    return f"Done {symbol}"
 
-
-def run_trading_cycle():
-    logger.info("=== STARTING TRADING CYCLE ===")
-
-    if not IS_PAPER:
-        logger.warning("⚠️ LIVE TRADING MODE DETECTED.")
-        if PortfolioMonitor:
-            PortfolioMonitor().monitor_all_positions()
-    else:
-        PortfolioMonitor().monitor_all_positions()
-
-    analyzer = StockAnalyzer()
-    engine = ExecutionEngine() if ExecutionEngine else None
-
-    from utils.stock_scanner import StockScanner
-
-    symbols = list(StockScanner.get_symbols().keys())
-    open_pos = {p["symbol"] for p in get_open_positions()}
-
-    with ThreadPoolExecutor(max_workers=10) as executor:
-        futures = [executor.submit(analyze_and_execute, s, analyzer, engine, open_pos) for s in symbols]
-        for f in as_completed(futures):
-            logger.debug(f.result())
-
-    logger.info("=== CYCLE COMPLETE ===")
+    logger.info("=== UNIFIED CYCLE COMPLETE ===")
 
 
 if __name__ == "__main__":

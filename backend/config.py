@@ -258,9 +258,9 @@ RISK_MANAGEMENT = {
 # TRADING & EXECUTION OPTIONS
 TRADING_OPTIONS = {
     "is_paper_trading": True,
-    "initial_capital": 100000.0,
-    "brokerage_charges": 0.0005,  # 0.05% per side
+    "initial_capital": 1000000.0,
+    "brokerage_charges": 0.0020,  # 0.20% per side
     "allow_multiple_positions_same_stock": False,
     "time_stop_days": 15,  # Exit if sideways for 15 days
-    "auto_execute": False,  # Whether to auto-place orders or wait for user
+    "auto_execute": True,  # Whether to auto-place orders or wait for user
 }

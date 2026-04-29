@@ -91,12 +91,37 @@ def view_recs(m, today=False):
         return
 
     for r in recs:
+        bt = r.get("backtest_metrics", {})
+        score = r.get("combined_score", 0)
+
+        # Calculate sizing for the message
+        initial_cap = config.TRADING_OPTIONS.get("initial_capital", 1000000.0)
+        quantity = bt.get("suggested_quantity", 0)
+        if quantity == 0:  # fallback calculation
+            risk_per_trade = initial_cap * config.RISK_MANAGEMENT.get("position_sizing", {}).get("risk_per_trade", 0.01)
+            risk_per_share = r["buy_price"] - r["stop_loss"]
+            quantity = int(risk_per_trade / risk_per_share) if risk_per_share > 0 else 0
+
+        total_cost = quantity * r["buy_price"]
+        cap_pct = (total_cost / initial_cap) * 100
+
         msg = (
-            f"📈 <b>{r['symbol']}</b>\n"
-            f"💰 Entry: ₹{r['buy_price']:.2f} | Target: ₹{r['sell_price']:.2f}\n"
-            f"🛑 SL: ₹{r['stop_loss']:.2f} | Score: {r['combined_score']:.2f}\n"
-            f"📝 {r['reason']}"
+            f"📈 <b>{r['symbol']}</b> | Score: <b>{score:.1f}/100</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"💰 <b>Trade Plan</b>:\n"
+            f"• Entry: ₹{r['buy_price']:.2f}\n"
+            f"• Target: ₹{r['sell_price']:.2f}\n"
+            f"• Stop Loss: ₹{r['stop_loss']:.2f}\n\n"
+            f"🔢 <b>Sizing (₹{initial_cap/100000:.1f}L Cap)</b>:\n"
+            f"• Quantity: <b>{quantity}</b>\n"
+            f"• Allocation: <b>₹{total_cost:,.2f} ({cap_pct:.1f}%)</b>\n\n"
+            f"📊 <b>Backtest Stats</b>:\n"
+            f"• Win Rate: {bt.get('avg_win_rate', 0):.1f}%\n"
+            f"• Avg CAGR: {bt.get('avg_cagr', 0):.1f}%\n"
+            f"• Expectancy: {bt.get('expectancy', 0):.2f}\n\n"
+            f"📝 <b>Analysis</b>: {r['reason']}"
         )
+
         bot.send_message(m.chat.id, msg, parse_mode="HTML")
 
 
