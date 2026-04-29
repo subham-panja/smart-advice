@@ -59,8 +59,7 @@ def run_trading_cycle():
                 continue
 
             # In unified mode, the DB already has the correct sizing/targets
-            quantity = r.get("backtest_metrics", {}).get("suggested_quantity", 1)
-            # If quantity isn't in DB yet, fallback to a safe 1 or re-calculate
+            quantity = r.get("suggested_quantity", 1)
             if quantity <= 0:
                 quantity = 1
 

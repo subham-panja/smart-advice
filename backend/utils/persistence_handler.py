@@ -38,6 +38,9 @@ class PersistenceHandler:
                 "sell_price": res.get("trade_plan", {}).get("sell_price", res.get("sell_price")),
                 "stop_loss": res.get("trade_plan", {}).get("stop_loss", 0),
                 "backtest_metrics": res.get("backtest", {}).get("combined_metrics", {}),
+                "suggested_quantity": res.get("risk_management", {}).get("position_size", 1),
+                "allocation_pct": res.get("risk_management", {}).get("allocation_pct", 0),
+                "rr_ratio": res.get("risk_management", {}).get("rr_ratio", 0),
                 "recommendation_date": datetime.now(timezone.utc),
             }
             res_db = db.recommended_shares.update_one({"symbol": res["symbol"]}, {"$set": doc}, upsert=True)
