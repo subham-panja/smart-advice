@@ -72,7 +72,7 @@ class StockAnalyzer:
 
             # Technical & Swing
             tech = self.strategy_evaluator.evaluate_strategies(symbol, hist, index_data=index_data)
-            res["technical_score"] = (tech["technical_score"] * 1.5) - 0.5
+            res["technical_score"] = tech["technical_score"]
             swing = self.swing_analyzer.analyze_swing_opportunity(symbol, hist)
             res["swing_analysis"] = swing
 
@@ -100,8 +100,9 @@ class StockAnalyzer:
                 res["fundamental_score"] = self.fundamental_analyzer.perform_fundamental_analysis(symbol)
 
             if ANALYSIS_CONFIG.get("market_regime_detection", True):
+                from config import EPISODIC_PIVOT_MODE
                 mrd = MarketRegimeDetection().get_simple_regime_check()
-                if not mrd["passed"]:
+                if not mrd["passed"] and not EPISODIC_PIVOT_MODE:
                     res["technical_score"] = min(res["technical_score"], -0.5)
 
             # Combine & Trade Plan

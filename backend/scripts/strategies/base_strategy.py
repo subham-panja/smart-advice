@@ -12,11 +12,11 @@ logger = logging.getLogger(__name__)
 
 class BaseStrategy(ABC):
     def __init__(self, params: Optional[Dict[str, Any]] = None):
-        self.params = params or {}
+        self.strat_params = params or {}
         self.name = self.__class__.__name__
 
     def get_parameter(self, key: str, default: Any) -> Any:
-        return self.params.get(key, default)
+        return self.strat_params.get(key, default)
 
     @abstractmethod
     def _execute_strategy_logic(self, data: pd.DataFrame) -> int:
@@ -26,9 +26,10 @@ class BaseStrategy(ABC):
         try:
             self.current_symbol = symbol
             raw_signal = self._execute_strategy_logic(data)
-            return self.apply_volume_filtering(raw_signal, data)["signal"]
+            res = self.apply_volume_filtering(raw_signal, data)
+            return res.get("signal", 0)
         except Exception as e:
-            logger.error(f"Strategy Error {self.name}: {e}")
+            logger.error(f"Strategy Error {self.name} on {symbol}: {e}")
             return -1
 
     def validate_data(self, data: pd.DataFrame, min_periods: int = 1) -> bool:
@@ -48,7 +49,9 @@ class BaseStrategy(ABC):
             if signal == 0:
                 return {"signal": 0, "reason": "No signal"}
 
-            from config import STOCK_FILTERING
+            from config import STOCK_FILTERING, EPISODIC_PIVOT_MODE
+            if EPISODIC_PIVOT_MODE:
+                return {"signal": signal, "reason": "EP Mode: Allowing dry volume entry"}
 
             min_v = STOCK_FILTERING.get("require_volume_spike", 1.5)
             stype = "bullish" if signal == 1 else "bearish"
@@ -70,8 +73,11 @@ class BacktraderStrategy(BaseStrategy, bt.Strategy, metaclass=BacktraderStrategy
     params = (("symbol", "UNKNOWN"),)
 
     def __init__(self, *args, **kwargs):
+        # Pass kwargs as strategy params to BaseStrategy
         BaseStrategy.__init__(self, params=kwargs)
+        # Initialize Backtrader Strategy
         bt.Strategy.__init__(self, *args, **kwargs)
+        # Access symbol from Backtrader params object
         self.symbol = self.params.symbol
         self.data_close = self.datas[0].close
 

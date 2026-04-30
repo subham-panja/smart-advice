@@ -64,5 +64,37 @@ class StrategyEvaluator:
             except:
                 pass
 
-        score = pos / total if total > 0 else 0.0
+        score = 0.0
+        if total > 0:
+            from config import EPISODIC_PIVOT_MODE
+            if EPISODIC_PIVOT_MODE:
+                # EP DETECTION BYPASS: If recent 3x spike + holding 10EMA, award high score
+                try:
+                    # Catalyst Check (last 5 days)
+                    v_rolling = df['Volume'].rolling(window=50).mean()
+                    recent_spike = any(df['Volume'].tail(6).iloc[:-1] > v_rolling.tail(6).iloc[:-1] * 3.0)
+                    
+                    # Pullback Check (Today)
+                    ema10 = df['Close'].ewm(span=10).mean().iloc[-1]
+                    is_resting = df['Low'].iloc[-1] <= ema10 * 1.03 and df['Close'].iloc[-1] > ema10 * 0.98
+                    
+                    if recent_spike and is_resting:
+                        # Perfect Delayed EP Setup
+                        return {"symbol": symbol, "technical_score": 0.50, "pos": pos, "total": total, "ep_pattern": True}
+                except: pass
+                
+                # Weighted fallback logic
+                weights = {"Volume_Breakout": 3.0, "Pocket_Pivot_Entry": 3.0, "Bollinger_Band_Squeeze": 2.0, "MACD_Signal_Crossover": 1.0, "ADX_Trend_Strength": 1.0, "On_Balance_Volume": 2.0, "Relative_Strength_Comparison": 1.5}
+                weighted_pos, weighted_total = 0.0, 0.0
+                for name, inst in self.instances.items():
+                    w = weights.get(name, 1.0)
+                    try:
+                        sig = inst.run_strategy(df.copy(), symbol=symbol)
+                        if sig == 1: weighted_pos += w
+                        weighted_total += w
+                    except: pass
+                score = weighted_pos / weighted_total if weighted_total > 0 else 0.0
+            else:
+                score = pos / total
+                
         return {"symbol": symbol, "technical_score": score, "pos": pos, "total": total}

@@ -14,6 +14,7 @@ os.environ["NUMEXPR_NUM_THREADS"] = LIBRARY_MAX_THREADS
 SECRET_KEY = "your_super_secret_key_here"
 PERSIST_LOGGING = False
 VERBOSE_LOGGING = True
+EPISODIC_PIVOT_MODE = True
 
 # Database configuration
 MONGODB_HOST = os.getenv("MONGODB_HOST", "127.0.0.1")
@@ -55,17 +56,17 @@ MAX_RETRIES = 1  # Max retries for failed requests
 TIMEOUT_SECONDS = 10  # Request timeout
 RATE_LIMIT_DELAY = 2.0  # Delay when rate limited
 BACKOFF_MULTIPLIER = 1.5  # Backoff multiplier for retries
-USE_MULTIPROCESSING_PIPELINE = False  # Use multiple CPUs for analysis
-NUM_WORKER_PROCESSES = 8  # Number of CPU cores to use
+USE_MULTIPROCESSING_PIPELINE = True  # Re-enabled for high-volume EP scans
+NUM_WORKER_PROCESSES = 8  # Using 8 cores for parallel analysis
 
 # External Integrations
 USE_CHARTINK = True  # Use Chartink for rapid stock screening
 USE_SCREENER = False  # Fallback screener integration
 
-# Chartink Momentum-Breakout Query (Synchronized with STOCK_FILTERING)
+# Chartink Delayed Episodic Pivot (EP) Scanner - Tightened
 CHARTINK_CONFIG = {
-    "scan_clause": "( {cash} ( latest close > latest sma( close,50 ) and latest close > latest sma( close,200 ) and latest volume > latest sma( volume,20 ) * 2 and latest rsi( 14 ) > 60 and latest close > latest open and latest close >= latest high * 0.98 and latest close > 20 and latest close < 3000 and latest volume > 100000 and market cap > 5000 ) )",
-    "cache_ttl_minutes": 30,
+    "scan_clause": "( {cash} ( [0] 1 day ago volume > [0] 1 day ago sma(volume,50) * 3 or [0] 2 day ago volume > [0] 2 day ago sma(volume,50) * 3 or [0] 3 day ago volume > [0] 3 day ago sma(volume,50) * 3 or [0] 4 day ago volume > [0] 4 day ago sma(volume,50) * 3 or [0] 5 day ago volume > [0] 5 day ago sma(volume,50) * 3 ) and [0] volume < [0] sma(volume,20) and [0] close > [0] sma(close,10) and [0] market cap > 2000 and [0] rsi(14) > 50 )",
+    "cache_ttl_minutes": 60,
 }
 
 # Relative Strength (RS) Parameters
@@ -135,12 +136,13 @@ STRATEGY_CONFIG = {
     "Bollinger_Band_Squeeze": {"enabled": True, "period": 20, "std": 2, "volatility_limit": 2.5},
     "Relative_Strength_Comparison": {"enabled": True, "period": 55, "threshold": 0.0},
     "Pocket_Pivot_Entry": {"enabled": True, "max_down_days": 10},
+    "Volume_Breakout": {"enabled": True, "period": 20, "threshold": 2.5},
 }
 
 RECOMMENDATION_THRESHOLDS = {
-    "buy_combined": 0.40,  # Minimum total score for a BUY
-    "technical_minimum": 0.38,  # Minimum technical score floor
-    "fundamental_minimum": 0.02,  # Minimum fundamental health floor
+    "buy_combined": 0.30,  # Lowered for EP Turnarounds
+    "technical_minimum": 0.28,  # Floor lowered for EPs
+    "fundamental_minimum": -0.50,  # Floor lowered to allow EP Turnarounds
     "require_all_gates": True,  # Allow trade if core trend is strong
     "min_risk_reward_ratio": 2,  # Minimum RR requirement
 }
@@ -169,8 +171,8 @@ SWING_TRADING_GATES = {
             "adx_min": 15,
             "adx_max": 50,
             "macd_zero_buffer": 0.1,
-            "sma_period": 200,
-            "require_price_above_sma": True,
+            "sma_period": 50, # Pivot out of neglect zone
+            "require_price_above_sma": False, # Allow Turnaround EPs
             "require_sma_stack": False,
             "adx_slope_check": True,
         },
@@ -194,7 +196,7 @@ SWING_TRADING_GATES = {
     "MTF_GATE": {
         "enabled": True,
         "params": {
-            "weekly_trend_check": True,
+            "weekly_trend_check": False, # EPs often start with bad weekly charts
             "weekly_sma_fast": 10,
             "weekly_sma_slow": 30,
             "rsi_alignment_min": 60,  # Increased from 50 for momentum velocity
@@ -208,8 +210,8 @@ SWING_PATTERNS = {
         {
             "name": "pullback_to_ema",
             "enabled": True,
-            "ema_period": 20,
-            "rsi_range": [40, 60],
+            "ema_period": 10, # Catch explosive momentum on 10-EMA
+            "rsi_range": [40, 70],
             "bullish_candle_required": True,
         },
         {

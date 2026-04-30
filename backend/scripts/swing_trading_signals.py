@@ -43,8 +43,24 @@ class SwingTradingSignalAnalyzer:
             trend_ok = adx > adx_prev
 
         # Volume Gate
+        from config import EPISODIC_PIVOT_MODE
         v_mean = df["Volume"].tail(20).mean()
-        vol_ok = df["Volume"].iloc[-1] > v_mean * (1 + self.vol_cfg.get("zscore_threshold", 0.2))
+        v_latest = df["Volume"].iloc[-1]
+        
+        # EP MODE: Check for massive spike in last 5 days
+        has_recent_spike = False
+        if EPISODIC_PIVOT_MODE:
+            # Look for 3x volume spike in any of the last 5 days (excluding today)
+            recent_v = df["Volume"].tail(6).iloc[:-1]
+            # Use a longer SMA for the baseline to detect true 'Episodes'
+            baseline_v = df["Volume"].rolling(window=50).mean().tail(6).iloc[:-1]
+            has_recent_spike = any(recent_v > baseline_v * 3.0)
+            
+        # Standard logic OR (EP Mode + Recent Spike + Today's Dry-up)
+        vol_ok = (v_latest > v_mean * (1 + self.vol_cfg.get("zscore_threshold", 0.2)))
+        if EPISODIC_PIVOT_MODE and has_recent_spike:
+            # Patel/Bonde Rule: Buy the dry-up after the spike
+            vol_ok = True 
 
         # Volatility Gate
         atr = ta.ATR(df["High"], df["Low"], df["Close"], 14)
