@@ -1,4 +1,5 @@
 import logging
+
 # scripts/alternative_data_analyzer.py
 import random
 from typing import Any, Dict

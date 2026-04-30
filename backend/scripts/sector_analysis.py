@@ -1,4 +1,5 @@
 import logging
+
 """
 Sector Analysis Module
 File: scripts/sector_analysis.py

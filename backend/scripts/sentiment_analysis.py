@@ -1,4 +1,5 @@
 import logging
+
 """
 Sentiment Analysis Module
 File: scripts/sentiment_analysis.py

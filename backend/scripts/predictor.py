@@ -1,6 +1,6 @@
 import logging
-# scripts/predictor.py
 
+# scripts/predictor.py
 import torch
 import torch.nn as nn
 from sklearn.preprocessing import MinMaxScaler

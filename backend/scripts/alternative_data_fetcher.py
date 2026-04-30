@@ -1,4 +1,5 @@
 import logging
+
 """
 Alternative Data Fetcher
 ========================
