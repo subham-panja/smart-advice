@@ -47,9 +47,17 @@ class RiskManager:
         size = min(size_based_on_risk, size_based_on_capital)
 
         # 4. Targets (Config Driven)
-        t1_m = self.exit_cfg.get("target_1_atr")
-        t2_m = self.exit_cfg.get("target_2_atr")
-        targets = {"T1": entry + (atr * t1_m), "T2": entry + (atr * t2_m)}
+        target_list = self.exit_cfg.get("targets", [])
+        targets = {}
+        if len(target_list) >= 1:
+            targets["T1"] = entry + (atr * target_list[0].get("atr_multiplier", 2.0))
+        else:
+            targets["T1"] = entry + (atr * 2.0)
+
+        if len(target_list) >= 2:
+            targets["T2"] = entry + (atr * target_list[1].get("atr_multiplier", 4.0))
+        else:
+            targets["T2"] = entry + (atr * 4.0)
 
         # Validate Risk Reward
         reward = targets["T1"] - entry
