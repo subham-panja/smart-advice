@@ -10,11 +10,12 @@ Responsible for:
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
-from config import SWING_PATTERNS, TRADING_OPTIONS
+from config import TRADING_OPTIONS
 from database import get_open_positions, update_position
 from scripts.data_fetcher import get_historical_data
+from utils.strategy_loader import StrategyLoader
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +23,6 @@ logger = logging.getLogger(__name__)
 class PortfolioMonitor:
     def __init__(self):
         self.time_stop_days = TRADING_OPTIONS.get("time_stop_days", 15)
-        self.exit_rules = SWING_PATTERNS.get("exit_rules", {})
 
     def monitor_all_positions(self):
         """Monitor all open positions for exits or SL updates."""
@@ -37,6 +37,10 @@ class PortfolioMonitor:
 
     def _process_single_position(self, pos):
         symbol = pos["symbol"]
+        strat_name = pos.get("strategy_name", "Delayed_EP")
+        strategy = StrategyLoader.get_strategy_by_name(strat_name)
+        exit_rules = strategy.get("exit_rules", {}) if strategy else {}
+
         try:
             # 1. Fetch latest data (Live Price Sync)
             data = get_historical_data(symbol, period="1mo", fresh=True)
@@ -64,7 +68,7 @@ class PortfolioMonitor:
                 return
 
             # 6. Structured Target Monitoring (Scaling Out & Target Hits)
-            targets = self.exit_rules.get("targets", [])
+            targets = exit_rules.get("targets", [])
             # Fetch ATR for Target calculations
             import talib as ta
 
@@ -96,7 +100,7 @@ class PortfolioMonitor:
                                 "is_scaled_out": True,
                             }
                             # Auto-Breakeven if enabled and this is Target 1
-                            if current_target_idx == 0 and self.exit_rules.get("breakeven_at_target_1", True):
+                            if current_target_idx == 0 and exit_rules.get("breakeven_at_target_1", True):
                                 update_data["current_stop_loss"] = entry_price
                                 logger.info(f"🛡️ SL moved to Breakeven (₹{entry_price:.2f})")
 
@@ -107,8 +111,22 @@ class PortfolioMonitor:
                         engine.execute_sell(symbol, current_price, f"FINAL_{target_obj['name']}")
                         return
 
-            # 7. Time Stop (Sideways)
-            days_held = (datetime.now() - entry_date).days
+            # 7. VTT-Style Trailing SL Update
+            from scripts.risk_management import RiskManager
+
+            rm = RiskManager()
+            sl_info = rm.calculate_stop_loss(
+                data, current_price, method="atr", atr_multiplier=exit_rules.get("trail_stop_atr", 3.0)
+            )
+
+            new_sl = sl_info["stop_loss"]
+            if new_sl > current_sl:
+                logger.info(f"📉 VTT UPDATE: Trailing {symbol} SL from {current_sl:.2f} to {new_sl:.2f}")
+                update_position(symbol, {"current_stop_loss": new_sl})
+                current_sl = new_sl  # Update local variable for next check
+
+            # 8. Time Stop (Sideways)
+            days_held = (datetime.now(timezone.utc).replace(tzinfo=None) - entry_date).days
             if days_held >= self.time_stop_days:
                 pnl_pct = ((current_price - entry_price) / entry_price) * 100
                 if pnl_pct < 2.0:

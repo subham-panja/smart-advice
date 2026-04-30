@@ -5,14 +5,27 @@ import config
 from config import TRADING_OPTIONS
 from database import get_mongodb, get_open_positions
 from run_analysis import AutomatedStockAnalysis
-from scripts.execution_engine_paper import ExecutionEngine
-from scripts.portfolio_monitor_paper import PortfolioMonitor
 from utils.logger import setup_logging
+from utils.persistence_handler import PersistenceHandler
+from utils.strategy_loader import StrategyLoader
+
+# Dynamic Engine Selection based on Config
+IS_PAPER = TRADING_OPTIONS.get("is_paper_trading", True)
+
+if IS_PAPER:
+    from scripts.execution_engine_paper import ExecutionEngine
+    from scripts.portfolio_monitor_paper import PortfolioMonitor
+else:
+    # Fallback for production when implemented
+    try:
+        from scripts.execution_engine import ExecutionEngine
+        from scripts.portfolio_monitor import PortfolioMonitor
+    except ImportError:
+        ExecutionEngine = None
+        PortfolioMonitor = None
 
 setup_logging(verbose=True)
 logger = logging.getLogger("Orchestrator")
-
-IS_PAPER = TRADING_OPTIONS.get("is_paper_trading", True)
 
 
 def run_trading_cycle():
@@ -21,105 +34,100 @@ def run_trading_cycle():
     print("=" * 50 + "\n")
     logger.warning("=== STARTING UNIFIED TRADING CYCLE ===")
 
+    # Pre-Cycle Cleanup
+    PersistenceHandler().clear_old_data(7)
+
     # Phase 1: Monitor Existing Portfolio
     if PortfolioMonitor:
         print("📍 Phase 1: Monitoring existing positions...")
         logger.info("Phase 1: Monitoring existing positions...")
         PortfolioMonitor().monitor_all_positions()
 
-    # Phase 2: Run Full Market Analysis (Unified with run_analysis.py)
-    print("🔍 Phase 2: Running full market analysis (CACHED)...")
-    logger.info("Phase 2: Running full market analysis (CACHED)...")
-    analysis_engine = AutomatedStockAnalysis(verbose=config.VERBOSE_LOGGING, fresh=False)
-    analysis_engine.run()
+    # Load All Strategies
+    strategies = StrategyLoader.load_all_strategies()
+    if not strategies:
+        logger.error("No enabled strategies found. Skipping analysis/execution phases.")
+        return
 
-    # Phase 3: Execute New Recommendations from DB
-    print("💰 Phase 3: Executing new recommendations...")
-    logger.info("Phase 3: Executing new recommendations...")
-    db = get_mongodb()
-    today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-
-    # Portfolio Constraints Check
+    # Global Portfolio Constraints
     constraints = config.RISK_MANAGEMENT.get("portfolio_constraints", {})
-    max_pos = constraints.get("max_concurrent_positions", 5)
-    loss_limit_pct = constraints.get("daily_loss_limit", 0.03)
+    max_pos = constraints.get("max_concurrent_positions", 10)
 
-    open_positions = get_open_positions()
-    open_pos_symbols = {p["symbol"] for p in open_positions}
+    for strategy in strategies:
+        strat_name = strategy.get("name", "Unknown")
+        print(f"\n📊 Processing Strategy: {strat_name}")
 
-    # 1. Max Positions Check
-    if len(open_positions) >= max_pos:
-        logger.warning(f"⚠️ Portfolio Full: {len(open_positions)}/{max_pos} positions open. Skipping new entries.")
-        return
+        # Phase 2: Run Analysis for this strategy
+        analyzer = AutomatedStockAnalysis(verbose=True)
+        analyzer.run(strategy_config=strategy)
 
-    # 2. Daily Loss Limit Check (Simplified)
-    # In a mature system, this would sum realized and unrealized PnL for today
-    initial_cap = TRADING_OPTIONS.get("initial_capital", 1000000.0)
-    # For now, let's just check unrealized loss of open positions
-    total_unrealized_pnl = 0
-    for p in open_positions:
-        curr = p.get("current_price", p["entry_price"])
-        total_unrealized_pnl += (curr - p["entry_price"]) * p["quantity"]
+        # Phase 3: Execute Recommendations for this strategy
+        if ExecutionEngine:
+            print(f"💰 Phase 3: Executing recommendations for {strat_name}...")
+            logger.info(f"Phase 3: Executing recommendations for {strat_name}...")
 
-    if total_unrealized_pnl < 0 and abs(total_unrealized_pnl) >= (initial_cap * loss_limit_pct):
-        logger.warning(f"🛑 Daily Loss Limit Reached: ₹{abs(total_unrealized_pnl):,.2f} lost. Halting execution.")
-        return
-
-    # Get all recommendations generated today
-    recs = list(
-        db[config.MONGODB_COLLECTIONS.get("recommended_shares", "recommended_shares")].find(
-            {"recommendation_date": {"$gte": today_start}}
-        )
-    )
-
-    if not recs:
-        logger.info("No new recommendations found for today.")
-        return
-
-    engine = ExecutionEngine() if ExecutionEngine else None
-
-    slots_left = max_pos - len(open_positions)
-    executed_count = 0
-
-    for r in recs:
-        if executed_count >= slots_left:
-            logger.info("Reached max concurrent positions limit during execution loop.")
-            break
-
-        symbol = r["symbol"]
-
-        # Check if already in portfolio
-        if symbol in open_pos_symbols:
-            can_pyramid = config.RISK_MANAGEMENT.get("pyramiding", {}).get("enabled", False)
-            if not can_pyramid:
-                logger.info(f"⏭️ Skipping {symbol}: Already in portfolio and pyramiding disabled.")
-                continue
-            else:
-                logger.info(f"🔼 {symbol} already in portfolio: Checking for Pyramiding (Add) opportunity...")
-
-        if TRADING_OPTIONS.get("auto_execute", False) or IS_PAPER:
-            if engine is None:
-                logger.error(f"❌ Cannot execute {symbol}: Live engine not implemented.")
-                continue
-
-            # In unified mode, the DB already has the correct sizing/targets
-            quantity = r.get("suggested_quantity", 1)
-            if quantity <= 0:
-                quantity = 1
-
-            logger.warning(f"🚀 Executing BUY for {symbol} | Qty: {quantity}")
-            success = engine.execute_buy(
-                symbol,
-                quantity=quantity,
-                price=r["buy_price"],
-                stop_loss=r["stop_loss"],
-                target=r["sell_price"],
-                recomm_id=r["_id"],
+            engine = ExecutionEngine()
+            db = get_mongodb()
+            today_start = (
+                datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).replace(tzinfo=None)
             )
-            if success:
-                executed_count += 1
 
-    logger.warning("=== UNIFIED CYCLE COMPLETE ===")
+            # Fetch current state
+            open_positions = get_open_positions()
+            open_pos_symbols = {p["symbol"] for p in open_positions}
+
+            if len(open_positions) >= max_pos:
+                logger.warning(
+                    f"⚠️ Portfolio Full: {len(open_positions)}/{max_pos} positions. Skipping {strat_name} entries."
+                )
+                continue
+
+            # Fetch today's "BUY" recommendations for THIS strategy
+            recs = list(
+                db.recommended_shares.find(
+                    {
+                        "recommendation_date": {"$gte": today_start},
+                        "strategy_name": strat_name,
+                        "recommendation_strength": "BUY",
+                    }
+                )
+            )
+
+            if not recs:
+                logger.info(f"No new recommendations for {strat_name} today.")
+                continue
+
+            slots_left = max_pos - len(open_positions)
+            executed_count = 0
+
+            for r in recs:
+                if executed_count >= slots_left:
+                    break
+
+                symbol = r["symbol"]
+
+                # Check if already in portfolio
+                if symbol in open_pos_symbols:
+                    # Pyramiding logic is handled inside execute_buy
+                    pass
+
+                if TRADING_OPTIONS.get("auto_execute", False) or IS_PAPER:
+                    success = engine.execute_buy(
+                        symbol,
+                        quantity=r.get("suggested_quantity", 1),
+                        price=r["buy_price"],
+                        stop_loss=r.get("stop_loss", 0),
+                        target=r.get("sell_price", 0),
+                        recomm_id=r["_id"],
+                        strategy_name=strat_name,
+                    )
+                    if success:
+                        executed_count += 1
+                        logger.info(f"Successfully executed BUY for {symbol} ({strat_name})")
+
+    print("\n" + "=" * 50)
+    print("🏁 UNIFIED TRADING CYCLE COMPLETE")
+    print("=" * 50 + "\n")
 
 
 if __name__ == "__main__":

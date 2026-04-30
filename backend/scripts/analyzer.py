@@ -4,7 +4,7 @@ from typing import Any, Dict
 
 import pandas as pd
 
-from config import ANALYSIS_CONFIG, ANALYSIS_WEIGHTS, HISTORICAL_DATA_PERIOD, RECOMMENDATION_THRESHOLDS
+from config import HISTORICAL_DATA_PERIOD
 from scripts.backtest_utils import BacktestUtils
 from scripts.data_fetcher import get_all_nse_symbols, get_historical_data
 from scripts.fundamental_analysis import FundamentalAnalysis
@@ -61,6 +61,7 @@ class StockAnalyzer:
             res = {
                 "symbol": symbol,
                 "company_name": name,
+                "strategy_name": app_config.get("STRATEGY_NAME", "Unknown"),
                 "technical_score": 0.0,
                 "fundamental_score": 0.0,
                 "is_recommended": False,
@@ -71,12 +72,15 @@ class StockAnalyzer:
                 return {**res, "technical_score": -1.0, "reason": ["No data"]}
 
             # Technical & Swing
-            tech = self.strategy_evaluator.evaluate_strategies(symbol, hist, index_data=index_data)
+            tech = self.strategy_evaluator.evaluate_strategies(
+                symbol, hist, app_config=app_config, index_data=index_data
+            )
             res["technical_score"] = tech["technical_score"]
-            swing = self.swing_analyzer.analyze_swing_opportunity(symbol, hist)
+            swing = self.swing_analyzer.analyze_swing_opportunity(symbol, hist, strategy_config=app_config)
             res["swing_analysis"] = swing
 
-            if RECOMMENDATION_THRESHOLDS.get("require_all_gates", True) and not swing.get("all_gates_passed", False):
+            rec_thresholds = app_config.get("RECOMMENDATION_THRESHOLDS", {})
+            if rec_thresholds.get("require_all_gates", True) and not swing.get("all_gates_passed", False):
                 res["technical_score"] = min(res["technical_score"], 0.1)
                 res["reason"].append("Gate failure")
 
@@ -87,19 +91,20 @@ class StockAnalyzer:
             if dpct > 40:
                 res["technical_score"] += 0.05
 
-            if ANALYSIS_CONFIG.get("options_oi", True):
-                from config import OPTIONS_OI_CONFIG
+            ana_cfg = app_config.get("ANALYSIS_CONFIG", {})
+            if ana_cfg.get("options_oi", True):
                 from scripts.options_analyzer import analyze_oi
 
-                oi = analyze_oi(symbol)
+                oi_cfg = app_config.get("OPTIONS_OI_CONFIG", {})
+                oi = analyze_oi(symbol)  # Needs to be updated to accept oi_cfg if needed
                 if oi.get("passed"):
-                    res["technical_score"] += OPTIONS_OI_CONFIG.get("weight", 0.15)
+                    res["technical_score"] += oi_cfg.get("weight", 0.15)
 
             # Fundamental & Regime
-            if ANALYSIS_CONFIG.get("fundamental_analysis", True):
+            if ana_cfg.get("fundamental_analysis", True):
                 res["fundamental_score"] = self.fundamental_analyzer.perform_fundamental_analysis(symbol)
 
-            if ANALYSIS_CONFIG.get("market_regime_detection", True):
+            if ana_cfg.get("market_regime_detection", True):
                 from config import EPISODIC_PIVOT_MODE
 
                 mrd = MarketRegimeDetection().get_simple_regime_check()
@@ -107,13 +112,15 @@ class StockAnalyzer:
                     res["technical_score"] = min(res["technical_score"], -0.5)
 
             # Combine & Trade Plan
-            res = self._combine(res)
+            res = self._combine(res, app_config)
             res["trade_plan"] = self.trade_logic.analyze(symbol, hist)
             res["backtest"] = self.backtest_utils.perform_backtesting(symbol, hist)
 
             if res["is_recommended"]:
-                res = self._combine(res, consider_bt=True)
-                res["risk_management"] = self.risk_manager.calculate_risk_params(hist, hist["Close"].iloc[-1])
+                res = self._combine(res, app_config, consider_bt=True)
+                res["risk_management"] = self.risk_manager.calculate_risk_params(
+                    hist, hist["Close"].iloc[-1], app_config=app_config
+                )
 
             res["reason"] = " ".join(res["reason"])
             return res
@@ -121,11 +128,12 @@ class StockAnalyzer:
             logger.error(f"Error {symbol}: {e}")
             return {"symbol": symbol, "is_recommended": False, "error": str(e)}
 
-    def _combine(self, res: Dict[str, Any], consider_bt: bool = False) -> Dict[str, Any]:
+    def _combine(self, res: Dict[str, Any], app_config: Dict[str, Any], consider_bt: bool = False) -> Dict[str, Any]:
         # Load weights from config
-        t_w = ANALYSIS_WEIGHTS.get("technical", 0.90)
-        f_w = ANALYSIS_WEIGHTS.get("fundamental", 0.05)
-        s_w = ANALYSIS_WEIGHTS.get("sector", 0.05)
+        weights = app_config.get("ANALYSIS_WEIGHTS", {})
+        t_w = weights.get("technical", 0.90)
+        f_w = weights.get("fundamental", 0.05)
+        s_w = weights.get("sector", 0.05)
 
         # Calculate Sector Bonus (Placeholder: Using RS strength as a proxy for Sector Momentum)
         sector_score = 0.5  # Neutral default
@@ -137,8 +145,9 @@ class StockAnalyzer:
         res["combined_score"] = score
 
         # Floor Checks (Kicker Logic)
-        tech_floor = RECOMMENDATION_THRESHOLDS.get("technical_minimum", 0.38)
-        fund_floor = RECOMMENDATION_THRESHOLDS.get("fundamental_minimum", -0.5)
+        rec_thresholds = app_config.get("RECOMMENDATION_THRESHOLDS", {})
+        tech_floor = rec_thresholds.get("technical_minimum", 0.38)
+        fund_floor = rec_thresholds.get("fundamental_minimum", -0.5)
 
         passed_floors = True
         if res["technical_score"] < tech_floor:
@@ -152,9 +161,9 @@ class StockAnalyzer:
         bt_ok = True
         if consider_bt:
             cagr = res.get("backtest", {}).get("combined_metrics", {}).get("avg_cagr", 0)
-            bt_ok = cagr >= RECOMMENDATION_THRESHOLDS.get("min_backtest_return", 0.0)
+            bt_ok = cagr >= rec_thresholds.get("min_backtest_return", 0.0)
 
-        buy_t = RECOMMENDATION_THRESHOLDS.get("buy_combined", 0.40)
+        buy_t = rec_thresholds.get("buy_combined", 0.40)
         res["is_recommended"] = bool(score >= buy_t and bt_ok and passed_floors)
         res["recommendation_strength"] = "BUY" if res["is_recommended"] else "HOLD"
 

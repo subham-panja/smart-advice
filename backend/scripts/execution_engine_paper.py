@@ -6,7 +6,7 @@ Handles trade execution (Buying/Selling) with Paper Trading Mock support.
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 import config
 from config import TRADING_OPTIONS
@@ -21,7 +21,7 @@ class ExecutionEngine:
         self.brokerage_pct = TRADING_OPTIONS.get("brokerage_charges", 0.0005)
         self.initial_capital = TRADING_OPTIONS.get("initial_capital", 100000.0)
 
-    def execute_buy(self, symbol, quantity, price, stop_loss, target, recomm_id=None):
+    def execute_buy(self, symbol, quantity, price, stop_loss, target, recomm_id=None, strategy_name="UNKNOWN"):
         """Execute a buy order with detailed metadata and pyramiding support."""
         mode = "PAPER" if self.is_paper_trading else "LIVE"
         if self.is_paper_trading:
@@ -110,7 +110,8 @@ class ExecutionEngine:
                     "target": round(target, 2),
                     "current_target": round(target, 2),
                     "recomm_id": recomm_id,
-                    "entry_date": datetime.now(),
+                    "strategy_name": strategy_name,
+                    "entry_date": datetime.now(timezone.utc).replace(tzinfo=None),
                     "status": "OPEN",
                     "trade_type": "LONG_BUY",
                     "is_paper": self.is_paper_trading,

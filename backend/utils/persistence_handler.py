@@ -44,7 +44,8 @@ class PersistenceHandler:
                 "suggested_quantity": res.get("risk_management", {}).get("position_size", 1),
                 "allocation_pct": res.get("risk_management", {}).get("allocation_pct", 0),
                 "rr_ratio": res.get("risk_management", {}).get("rr_ratio", 0),
-                "recommendation_date": datetime.now(timezone.utc),
+                "strategy_name": res.get("strategy_name", "UNKNOWN"),
+                "recommendation_date": datetime.now(timezone.utc).replace(tzinfo=None),
             }
             res_db = db.recommended_shares.update_one({"symbol": res["symbol"]}, {"$set": doc}, upsert=True)
             return res_db.upserted_id or db.recommended_shares.find_one({"symbol": res["symbol"]}, {"_id": 1})["_id"]

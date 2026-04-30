@@ -27,19 +27,26 @@ class AutomatedStockAnalysis:
         self.fresh = fresh
         self.start_time = datetime.now()
 
-    def run(self):
-        logger.info("Initializing scan...")
+    def run(self, strategy_config: Dict[str, Any] = None):
+        if not strategy_config:
+            logger.error("No strategy configuration provided to analyzer.")
+            return
+
+        strat_name = strategy_config.get("name", "Unknown")
+        logger.info(f"🚀 Starting analysis for Strategy: {strat_name}")
+
         get_cache_manager().clean_corrupted_cache_files()
-        self.persistence.clear_old_data(7)
+        # self.persistence.clear_old_data(7) # Move this to main or keep if desired
 
         # Macro Check
-        if config.ANALYSIS_CONFIG.get("market_regime_detection", True):
-            if not MarketRegimeDetection().get_simple_regime_check()["passed"]:
-                logger.warning("Market regime is BEARISH. Skipping analysis.")
+        m_cfg = strategy_config.get("market_regime_config", {})
+        if strategy_config.get("analysis_config", {}).get("market_regime_detection", True):
+            if not MarketRegimeDetection().get_simple_regime_check(m_cfg)["passed"]:
+                logger.warning(f"[{strat_name}] Market regime is BEARISH. Skipping strategy.")
                 return
 
         # Phase 1: Fetch Data
-        symbols = StockScanner.get_symbols()
+        symbols = StockScanner.get_symbols(strategy_config=strategy_config)
         symbols_list = list(symbols.keys())
         logger.info(f"Phase 1: Fetching data for {len(symbols_list)} stocks...")
 
@@ -67,8 +74,10 @@ class AutomatedStockAnalysis:
 
         bench = get_benchmark_data(config.HISTORICAL_DATA_PERIOD)
         cfg = {
-            "ANALYSIS_CONFIG": dict(config.ANALYSIS_CONFIG),
-            "STRATEGY_CONFIG": dict(config.STRATEGY_CONFIG),
+            "ANALYSIS_CONFIG": dict(strategy_config.get("analysis_config", {})),
+            "STRATEGY_CONFIG": dict(strategy_config.get("strategy_config", {})),
+            "RECOMMENDATION_THRESHOLDS": dict(strategy_config.get("recommendation_thresholds", {})),
+            "STRATEGY_NAME": strat_name,
             "BENCHMARK_DATA": bench.to_dict() if not bench.empty else {},
             "BENCHMARK_INDEX": bench.index.strftime("%Y-%m-%d %H:%M:%S").tolist() if not bench.empty else [],
         }
@@ -114,7 +123,7 @@ class AutomatedStockAnalysis:
                     recos += 1
 
         duration = (datetime.now() - self.start_time).total_seconds()
-        logger.info(f"Pipeline Finished: {duration/60:.1f}m | {recos} Recommendations found.")
+        logger.info(f"[{strat_name}] Pipeline Finished: {duration/60:.1f}m | {recos} Recommendations found.")
 
 
 def main():

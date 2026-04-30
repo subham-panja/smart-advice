@@ -2,8 +2,6 @@ import logging
 import os
 import queue
 
-from config import PERSIST_LOGGING
-
 log_queue = queue.Queue(maxsize=1000)
 
 
@@ -36,10 +34,10 @@ def setup_logging(level=logging.INFO, verbose=None):
 
     fmt = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
 
-    mode = "a" if PERSIST_LOGGING else "w"
-    h1 = logging.FileHandler("logs/app.log", mode=mode)
-    h1.setFormatter(fmt)
-    root.addHandler(h1)
+    # mode = "a" if PERSIST_LOGGING else "w"
+    # h1 = logging.FileHandler("logs/app.log", mode=mode)
+    # h1.setFormatter(fmt)
+    # root.addHandler(h1)
 
     h2 = SSEHandler()
     h2.setFormatter(fmt)
