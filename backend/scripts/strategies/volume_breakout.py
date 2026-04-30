@@ -17,7 +17,7 @@ from .base_strategy import BaseStrategy
 logger = logging.getLogger(__name__)
 
 
-class VolumeBreakoutStrategy(BaseStrategy):
+class Volume_Breakout(BaseStrategy):
     """
     Volume Breakout Strategy for swing trading.
 
@@ -31,8 +31,8 @@ class VolumeBreakoutStrategy(BaseStrategy):
     - Volume drops below average for 3+ consecutive days
     """
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, params=None):
+        super().__init__(params)
         self.name = "Volume_Breakout"
         self.description = "Volume-confirmed breakout above resistance or below support"
 

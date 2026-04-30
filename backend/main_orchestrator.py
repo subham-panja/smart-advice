@@ -1,15 +1,18 @@
 import logging
-
-from utils.logger import setup_logging
-
-setup_logging(verbose=True)
-
 from datetime import datetime, timezone
 
 import config
 from config import TRADING_OPTIONS
+from database import get_mongodb, get_open_positions
+from run_analysis import AutomatedStockAnalysis
+from scripts.execution_engine_paper import ExecutionEngine
+from scripts.portfolio_monitor_paper import PortfolioMonitor
+from utils.logger import setup_logging
 
+setup_logging(verbose=True)
 logger = logging.getLogger("Orchestrator")
+
+IS_PAPER = TRADING_OPTIONS.get("is_paper_trading", True)
 
 
 def run_trading_cycle():
