@@ -13,10 +13,10 @@ class FilterTranslator:
         clauses = []
 
         for f in filters:
-            f_type = f.get("type")
-            op = f.get("op")
+            f_type = f["type"]
 
             if f_type == "price":
+                op = f["op"]
                 if op == "between":
                     clauses.append(f"latest close > {f['min']}")
                     clauses.append(f"latest close < {f['max']}")
@@ -32,22 +32,21 @@ class FilterTranslator:
                 clauses.append(f"market cap > {f['value']}")
 
             elif f_type == "rsi":
+                op = f["op"]
                 clauses.append(f"latest rsi( {f['period']} ) {op} {f['value']}")
 
             elif f_type == "moving_average":
-                kind = f.get("kind", "SMA").lower()
-                period = f.get("period")
-                target = f.get("target", "close").lower()
-                # Chartink format: latest close > latest sma( close,50 )
-                if f.get("price_above", True) or op == ">" or op == "<":
-                    operator = op if op in [">", "<"] else ">"
-                    clauses.append(f"latest {target} {operator} latest {kind}( close,{period} )")
+                kind = f["kind"].lower()
+                period = f["period"]
+                target = f["target"].lower()
+                op = f["op"]
+                clauses.append(f"latest {target} {op} latest {kind}( close,{period} )")
 
             elif f_type == "volume_spike_lookup":
-                # Complex EP volume spike: ( [0] 1 day ago volume > [0] 1 day ago sma(volume,50) * 3 or ... )
-                lookback = f.get("lookback_days", 5)
-                multiplier = f.get("multiplier", 3.0)
-                ma_period = f.get("ma_period", 50)
+                # This specific filter type does not require an 'op' key as it defines its own internal logic
+                lookback = f["lookback_days"]
+                multiplier = f["multiplier"]
+                ma_period = f["ma_period"]
 
                 spike_clauses = []
                 for i in range(1, lookback + 1):
@@ -58,6 +57,6 @@ class FilterTranslator:
                 clauses.append(f"( {' or '.join(spike_clauses)} )")
 
         if not clauses:
-            return ""
+            raise ValueError("No valid filters provided for Chartink translation.")
 
         return f"( {{cash}} ( {' and '.join(clauses)} ) )"

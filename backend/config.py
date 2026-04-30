@@ -89,3 +89,6 @@ TRADING_OPTIONS = {
     "time_stop_days": 15,  # Exit if sideways for 15 days
     "auto_execute": True,
 }
+
+EPISODIC_PIVOT_MODE = True
+STOCK_FILTERING = {"require_volume_spike": 1.5}

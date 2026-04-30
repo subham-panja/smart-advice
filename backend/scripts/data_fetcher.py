@@ -2,106 +2,89 @@ import json
 import logging
 import os
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Dict
 
 import pandas as pd
 import yfinance as yf
 
-from config import DATA_FETCH_THREADS, NSE_CACHE_FILE
+from config import MAX_RETRIES, NSE_CACHE_FILE, RATE_LIMIT_DELAY, REQUEST_DELAY
 
 logger = logging.getLogger(__name__)
 
+# Use a relative data directory
+DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "historical")
+os.makedirs(DATA_DIR, exist_ok=True)
+
 
 def get_all_nse_symbols() -> Dict[str, str]:
-    """Returns a dictionary of all NSE symbols."""
-    if os.path.exists(NSE_CACHE_FILE):
-        try:
-            with open(NSE_CACHE_FILE, "r") as f:
-                return json.load(f)
-        except:
-            pass
-    return {"RELIANCE": "Reliance Industries", "TCS": "TCS"}
+    """Returns a dictionary of all NSE symbols strictly."""
+    if not os.path.exists(NSE_CACHE_FILE):
+        raise FileNotFoundError(f"NSE symbol cache missing: {NSE_CACHE_FILE}")
+
+    try:
+        with open(NSE_CACHE_FILE, "r") as f:
+            return json.load(f)
+    except Exception as e:
+        logger.error(f"Failed to load NSE symbols from {NSE_CACHE_FILE}: {e}")
+        raise e
 
 
-def get_historical_data(symbol: str, period: str = "1y", interval: str = "1d", fresh: bool = False) -> pd.DataFrame:
-    """Fetches historical data with smart cache invalidation for execution accuracy."""
-    cache_dir = "cache"
-    os.makedirs(cache_dir, exist_ok=True)
-    cache_path = os.path.join(cache_dir, f"{symbol}_{period}_{interval}.csv")
+def get_historical_data(symbol: str, period: str = "2y", interval: str = "1d", fresh: bool = False) -> pd.DataFrame:
+    """Fetches historical OHLCV data strictly from yfinance with caching and retries."""
+    # Strict inter-request delay to prevent rate limiting
+    time.sleep(REQUEST_DELAY)
 
-    # Smart Cache Check
+    cache_path = os.path.join(DATA_DIR, f"{symbol}_{period}_{interval}.csv")
+
     if not fresh and os.path.exists(cache_path):
         try:
-            mtime = os.path.getmtime(cache_path)
-            age_seconds = time.time() - mtime
+            df = pd.read_csv(cache_path, index_col=0, parse_dates=True)
+            if not df.empty:
+                return df
+        except Exception as e:
+            logger.warning(f"Cache read error for {symbol}: {e}. Retrying with fresh fetch.")
 
-            # Define TTL based on the data period
-            # For backtesting (long periods), cache is valid for 24 hours
-            if "y" in period or "mo" in period:
-                cache_ttl = 86400  # 24 hours
-            else:
-                # During market hours, short periods expire in 2 minutes
-                now = datetime.now()
-                is_market_hours = (
-                    now.weekday() < 5
-                    and (now.hour > 9 or (now.hour == 9 and now.minute >= 15))
-                    and (now.hour < 15 or (now.hour == 15 and now.minute <= 30))
-                )
-                cache_ttl = 120 if is_market_hours else 3600
+    attempts = 0
+    last_error = None
 
-            if age_seconds < cache_ttl:
-                df = pd.read_csv(cache_path, index_col=0, parse_dates=True)
-                if not df.empty:
-                    return df
-        except:
-            pass
+    while attempts <= MAX_RETRIES:
+        try:
+            yf_sym = f"{symbol}.NS" if not symbol.startswith("^") else symbol
+            logger.info(f"🔄 Fetching fresh data for {symbol} (Attempt {attempts + 1})...")
 
-    try:
-        yf_sym = f"{symbol}.NS" if not symbol.startswith("^") else symbol
-        logger.info(f"🔄 Fetching fresh data for {symbol}...")
+            df = yf.Ticker(yf_sym).history(period=period, interval=interval)
+            if df.empty:
+                raise ValueError(f"No historical data returned for {symbol}")
 
-        # We always fetch a bit more than requested to ensure indicator stability
-        df = yf.Ticker(yf_sym).history(period=period, interval=interval)
-        if df.empty:
-            return pd.DataFrame()
+            df = df[["Open", "High", "Low", "Close", "Volume"]].dropna()
+            if df.empty:
+                raise ValueError(f"Data for {symbol} became empty after dropping NaNs.")
 
-        df = df[["Open", "High", "Low", "Close", "Volume"]].dropna()
-        df.index = pd.to_datetime(df.index)
-
-        # Save to cache but only if it's a significant amount of data
-        if not df.empty:
+            df.index = pd.to_datetime(df.index)
             df.to_csv(cache_path)
+            return df
 
-        return df
-    except Exception as e:
-        logger.error(f"Error fetching {symbol}: {e}")
-        return pd.DataFrame()
-
-
-def get_current_price(symbol: str) -> Optional[float]:
-    """Gets the latest market price."""
-    try:
-        df = get_historical_data(symbol, period="5d")
-        return float(df["Close"].iloc[-1]) if not df.empty else None
-    except:
-        return None
+        except Exception as e:
+            last_error = e
+            attempts += 1
+            if attempts <= MAX_RETRIES:
+                logger.warning(f"Fetch failed for {symbol}: {e}. Retrying in {RATE_LIMIT_DELAY}s...")
+                time.sleep(RATE_LIMIT_DELAY)
+            else:
+                logger.error(f"Critical fetch failure for {symbol} after {attempts} attempts: {e}")
+                raise last_error
 
 
-def get_current_price_batch(symbols: List[str]) -> Dict[str, Optional[float]]:
-    """Fetches prices for multiple symbols in parallel."""
-    results = {}
-    with ThreadPoolExecutor(max_workers=DATA_FETCH_THREADS) as executor:
-        future_to_sym = {executor.submit(get_current_price, s): s for s in symbols}
-        for f in as_completed(future_to_sym):
-            results[future_to_sym[f]] = f.result()
-    return results
-
-
-def get_filtered_nse_symbols(**kwargs):
-    return get_all_nse_symbols()
+def get_current_price(symbol: str) -> float:
+    """Gets latest price strictly."""
+    yf_sym = f"{symbol}.NS" if not symbol.startswith("^") else symbol
+    ticker = yf.Ticker(yf_sym)
+    price = ticker.info.get("regularMarketPrice") or ticker.info.get("previousClose")
+    if price is None:
+        raise ValueError(f"Could not retrieve current price for {symbol}")
+    return float(price)
 
 
 def get_benchmark_data(period: str = "1y") -> pd.DataFrame:
+    """Strictly fetches benchmark (Nifty) data."""
     return get_historical_data("^NSEI", period=period)

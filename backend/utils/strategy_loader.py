@@ -17,7 +17,7 @@ class StrategyLoader:
         strategies = []
         if not os.path.exists(STRATEGIES_DIR):
             logger.error(f"Strategies directory not found at {STRATEGIES_DIR}")
-            return []
+            raise FileNotFoundError(f"Strategies directory missing: {STRATEGIES_DIR}")
 
         for filename in os.listdir(STRATEGIES_DIR):
             if filename.endswith(".json"):
@@ -25,14 +25,18 @@ class StrategyLoader:
                 try:
                     with open(path, "r") as f:
                         strat = json.load(f)
-                        if strat.get("enabled", True):
-                            # Ensure the mandatory name field exists
+                        # Mandatory field check
+                        if "enabled" not in strat:
+                            raise KeyError(f"Strategy file {filename} missing mandatory 'enabled' key")
+
+                        if strat["enabled"]:
                             if "name" not in strat:
-                                strat["name"] = filename.split(".")[0]
+                                raise KeyError(f"Strategy file {filename} missing mandatory 'name' key")
                             strategies.append(strat)
                             logger.info(f"Loaded strategy: {strat['name']} from {filename}")
                 except Exception as e:
-                    logger.error(f"Error loading strategy from {filename}: {e}")
+                    logger.error(f"Critical error loading strategy from {filename}: {e}")
+                    raise e
 
         return strategies
 
@@ -43,4 +47,4 @@ class StrategyLoader:
         for s in all_strats:
             if s["name"] == name:
                 return s
-        return None
+        raise ValueError(f"Strategy '{name}' not found or not enabled.")

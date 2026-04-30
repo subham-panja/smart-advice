@@ -1,7 +1,6 @@
 import logging
 from typing import Any, Dict
 
-from config import MARKET_REGIME_CONFIG
 from scripts.data_fetcher import get_historical_data
 
 logger = logging.getLogger(__name__)
@@ -10,18 +9,21 @@ logger = logging.getLogger(__name__)
 class MarketRegimeDetection:
     """Detects market conditions (Bull/Bear) using SMA 200 on Nifty."""
 
-    def get_simple_regime_check(self) -> Dict[str, Any]:
+    def get_simple_regime_check(self, strategy_config: Dict[str, Any]) -> Dict[str, Any]:
         try:
-            idx = MARKET_REGIME_CONFIG.get("index", "^NSEI")
+            idx = strategy_config["index"]
             df = get_historical_data(idx, period="1y")
             if df.empty:
-                return {"passed": True, "reason": "No index data"}
+                raise ValueError(f"No historical data found for index: {idx}")
 
-            rule = MARKET_REGIME_CONFIG.get("bull_market_rule", "sma(200)")
+            rule = strategy_config["bull_market_rule"]
             import re
 
             period_match = re.search(r"sma\((\d+)\)", rule)
-            period = int(period_match.group(1)) if period_match else 200
+            if not period_match:
+                raise ValueError(f"Invalid bull_market_rule format: {rule}. Expected 'sma(N)'")
+
+            period = int(period_match.group(1))
 
             sma = df["Close"].rolling(period).mean().iloc[-1]
             cp = df["Close"].iloc[-1]
@@ -32,5 +34,5 @@ class MarketRegimeDetection:
                 "reason": f"{idx} {'above' if bull else 'below'} {period} SMA",
             }
         except Exception as e:
-            logger.error(f"Regime error: {e}")
-            return {"passed": True}
+            logger.error(f"Market regime detection failure: {e}")
+            raise e

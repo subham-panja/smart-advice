@@ -4,33 +4,32 @@ from typing import Any, Dict
 import pandas as pd
 import talib as ta
 
-from config import STOCK_FILTERING, SWING_PATTERNS
-
 logger = logging.getLogger(__name__)
 
 
 class TradeLogic:
     """Calculates entry/exit points and trade timing."""
 
-    def analyze(self, symbol: str, df: pd.DataFrame) -> Dict[str, Any]:
+    def analyze(self, symbol: str, df: pd.DataFrame, app_config: Dict[str, Any]) -> Dict[str, Any]:
         if df.empty:
             return {"symbol": symbol, "recommendation": "HOLD"}
 
         c = df["Close"].iloc[-1]
         atr = ta.ATR(df["High"], df["Low"], df["Close"], 14).iloc[-1]
-        sma20, sma50 = ta.SMA(df["Close"], 20).iloc[-1], ta.SMA(df["Close"], 50).iloc[-1]
-        rsi = ta.RSI(df["Close"], 14).iloc[-1]
 
-        # Determine Recommendation
+        # Determine Recommendation (Legacy logic, mainly for trade plan structure)
         rec = "HOLD"
-        min_rsi = STOCK_FILTERING.get("require_rsi_above", 60.0)
-        if c > sma20 > sma50 and rsi > min_rsi:
-            rec = "BUY"
 
         # Trade Plan
-        rules = SWING_PATTERNS.get("exit_rules", {})
-        sl = c - (atr * rules.get("atr_stop_multiplier", 1.5))
-        tp = c + (atr * rules.get("target_1_atr", 3.0))
+        exit_rules = app_config["exit_rules"]
+        sl_multiplier = exit_rules["atr_stop_multiplier"]
+
+        # Fetch T1 from targets (Required)
+        targets = exit_rules["targets"]
+        t1_mult = targets[0]["atr_multiplier"]
+
+        sl = c - (atr * sl_multiplier)
+        tp = c + (atr * t1_mult)
 
         return {
             "symbol": symbol,

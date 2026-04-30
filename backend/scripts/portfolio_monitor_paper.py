@@ -1,6 +1,6 @@
 """
 Portfolio Monitor
-File: scripts/portfolio_monitor.py
+File: scripts/portfolio_monitor_paper.py
 
 Responsible for:
 1. End-of-day trailing stop loss updates.
@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 class PortfolioMonitor:
     def __init__(self):
-        self.time_stop_days = TRADING_OPTIONS.get("time_stop_days", 15)
+        self.time_stop_days = TRADING_OPTIONS["time_stop_days"]
 
     def monitor_all_positions(self):
         """Monitor all open positions for exits or SL updates."""
@@ -37,22 +37,20 @@ class PortfolioMonitor:
 
     def _process_single_position(self, pos):
         symbol = pos["symbol"]
-        strat_name = pos.get("strategy_name", "Delayed_EP")
+        strat_name = pos["strategy_name"]
         strategy = StrategyLoader.get_strategy_by_name(strat_name)
-        exit_rules = strategy.get("exit_rules", {}) if strategy else {}
+        exit_rules = strategy["exit_rules"]
 
         try:
             # 1. Fetch latest data (Live Price Sync)
             data = get_historical_data(symbol, period="1mo", fresh=True)
             if data.empty:
-                logger.warning(f"Could not fetch data for {symbol}")
-                return
+                raise ValueError(f"Could not fetch data for {symbol}")
 
             current_price = round(data["Close"].iloc[-1], 2)
             entry_price = pos["entry_price"]
             entry_date = pos["entry_date"]
-            current_sl = pos.get("current_stop_loss", pos.get("stop_loss"))
-            target = pos.get("target")
+            current_sl = pos.get("current_stop_loss", pos["stop_loss"])
 
             # Update Live Price in DB for Telegram PnL
             update_position(symbol, {"current_price": current_price})
@@ -67,15 +65,12 @@ class PortfolioMonitor:
                 engine.execute_sell(symbol, current_price, "STOP_LOSS_HIT")
                 return
 
-            # 6. Structured Target Monitoring (Scaling Out & Target Hits)
-            targets = exit_rules.get("targets", [])
-            # Fetch ATR for Target calculations
+            # 6. Structured Target Monitoring
+            targets = exit_rules["targets"]
             import talib as ta
 
             atr = ta.ATR(data["High"], data["Low"], data["Close"], timeperiod=14).iloc[-1]
 
-            # Find the next un-hit target
-            # Track which target we are currently on
             current_target_idx = pos.get("current_target_idx", 0)
 
             if current_target_idx < len(targets):
@@ -83,7 +78,7 @@ class PortfolioMonitor:
                 target_price = entry_price + (target_obj["atr_multiplier"] * atr)
 
                 if current_price >= target_price:
-                    sell_pct = target_obj.get("sell_percentage", 1.0)
+                    sell_pct = target_obj["sell_percentage"]
                     logger.info(f"🎯 {target_obj['name']} HIT: Price ₹{current_price:.2f} >= ₹{target_price:.2f}")
 
                     if sell_pct < 1.0:
@@ -100,12 +95,12 @@ class PortfolioMonitor:
                                 "is_scaled_out": True,
                             }
                             # Auto-Breakeven if enabled and this is Target 1
-                            if current_target_idx == 0 and exit_rules.get("breakeven_at_target_1", True):
+                            if current_target_idx == 0 and exit_rules["breakeven_at_target_1"]:
                                 update_data["current_stop_loss"] = entry_price
                                 logger.info(f"🛡️ SL moved to Breakeven (₹{entry_price:.2f})")
 
                             update_position(symbol, update_data)
-                            return  # Exit process for this stock today
+                            return
                     else:
                         # Full Exit (Final Target)
                         engine.execute_sell(symbol, current_price, f"FINAL_{target_obj['name']}")
@@ -116,14 +111,14 @@ class PortfolioMonitor:
 
             rm = RiskManager()
             sl_info = rm.calculate_stop_loss(
-                data, current_price, method="atr", atr_multiplier=exit_rules.get("trail_stop_atr", 3.0)
+                data, current_price, method="atr", atr_multiplier=exit_rules["trail_stop_atr"]
             )
 
             new_sl = sl_info["stop_loss"]
             if new_sl > current_sl:
                 logger.info(f"📉 VTT UPDATE: Trailing {symbol} SL from {current_sl:.2f} to {new_sl:.2f}")
                 update_position(symbol, {"current_stop_loss": new_sl})
-                current_sl = new_sl  # Update local variable for next check
+                current_sl = new_sl
 
             # 8. Time Stop (Sideways)
             days_held = (datetime.now(timezone.utc).replace(tzinfo=None) - entry_date).days
@@ -138,7 +133,8 @@ class PortfolioMonitor:
             update_position(symbol, {"days_held": days_held})
 
         except Exception as e:
-            logger.error(f"Error monitoring {symbol}: {e}")
+            logger.error(f"Critical error monitoring {symbol}: {e}")
+            raise e
 
 
 if __name__ == "__main__":

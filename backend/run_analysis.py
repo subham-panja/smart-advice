@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 import multiprocessing
-import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
+from typing import Any, Dict
 
 import config
 from scripts.data_fetcher import get_benchmark_data, get_historical_data
@@ -27,21 +27,15 @@ class AutomatedStockAnalysis:
         self.fresh = fresh
         self.start_time = datetime.now()
 
-    def run(self, strategy_config: Dict[str, Any] = None):
-        if not strategy_config:
-            logger.error("No strategy configuration provided to analyzer.")
-            return
-
-        strat_name = strategy_config.get("name", "Unknown")
+    def run(self, strategy_config: Dict[str, Any]):
+        strat_name = strategy_config["name"]
         logger.info(f"🚀 Starting analysis for Strategy: {strat_name}")
 
         get_cache_manager().clean_corrupted_cache_files()
-        # self.persistence.clear_old_data(7) # Move this to main or keep if desired
 
         # Macro Check
-        m_cfg = strategy_config.get("market_regime_config", {})
-        if strategy_config.get("analysis_config", {}).get("market_regime_detection", True):
-            if not MarketRegimeDetection().get_simple_regime_check(m_cfg)["passed"]:
+        if strategy_config["analysis_config"]["market_regime_detection"]:
+            if not MarketRegimeDetection().get_simple_regime_check(strategy_config["market_regime_config"])["passed"]:
                 logger.warning(f"[{strat_name}] Market regime is BEARISH. Skipping strategy.")
                 return
 
@@ -73,17 +67,23 @@ class AutomatedStockAnalysis:
         logger.info(f"Phase 2: Analyzing {len(fetched)} stocks...")
 
         bench = get_benchmark_data(config.HISTORICAL_DATA_PERIOD)
-        cfg = {
-            "ANALYSIS_CONFIG": dict(strategy_config.get("analysis_config", {})),
-            "STRATEGY_CONFIG": dict(strategy_config.get("strategy_config", {})),
-            "RECOMMENDATION_THRESHOLDS": dict(strategy_config.get("recommendation_thresholds", {})),
-            "STRATEGY_NAME": strat_name,
-            "BENCHMARK_DATA": bench.to_dict() if not bench.empty else {},
-            "BENCHMARK_INDEX": bench.index.strftime("%Y-%m-%d %H:%M:%S").tolist() if not bench.empty else [],
-        }
+
+        # Build comprehensive config for worker
+        worker_cfg = dict(strategy_config)
+        worker_cfg.update(
+            {
+                "BENCHMARK_DATA": bench.to_dict() if not bench.empty else {},
+                "BENCHMARK_INDEX": bench.index.strftime("%Y-%m-%d %H:%M:%S").tolist() if not bench.empty else [],
+                # Legacy keys for backward compatibility with analyzer.py if needed, but we'll update analyzer.py
+                "STRATEGY_NAME": strat_name,
+                "ANALYSIS_CONFIG": strategy_config["analysis_config"],
+                "STRATEGY_CONFIG": strategy_config["strategy_config"],
+                "RECOMMENDATION_THRESHOLDS": strategy_config["recommendation_thresholds"],
+            }
+        )
 
         items = [
-            (s, symbols.get(s, s), df.to_dict(), df.index.strftime("%Y-%m-%d %H:%M:%S").tolist(), cfg)
+            (s, symbols[s], df.to_dict(), df.index.strftime("%Y-%m-%d %H:%M:%S").tolist(), worker_cfg)
             for s, df in fetched.items()
         ]
 
@@ -94,7 +94,7 @@ class AutomatedStockAnalysis:
                 config.NUM_WORKER_PROCESSES, init_worker, (self.verbose,)
             ) as pool:
                 for i, res in enumerate(pool.imap_unordered(analyze_stock_worker, items)):
-                    if res.get("success"):
+                    if res["success"]:
                         # Real-time persistence
                         self.persistence.save_recommendation(res["result"])
                         self.persistence.save_backtest_results(res["result"])
@@ -113,36 +113,7 @@ class AutomatedStockAnalysis:
         if not self.verbose:
             print()
 
-        # Phase 3: Persistence
-        recos = 0
-        for r in results:
-            if r.get("success"):
-                self.persistence.save_recommendation(r["result"])
-                self.persistence.save_backtest_results(r["result"])
-                if r["recommended"]:
-                    recos += 1
-
+        # Summary
+        recos = sum(1 for r in results if r["success"] and r["recommended"])
         duration = (datetime.now() - self.start_time).total_seconds()
         logger.info(f"[{strat_name}] Pipeline Finished: {duration/60:.1f}m | {recos} Recommendations found.")
-
-
-def main():
-    import argparse
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--verbose", action="store_true", help="Enable verbose logging (overrides config)")
-    args = parser.parse_args()
-
-    # Priority: Command line flag > Config file
-    verbose = args.verbose or config.VERBOSE_LOGGING
-
-    try:
-        AutomatedStockAnalysis(verbose=verbose).run()
-        return 0
-    except Exception as e:
-        print(f"Critical Error: {e}")
-        return 1
-
-
-if __name__ == "__main__":
-    sys.exit(main())

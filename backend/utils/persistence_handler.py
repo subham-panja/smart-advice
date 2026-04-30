@@ -24,7 +24,7 @@ class PersistenceHandler:
 
     def save_recommendation(self, res: Dict[str, Any]) -> bool:
         logger.info(
-            f"Saving Recomm attempt for {res.get('symbol')} | is_recomm: {res.get('is_recommended')} | strength: {res.get('recommendation_strength')}"
+            f"Saving Recomm attempt for {res['symbol']} | is_recomm: {res.get('is_recommended')} | strength: {res.get('recommendation_strength')}"
         )
         if not res.get("is_recommended") or res.get("recommendation_strength") == "HOLD":
             return True
@@ -32,46 +32,47 @@ class PersistenceHandler:
             db = get_mongodb()
             doc = {
                 "symbol": res["symbol"],
-                "company_name": res.get("company_name", ""),
-                "technical_score": res.get("technical_score", 0),
-                "combined_score": res.get("combined_score", 0),
-                "recommendation_strength": res.get("recommendation_strength"),
-                "reason": res.get("reason", ""),
-                "buy_price": res.get("trade_plan", {}).get("buy_price", res.get("buy_price")),
-                "sell_price": res.get("trade_plan", {}).get("sell_price", res.get("sell_price")),
-                "stop_loss": res.get("trade_plan", {}).get("stop_loss", 0),
-                "backtest_metrics": res.get("backtest", {}).get("combined_metrics", {}),
-                "suggested_quantity": res.get("risk_management", {}).get("position_size", 1),
-                "allocation_pct": res.get("risk_management", {}).get("allocation_pct", 0),
-                "rr_ratio": res.get("risk_management", {}).get("rr_ratio", 0),
-                "strategy_name": res.get("strategy_name", "UNKNOWN"),
+                "company_name": res["company_name"],
+                "technical_score": res["technical_score"],
+                "combined_score": res["combined_score"],
+                "recommendation_strength": res["recommendation_strength"],
+                "reason": res["reason"],
+                "buy_price": res["trade_plan"]["buy_price"],
+                "sell_price": res["trade_plan"]["sell_price"],
+                "stop_loss": res["trade_plan"]["stop_loss"],
+                "backtest_metrics": res["backtest"]["combined_metrics"],
+                "suggested_quantity": res["risk_management"]["position_size"],
+                "allocation_pct": res["risk_management"]["allocation_pct"],
+                "rr_ratio": res["risk_management"]["rr_ratio"],
+                "strategy_name": res["strategy_name"],
                 "recommendation_date": datetime.now(timezone.utc).replace(tzinfo=None),
             }
             res_db = db.recommended_shares.update_one({"symbol": res["symbol"]}, {"$set": doc}, upsert=True)
             return res_db.upserted_id or db.recommended_shares.find_one({"symbol": res["symbol"]}, {"_id": 1})["_id"]
         except Exception as e:
-            logger.error(f"Save error: {e}")
-            return None
+            logger.error(f"Save error for {res.get('symbol')}: {e}")
+            raise e
 
     def save_backtest_results(self, res: Dict[str, Any]) -> bool:
-        bt = res.get("backtest", {})
-        if bt.get("status") != "completed":
+        bt = res["backtest"]
+        if bt["status"] != "completed":
             return False
         try:
-            m = bt.get("combined_metrics", {})
+            m = bt["combined_metrics"]
             insert_backtest_result(
                 {
                     "symbol": res["symbol"],
+                    "strategy_name": res["strategy_name"],
                     "period": "Overall",
-                    "cagr": m.get("avg_cagr", 0),
-                    "win_rate": m.get("avg_win_rate", 0),
-                    "total_trades": m.get("total_trades", 0),
+                    "cagr": m["avg_cagr"],
+                    "win_rate": m["avg_win_rate"],
+                    "total_trades": m["total_trades"],
                 }
             )
             return True
         except Exception as e:
-            logger.error(f"BT Save error: {e}")
-            return False
+            logger.error(f"BT Save error for {res.get('symbol')}: {e}")
+            raise e
 
     def create_scan_run(self, cfg, macro=None):
         try:
@@ -82,7 +83,7 @@ class PersistenceHandler:
             )
         except Exception as e:
             logger.error(f"Scan run creation error: {e}")
-            return None
+            raise e
 
     def complete_scan_run(self, rid, summary):
         try:
@@ -91,12 +92,4 @@ class PersistenceHandler:
             )
         except Exception as e:
             logger.error(f"Scan run completion error: {e}")
-
-    def save_analysis_snapshot(self, res, scan_run_id=None):
-        pass
-
-    def save_swing_gate_results(self, symbol, gates, scan_run_id, recommended):
-        pass
-
-    def save_trade_signal(self, symbol, signal, scan_run_id):
-        pass
+            raise e

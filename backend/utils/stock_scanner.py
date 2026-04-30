@@ -15,11 +15,13 @@ class StockScanner:
     """Handles stock symbol discovery via Chartink or full NSE scan."""
 
     @staticmethod
-    def get_symbols(strategy_config: Dict[str, Any] = None, max_stocks: int = None, use_all_symbols: bool = False) -> Dict[str, Any]:
+    def get_symbols(
+        strategy_config: Dict[str, Any], max_stocks: int = None, use_all_symbols: bool = False
+    ) -> Dict[str, Any]:
         """Returns symbols dictionary from Chartink (if available) or full NSE."""
-        strat_name = strategy_config.get("name", "default") if strategy_config else "default"
-        
-        if not use_all_symbols and getattr(config, "USE_CHARTINK", True):
+        strat_name = strategy_config["name"]
+
+        if not use_all_symbols and config.USE_CHARTINK:
             syms = StockScanner._load_cache(f"chartink_{strat_name}", strategy_config)
             if syms:
                 return syms
@@ -27,21 +29,28 @@ class StockScanner:
                 from scripts.chartink_filter import ChartinkFilter
 
                 # Generate dynamic scan clause from stock_filters
-                filters = strategy_config.get("stock_filters", []) if strategy_config else []
+                filters = strategy_config["stock_filters"]
                 scan_clause = FilterTranslator.translate_to_chartink(filters)
-                
+
                 cf = ChartinkFilter()
                 # Pass the custom scan clause if generated
                 syms = cf.get_filtered_symbols(scan_clause=scan_clause, max_stocks=max_stocks)
-                
+
                 if syms:
                     StockScanner._save_cache(syms, f"chartink_{strat_name}")
                     return syms
             except Exception as e:
-                logger.error(f"Chartink failed: {e}")
+                logger.error(f"Chartink failed for {strat_name}: {e}")
+                raise e
 
         all_syms = get_all_nse_symbols()
         res = {s: {"name": s} for s in all_syms} if isinstance(all_syms, list) else all_syms
+
+        # Safety: If we are falling back to full NSE, cap it to 50 unless max_stocks is specified
+        if not use_all_symbols and not max_stocks:
+            max_stocks = 50
+            logger.warning(f"Safety: No Chartink result. Capping full scan to first {max_stocks} stocks.")
+
         return dict(list(res.items())[:max_stocks]) if max_stocks else res
 
     @staticmethod
@@ -52,19 +61,14 @@ class StockScanner:
             json.dump({"syms": syms, "time": time.time()}, f)
 
     @staticmethod
-    def _load_cache(src: str, strategy_config: Dict[str, Any] = None) -> dict:
+    def _load_cache(src: str, strategy_config: Dict[str, Any]) -> dict:
         path = os.path.join("cache", f"filtered_{src}.json")
         if not os.path.exists(path):
             return {}
         with open(path, "r") as f:
             data = json.load(f)
-            
-        ttl_mins = 30
-        if strategy_config and "chartink_config" in strategy_config:
-            ttl_mins = strategy_config["chartink_config"].get("cache_ttl_minutes", 30)
-        elif hasattr(config, "CHARTINK_CONFIG"):
-            ttl_mins = config.CHARTINK_CONFIG.get("cache_ttl_minutes", 30)
-            
+
+        ttl_mins = strategy_config["chartink_config"]["cache_ttl_minutes"]
         ttl = ttl_mins * 60
         if time.time() - data["time"] > ttl:
             return {}

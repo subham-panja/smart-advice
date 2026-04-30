@@ -1,6 +1,6 @@
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 import backtrader as bt
 import pandas as pd
@@ -11,57 +11,65 @@ logger = logging.getLogger(__name__)
 
 
 class BaseStrategy(ABC):
-    def __init__(self, params: Optional[Dict[str, Any]] = None):
-        self.strat_params = params or {}
+    def __init__(self, params: Dict[str, Any]):
+        self.strat_params = params
         self.name = self.__class__.__name__
 
-    def get_parameter(self, key: str, default: Any) -> Any:
-        return self.strat_params.get(key, default)
+    def get_parameter(self, key: str, default: Any = None) -> Any:
+        """
+        Strictly get parameter from strat_params.
+        Accepts a 'default' argument for compatibility with legacy strategies,
+        but IGNORES it to enforce that all parameters must be in the JSON config.
+        """
+        try:
+            return self.strat_params[key]
+        except KeyError:
+            logger.error(f"Missing mandatory parameter '{key}' in strategy configuration.")
+            raise
 
     @abstractmethod
-    def _execute_strategy_logic(self, data: pd.DataFrame) -> int:
+    def _execute_strategy_logic(self, data: pd.DataFrame, symbol: str) -> int:
         pass
 
-    def run_strategy(self, data: pd.DataFrame, symbol: str = "UNKNOWN") -> int:
+    def run_strategy(self, data: pd.DataFrame, symbol: str) -> int:
+        """Run strategy logic with strict error propagation."""
         try:
             raw_signal = self._execute_strategy_logic(data, symbol=symbol)
             res = self.apply_volume_filtering(raw_signal, data)
-            return res.get("signal", 0)
+            return res["signal"]
         except Exception as e:
-            logger.error(f"Strategy Error {self.name} on {symbol}: {e}")
-            return -1
+            logger.error(f"Critical Strategy Error {self.name} on {symbol}: {e}")
+            raise e
 
-    def validate_data(self, data: pd.DataFrame, min_periods: int = 1) -> bool:
+    def validate_data(self, data: pd.DataFrame, min_periods: int) -> bool:
         if data is None or data.empty or len(data) < min_periods:
             return False
         required = ["Open", "High", "Low", "Close", "Volume"]
         return all(col in data.columns for col in required)
 
-    def log_signal(self, signal: int, reason: str, data: pd.DataFrame, symbol: str = "UNKNOWN") -> None:
+    def log_signal(self, signal: int, reason: str, data: pd.DataFrame, symbol: str) -> None:
         stype = "BUY" if signal == 1 else "SELL/NO_BUY"
-        close = data["Close"].iloc[-1] if not data.empty else "N/A"
+        close = data["Close"].iloc[-1]
         logger.debug(f"[{symbol}] {self.name}: {stype} signal - {reason} (Close: {close})")
 
     def apply_volume_filtering(self, signal: int, data: pd.DataFrame) -> Dict[str, Any]:
-        try:
-            if signal == 0:
-                return {"signal": 0, "reason": "No signal"}
+        """Apply volume filters strictly using config."""
+        if signal == 0:
+            return {"signal": 0, "reason": "No signal"}
 
-            from config import EPISODIC_PIVOT_MODE, STOCK_FILTERING
+        from config import EPISODIC_PIVOT_MODE, STOCK_FILTERING
 
-            if EPISODIC_PIVOT_MODE:
-                return {"signal": signal, "reason": "EP Mode: Allowing dry volume entry"}
+        if EPISODIC_PIVOT_MODE:
+            return {"signal": signal, "reason": "EP Mode: Allowing dry volume entry"}
 
-            min_v = STOCK_FILTERING.get("require_volume_spike", 1.5)
-            stype = "bullish" if signal == 1 else "bearish"
-            v_analysis = get_enhanced_volume_confirmation(data, stype)
+        min_v = STOCK_FILTERING["require_volume_spike"]
+        stype = "bullish" if signal == 1 else "bearish"
+        v_analysis = get_enhanced_volume_confirmation(data, self.strat_params, stype)
 
-            if v_analysis["factor"] >= min_v:
-                return {"signal": signal, "reason": f"Vol OK: {v_analysis['strength']}"}
-            else:
-                return {"signal": 0, "reason": f"Vol Filtered: {v_analysis['strength']}"}
-        except Exception as e:
-            return {"signal": signal, "reason": f"Vol Error: {e}"}
+        if v_analysis["factor"] >= min_v:
+            return {"signal": signal, "reason": f"Vol OK: {v_analysis['strength']}"}
+        else:
+            return {"signal": 0, "reason": f"Vol Filtered: {v_analysis['strength']}"}
 
 
 class BacktraderStrategyMeta(type(ABC), type(bt.Strategy)):
@@ -72,11 +80,8 @@ class BacktraderStrategy(BaseStrategy, bt.Strategy, metaclass=BacktraderStrategy
     params = (("symbol", "UNKNOWN"),)
 
     def __init__(self, *args, **kwargs):
-        # Pass kwargs as strategy params to BaseStrategy
         BaseStrategy.__init__(self, params=kwargs)
-        # Initialize Backtrader Strategy
         bt.Strategy.__init__(self, *args, **kwargs)
-        # Access symbol from Backtrader params object
         self.symbol = self.params.symbol
         self.data_close = self.datas[0].close
 

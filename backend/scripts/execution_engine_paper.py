@@ -1,6 +1,6 @@
 """
 Execution Engine
-File: scripts/execution_engine.py
+File: scripts/execution_engine_paper.py
 
 Handles trade execution (Buying/Selling) with Paper Trading Mock support.
 """
@@ -17,9 +17,9 @@ logger = logging.getLogger(__name__)
 
 class ExecutionEngine:
     def __init__(self):
-        self.is_paper_trading = TRADING_OPTIONS.get("is_paper_trading", True)
-        self.brokerage_pct = TRADING_OPTIONS.get("brokerage_charges", 0.0005)
-        self.initial_capital = TRADING_OPTIONS.get("initial_capital", 100000.0)
+        self.is_paper_trading = TRADING_OPTIONS["is_paper_trading"]
+        self.brokerage_pct = TRADING_OPTIONS["brokerage_charges"]
+        self.initial_capital = TRADING_OPTIONS["initial_capital"]
 
     def execute_buy(self, symbol, quantity, price, stop_loss, target, recomm_id=None, strategy_name="UNKNOWN"):
         """Execute a buy order with detailed metadata and pyramiding support."""
@@ -30,9 +30,8 @@ class ExecutionEngine:
             open_positions = get_open_positions()
             existing_pos = next((p for p in open_positions if p["symbol"] == symbol), None)
 
-            pyramid_cfg = config.RISK_MANAGEMENT.get("pyramiding", {})
-            can_pyramid = pyramid_cfg.get("enabled", False)
-            max_adds = pyramid_cfg.get("max_adds", 2)
+            pyramid_cfg = config.RISK_MANAGEMENT["pyramiding"]
+            can_pyramid = pyramid_cfg["enabled"]
 
             if existing_pos:
                 if not can_pyramid:
@@ -40,14 +39,14 @@ class ExecutionEngine:
                     return None
 
                 adds = existing_pos.get("adds_count", 0)
-                pyramid_steps = pyramid_cfg.get("steps", [])
+                pyramid_steps = pyramid_cfg["steps"]
 
                 if adds >= len(pyramid_steps):
                     logger.warning(f"Skipping {symbol}: Max pyramid steps ({len(pyramid_steps)}) reached.")
                     return None
 
                 step_obj = pyramid_steps[adds]
-                trigger_atr_mult = step_obj.get("trigger_step_atr", 1.5)
+                trigger_atr_mult = step_obj["trigger_step_atr"]
 
                 # PRICE TRIGGER CHECK: Only add if price moved up by X * ATR
                 try:
@@ -66,14 +65,13 @@ class ExecutionEngine:
                         logger.info(msg)
                         return None
                 except Exception as e:
-                    logger.warning(f"Pyramid trigger check failed for {symbol}: {e}. Proceeding with signal only.")
+                    logger.error(f"Critical error in pyramid trigger check for {symbol}: {e}")
+                    raise e
 
-                # Calculate Pyramid Quantity: Initial Qty * Step %
+                # Calculate Pyramid Quantity
                 base_qty = existing_pos.get("initial_quantity", existing_pos["quantity"])
-                add_pct = step_obj.get("add_size_pct", 0.5)
-                pyramid_qty = int(base_qty * add_pct)
-                if pyramid_qty <= 0:
-                    pyramid_qty = 1
+                add_pct = step_obj["add_size_pct"]
+                pyramid_qty = max(int(base_qty * add_pct), 1)
 
                 # Update existing position (Pyramiding)
                 new_qty = existing_pos["quantity"] + pyramid_qty
@@ -101,7 +99,7 @@ class ExecutionEngine:
                 pos_data = {
                     "symbol": symbol,
                     "quantity": quantity,
-                    "initial_quantity": quantity,  # Store base for future adds
+                    "initial_quantity": quantity,
                     "entry_price": round(price, 2),
                     "total_investment": total_investment,
                     "allocation_pct": allocation_pct,
@@ -123,23 +121,20 @@ class ExecutionEngine:
                 logger.info(f"Position sizing validated: {allocation_pct}% of capital allocated to {symbol}")
                 return res
             except Exception as e:
-                logger.error(f"Failed to store position for {symbol}: {e}")
-                return None
+                logger.error(f"Critical execution error for {symbol}: {e}")
+                raise e
         else:
             logger.warning("Real trading execution not yet implemented.")
-            return None
+            raise NotImplementedError("Live trading not supported in paper engine.")
 
     def execute_sell(self, symbol, price, reason, quantity=None):
         """Execute a sell order (Supports Partial or Full exits)."""
-        mode = "PAPER" if self.is_paper_trading else "LIVE"
         if self.is_paper_trading:
             qty_str = f"Qty: {quantity}" if quantity else "FULL Position"
-            logger.info(f"{mode} TRADING: Executing SELL for {symbol} | {qty_str} | Price: {price} | Reason: {reason}")
+            logger.info(f"PAPER TRADING: Executing SELL for {symbol} | {qty_str} | Price: {price} | Reason: {reason}")
 
             try:
                 if quantity:
-                    # Partial Exit logic is handled by the caller (PortfolioMonitor)
-                    # by updating the position quantity. Here we just log and confirm.
                     logger.info(f"✅ Partial Sell Recorded for {symbol}: {quantity} units at {price}")
                     return True
                 else:
@@ -149,11 +144,10 @@ class ExecutionEngine:
                         logger.info(f"Successfully closed position for {symbol}")
                         return True
                     else:
-                        logger.error(f"Could not find open position to close for {symbol}")
-                        return False
+                        raise ValueError(f"Could not find open position to close for {symbol}")
             except Exception as e:
                 logger.error(f"Error closing position for {symbol}: {e}")
-                return False
+                raise e
         else:
             logger.warning("Real trading execution not yet implemented.")
-            return False
+            raise NotImplementedError("Live trading not supported in paper engine.")

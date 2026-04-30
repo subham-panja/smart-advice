@@ -3,8 +3,6 @@ from typing import Dict
 
 import requests
 
-from config import CHARTINK_CONFIG
-
 logger = logging.getLogger(__name__)
 
 
@@ -16,13 +14,17 @@ class ChartinkFilter:
         self.session.headers.update({"User-Agent": "Mozilla/5.0", "X-Requested-With": "XMLHttpRequest"})
 
     def get_filtered_symbols(self, scan_clause: str = None, max_stocks: int = None) -> Dict[str, str]:
+        if not scan_clause:
+            logger.error("No scan_clause provided to ChartinkFilter.")
+            return {}
+
         try:
             self.session.get("https://chartink.com/screener", timeout=10)
             token = requests.utils.unquote(self.session.cookies.get("XSRF-TOKEN", ""))
 
             resp = self.session.post(
                 "https://chartink.com/screener/process",
-                data={"scan_clause": scan_clause or CHARTINK_CONFIG.get("scan_clause")},
+                data={"scan_clause": scan_clause},
                 headers={"x-xsrf-token": token},
                 timeout=30,
             )

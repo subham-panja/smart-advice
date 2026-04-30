@@ -1,48 +1,61 @@
 import importlib
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 import pandas as pd
 
 from config import TRADING_OPTIONS
 from scripts.backtesting import BacktestingEngine
 from scripts.strategies.base_strategy import BacktraderStrategy
+from scripts.swing_trading_signals import SwingTradingSignalAnalyzer
 
 logger = logging.getLogger(__name__)
 
 
 class BacktestingRunner:
-    """Evaluates multiple strategies and calculates CAGR, Win Rate, Expectancy, and Profit Factor."""
+    """Evaluates multiple strategies or the core dynamic strategy and calculates performance metrics."""
 
     def __init__(self, initial_cash: float = None, commission: float = None):
-        self.initial_cash = initial_cash or TRADING_OPTIONS.get("initial_capital", 100000.0)
-        self.commission = commission or TRADING_OPTIONS.get("brokerage_charges", 0.001)
+        self.initial_cash = initial_cash if initial_cash is not None else TRADING_OPTIONS["initial_capital"]
+        self.commission = commission if commission is not None else TRADING_OPTIONS["brokerage_charges"]
 
-    def run(self, symbol: str, df: pd.DataFrame, strategy_classes: Optional[List[str]] = None) -> Dict[str, Any]:
+    def run(
+        self, symbol: str, df: pd.DataFrame, strategy_classes: List[str], app_config: Dict[str, Any]
+    ) -> Dict[str, Any]:
         if len(df) < 60:
             return {"symbol": symbol, "status": "insufficient_data"}
 
-        if strategy_classes is None:
-            strategy_classes = [
-                "MA_Crossover_50_200",
-                "RSI_Overbought_Oversold",
-                "MACD_Signal_Crossover",
-                "Bollinger_Band_Breakout",
-            ]
-
         results = {}
-        for name in strategy_classes:
+        # If no strategy_classes provided, we perform a DYNAMIC backtest of the main strategy
+        execution_list = strategy_classes if strategy_classes else ["DYNAMIC"]
+
+        for name in execution_list:
             try:
                 engine = BacktestingEngine(self.initial_cash, self.commission)
-                bt_res = engine.run_backtest(self._create_strategy(name), df, params={"symbol": symbol})
+                bt_res = engine.run_backtest(self._create_strategy(name, app_config), df, params={"symbol": symbol})
                 results[name] = self._calc_metrics(bt_res, df)
             except Exception as e:
-                logger.error(f"Backtest {name} error: {e}")
+                logger.error(f"Backtest {name} error for {symbol}: {e}")
+                raise e
 
         combined = self._combine(results)
         return {"symbol": symbol, "status": "completed", "strategy_results": results, "combined_metrics": combined}
 
-    def _create_strategy(self, name: str):
+    def _create_strategy(self, name: str, app_config: Dict[str, Any]):
+        if name == "DYNAMIC":
+            # This is the "User's Strategy" - dynamic and based on JSON
+            class DynamicBTStrategy(BacktraderStrategy):
+                def __init__(self, *args, **kwargs):
+                    super().__init__(*args, **kwargs)
+                    self.analyzer = SwingTradingSignalAnalyzer()
+
+                def _execute_strategy_logic(self, data, symbol="UNKNOWN"):
+                    # We pass the full app_config to the analyzer for dynamic checks
+                    res = self.analyzer.analyze_swing_opportunity(symbol, data, strategy_config=app_config)
+                    return 1 if res.get("recommendation") == "BUY" else 0
+
+            return DynamicBTStrategy
+
         mapping = {
             "MA_Crossover_50_200": "scripts.strategies.ma_crossover_50_200",
             "RSI_Overbought_Oversold": "scripts.strategies.rsi_overbought_oversold",
@@ -50,26 +63,29 @@ class BacktestingRunner:
             "Bollinger_Band_Breakout": "scripts.strategies.bollinger_band_breakout",
         }
 
-        from config import STRATEGY_CONFIG
+        # Check if it's a known standard strategy
+        if name not in mapping:
+            raise ValueError(f"Unknown strategy: {name}. Must be in {list(mapping.keys())} or 'DYNAMIC'")
 
         class BTStrategy(BacktraderStrategy):
             def _execute_strategy_logic(self, data, symbol="UNKNOWN"):
                 mod = importlib.import_module(mapping[name])
-                strat_params = STRATEGY_CONFIG.get(name, {})
+                # Backtesting-specific param lookup
+                strat_params = app_config["STRATEGY_CONFIG"][name]
                 return getattr(mod, name)(strat_params)._execute_strategy_logic(data, symbol=symbol)
 
         return BTStrategy
 
     def _calc_metrics(self, bt: dict, df: pd.DataFrame) -> dict:
-        t = bt.get("trade_analysis", {})
+        t = bt["trade_analysis"]
         won, lost, total = (
-            t.get("won", {}).get("total", 0),
-            t.get("lost", {}).get("total", 0),
-            t.get("total", {}).get("total", 0),
+            t["won"]["total"],
+            t["lost"]["total"],
+            t["total"]["total"],
         )
         p_won, p_lost = (
-            t.get("won", {}).get("pnl", {}).get("total", 0),
-            abs(t.get("lost", {}).get("pnl", {}).get("total", 0)),
+            t["won"]["pnl"]["total"],
+            abs(t["lost"]["pnl"]["total"]),
         )
 
         wr = (won / total * 100) if total > 0 else 0
@@ -94,7 +110,7 @@ class BacktestingRunner:
     def _combine(self, results: dict) -> dict:
         res = [r for r in results.values()]
         if not res:
-            return {}
+            raise ValueError("No backtest results to combine")
         return {
             "avg_cagr": round(sum(r["cagr"] for r in res) / len(res), 2),
             "avg_win_rate": round(sum(r["win_rate"] for r in res) / len(res), 2),

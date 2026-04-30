@@ -1,9 +1,12 @@
+import logging
 from datetime import datetime
 
 from flask import current_app, g
 from pymongo import MongoClient
 
 import config
+
+logger = logging.getLogger(__name__)
 
 
 def get_db():
@@ -30,12 +33,12 @@ def _get_db_internal():
 def insert_recommended_share(doc: dict):
     db = _get_db_internal()
     doc["recommendation_date"] = datetime.now()
-    col_name = config.MONGODB_COLLECTIONS.get("recommended_shares", "recommended_shares")
+    col_name = config.MONGODB_COLLECTIONS["recommended_shares"]
     return db[col_name].insert_one(doc)
 
 
 def get_open_positions():
-    col_name = config.MONGODB_COLLECTIONS.get("positions", "positions")
+    col_name = config.MONGODB_COLLECTIONS["positions"]
     return list(_get_db_internal()[col_name].find({"status": "OPEN"}))
 
 
@@ -43,18 +46,18 @@ def insert_position(doc: dict):
     db = _get_db_internal()
     doc["entry_date"] = doc.get("entry_date", datetime.now())
     doc["status"] = "OPEN"
-    col_name = config.MONGODB_COLLECTIONS.get("positions", "positions")
+    col_name = config.MONGODB_COLLECTIONS["positions"]
     return db[col_name].insert_one(doc)
 
 
 def update_position(symbol: str, update_data: dict):
-    col_name = config.MONGODB_COLLECTIONS.get("positions", "positions")
+    col_name = config.MONGODB_COLLECTIONS["positions"]
     return _get_db_internal()[col_name].update_one({"symbol": symbol, "status": "OPEN"}, {"$set": update_data})
 
 
 def close_position(symbol: str, exit_price: float, reason: str):
     db = _get_db_internal()
-    col_name = config.MONGODB_COLLECTIONS.get("positions", "positions")
+    col_name = config.MONGODB_COLLECTIONS["positions"]
     pos = db[col_name].find_one({"symbol": symbol, "status": "OPEN"})
     if not pos:
         return None
@@ -75,7 +78,7 @@ def close_position(symbol: str, exit_price: float, reason: str):
 
 def insert_backtest_result(doc: dict):
     doc["created_at"] = datetime.now()
-    col_name = config.MONGODB_COLLECTIONS.get("backtest_results", "backtest_results")
+    col_name = config.MONGODB_COLLECTIONS["backtest_results"]
     return _get_db_internal()[col_name].insert_one(doc)
 
 
@@ -87,12 +90,12 @@ def init_app(app):
 def screen_stocks(filters=None):
     """Simplified stock screening."""
     db = _get_db_internal()
-    col_name = config.MONGODB_COLLECTIONS.get("recommended_shares", "recommended_shares")
+    col_name = config.MONGODB_COLLECTIONS["recommended_shares"]
     return list(db[col_name].find(filters or {}).sort("recommendation_date", -1))
 
 
 def get_recommended_shares_with_analytics():
-    col_name = config.MONGODB_COLLECTIONS.get("recommended_shares", "recommended_shares")
+    col_name = config.MONGODB_COLLECTIONS["recommended_shares"]
     return list(_get_db_internal()[col_name].find().sort("recommendation_date", -1))
 
 
@@ -103,7 +106,7 @@ def get_backtest_results(symbol=None, period=None):
         q["symbol"] = symbol
     if period:
         q["period"] = period
-    col_name = config.MONGODB_COLLECTIONS.get("backtest_results", "backtest_results")
+    col_name = config.MONGODB_COLLECTIONS["backtest_results"]
     return list(db[col_name].find(q).sort("created_at", -1))
 
 
