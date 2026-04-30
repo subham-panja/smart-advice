@@ -97,7 +97,11 @@ def view_recs(m, today=False):
 
         # Calculate sizing for the message
         initial_cap = config.TRADING_OPTIONS.get("initial_capital", 1000000.0)
-        total_cost = quantity * r["buy_price"]
+        buy_price = r.get("buy_price", 0)
+        sell_price = r.get("sell_price", 0)
+        stop_loss = r.get("stop_loss", 0)
+
+        total_cost = quantity * buy_price
         cap_pct = r.get("allocation_pct", (total_cost / initial_cap) * 100)
         rr = r.get("rr_ratio", 0)
 
@@ -105,9 +109,9 @@ def view_recs(m, today=False):
             f"📈 <b>{r['symbol']}</b> | Score: <b>{score:.1f}/100</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
             f"💰 <b>Trade Plan</b>:\n"
-            f"• Entry: ₹{r['buy_price']:.2f}\n"
-            f"• Target: ₹{r['sell_price']:.2f}\n"
-            f"• Stop Loss: ₹{r['stop_loss']:.2f}\n"
+            f"• Entry: ₹{buy_price:.2f}\n"
+            f"• Target: ₹{sell_price:.2f}\n"
+            f"• Stop Loss: ₹{stop_loss:.2f}\n"
             f"• RR Ratio: <b>{rr:.2f}</b>\n\n"
             f"🔢 <b>Sizing (₹{initial_cap/100000:.1f}L Cap)</b>:\n"
             f"• Quantity: <b>{quantity}</b>\n"
