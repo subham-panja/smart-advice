@@ -28,7 +28,7 @@ class Bollinger_Band_Squeeze(BaseStrategy):
         self.squeeze_threshold = self.get_parameter("squeeze_threshold", 0.95)
         self.volatility_limit = self.get_parameter("volatility_limit", 2.5)
 
-    def _execute_strategy_logic(self, data: pd.DataFrame) -> int:
+    def _execute_strategy_logic(self, data: pd.DataFrame, symbol: str = "UNKNOWN") -> int:
         """
         Execute the core Bollinger Band Squeeze strategy logic.
 
@@ -80,50 +80,50 @@ class Bollinger_Band_Squeeze(BaseStrategy):
             # Buy signal: Breakout from squeeze to the upside
             if was_squeeze and not is_squeeze and current_price > bb_middle[-1]:
                 reason = f"Bullish breakout from squeeze: Price {current_price:.2f} > BB middle {bb_middle[-1]:.2f}, squeeze ratio {squeeze_ratio:.3f}"
-                self.log_signal(1, reason, data)
+                self.log_signal(1, reason, data, symbol=symbol)
                 return 1
 
             # Buy signal: Currently in squeeze with upward momentum
             elif is_squeeze and current_price > previous_price and current_price > bb_middle[-1]:
                 reason = f"Squeeze with upward momentum: Price {current_price:.2f}, squeeze ratio {squeeze_ratio:.3f}"
-                self.log_signal(1, reason, data)
+                self.log_signal(1, reason, data, symbol=symbol)
                 return 1
 
             # Sell signal: Breakout from squeeze to the downside
             elif was_squeeze and not is_squeeze and current_price < bb_middle[-1]:
                 reason = f"Bearish breakout from squeeze: Price {current_price:.2f} < BB middle {bb_middle[-1]:.2f}, squeeze ratio {squeeze_ratio:.3f}"
-                self.log_signal(-1, reason, data)
+                self.log_signal(-1, reason, data, symbol=symbol)
                 return -1
 
             # Sell signal: Extreme volatility (wide bands) - RELAXED for momentum
             elif squeeze_ratio > self.volatility_limit:
                 reason = f"Extreme volatility: Squeeze ratio {squeeze_ratio:.3f}"
-                self.log_signal(-1, reason, data)
+                self.log_signal(-1, reason, data, symbol=symbol)
                 return -1
 
             # Check position relative to bands when not in squeeze
             elif not is_squeeze:
                 if current_price > bb_upper[-1]:
                     reason = f"Above upper Bollinger Band: {current_price:.2f} > {bb_upper[-1]:.2f}"
-                    self.log_signal(-1, reason, data)
+                    self.log_signal(-1, reason, data, symbol=symbol)
                     return -1
                 elif current_price < bb_lower[-1]:
                     reason = f"Below lower Bollinger Band: {current_price:.2f} < {bb_lower[-1]:.2f}"
-                    self.log_signal(1, reason, data)
+                    self.log_signal(1, reason, data, symbol=symbol)
                     return 1
                 elif current_price > bb_middle[-1]:
                     reason = f"Above BB middle: {current_price:.2f} > {bb_middle[-1]:.2f}"
-                    self.log_signal(1, reason, data)
+                    self.log_signal(1, reason, data, symbol=symbol)
                     return 1
                 else:
                     reason = f"Below BB middle: {current_price:.2f} < {bb_middle[-1]:.2f}"
-                    self.log_signal(-1, reason, data)
+                    self.log_signal(-1, reason, data, symbol=symbol)
                     return -1
 
             # Default case: in squeeze, wait for breakout
             else:
                 reason = f"In squeeze, waiting for breakout: squeeze ratio {squeeze_ratio:.3f}"
-                self.log_signal(-1, reason, data)
+                self.log_signal(-1, reason, data, symbol=symbol)
                 return -1
 
         except Exception as e:

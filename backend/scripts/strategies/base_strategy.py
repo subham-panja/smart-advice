@@ -24,8 +24,7 @@ class BaseStrategy(ABC):
 
     def run_strategy(self, data: pd.DataFrame, symbol: str = "UNKNOWN") -> int:
         try:
-            self.current_symbol = symbol
-            raw_signal = self._execute_strategy_logic(data)
+            raw_signal = self._execute_strategy_logic(data, symbol=symbol)
             res = self.apply_volume_filtering(raw_signal, data)
             return res.get("signal", 0)
         except Exception as e:
@@ -38,18 +37,18 @@ class BaseStrategy(ABC):
         required = ["Open", "High", "Low", "Close", "Volume"]
         return all(col in data.columns for col in required)
 
-    def log_signal(self, signal: int, reason: str, data: pd.DataFrame) -> None:
+    def log_signal(self, signal: int, reason: str, data: pd.DataFrame, symbol: str = "UNKNOWN") -> None:
         stype = "BUY" if signal == 1 else "SELL/NO_BUY"
         close = data["Close"].iloc[-1] if not data.empty else "N/A"
-        sym = getattr(self, "current_symbol", "UNKNOWN")
-        logger.info(f"[{sym}] {self.name}: {stype} signal - {reason} (Close: {close})")
+        logger.debug(f"[{symbol}] {self.name}: {stype} signal - {reason} (Close: {close})")
 
     def apply_volume_filtering(self, signal: int, data: pd.DataFrame) -> Dict[str, Any]:
         try:
             if signal == 0:
                 return {"signal": 0, "reason": "No signal"}
 
-            from config import STOCK_FILTERING, EPISODIC_PIVOT_MODE
+            from config import EPISODIC_PIVOT_MODE, STOCK_FILTERING
+
             if EPISODIC_PIVOT_MODE:
                 return {"signal": signal, "reason": "EP Mode: Allowing dry volume entry"}
 

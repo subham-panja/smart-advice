@@ -1,17 +1,20 @@
+import logging
 # scripts/deep_learning_models.py
 
 import torch
 import torch.nn as nn
-from utils.logger import setup_logging
-logger = setup_logging()
+
+logger = logging.getLogger(__name__)
+
 
 class LSTMModel(nn.Module):
     """
     A Long Short-Term Memory (LSTM) network for time series forecasting.
-    
+
     This model is designed to capture temporal dependencies in sequential data like
     stock prices.
     """
+
     def __init__(self, input_size, hidden_layer_size=100, output_size=1):
         """
         Args:
@@ -29,8 +32,7 @@ class LSTMModel(nn.Module):
         self.linear = nn.Linear(hidden_layer_size, output_size)
 
         # Initialize hidden state and cell state
-        self.hidden_cell = (torch.zeros(1, 1, self.hidden_layer_size),
-                            torch.zeros(1, 1, self.hidden_layer_size))
+        self.hidden_cell = (torch.zeros(1, 1, self.hidden_layer_size), torch.zeros(1, 1, self.hidden_layer_size))
 
     def forward(self, input_seq):
         """
@@ -60,6 +62,7 @@ class LSTMModel(nn.Module):
         prediction = self.linear(last_time_step_out)
         return prediction
 
+
 # Placeholder for a more advanced hybrid model (e.g., CNN-LSTM)
 class CNNLSTMModel(nn.Module):
     """
@@ -67,13 +70,13 @@ class CNNLSTMModel(nn.Module):
     CNNs can be used to extract features from the time series data before feeding
     it into the LSTM layers.
     """
+
     def __init__(self, *args, **kwargs):
         super().__init__()
         logger.info("CNN-LSTM Model placeholder initialized.")
         # In a real implementation, you would define CNN and LSTM layers here.
-        self.dummy_layer = nn.Linear(10, 1) # Dummy layer for placeholder
+        self.dummy_layer = nn.Linear(10, 1)  # Dummy layer for placeholder
 
     def forward(self, x):
         # Dummy forward pass
         return self.dummy_layer(x)
-

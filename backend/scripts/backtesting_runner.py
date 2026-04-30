@@ -53,10 +53,10 @@ class BacktestingRunner:
         from config import STRATEGY_CONFIG
 
         class BTStrategy(BacktraderStrategy):
-            def _execute_strategy_logic(self, data):
+            def _execute_strategy_logic(self, data, symbol="UNKNOWN"):
                 mod = importlib.import_module(mapping[name])
                 strat_params = STRATEGY_CONFIG.get(name, {})
-                return getattr(mod, name)(strat_params)._execute_strategy_logic(data)
+                return getattr(mod, name)(strat_params)._execute_strategy_logic(data, symbol=symbol)
 
         return BTStrategy
 

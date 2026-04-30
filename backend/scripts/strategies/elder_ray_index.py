@@ -2,14 +2,15 @@
 Elder Ray Index Strategy
 File: scripts/strategies/elder_ray_index.py
 
-This strategy uses the Elder Ray Index to identify buying/selling pressure and 
+This strategy uses the Elder Ray Index to identify buying/selling pressure and
 generate signals based on bullish/bearish power.
 """
 
-import pandas as pd
 import numpy as np
-from .base_strategy import BaseStrategy
+import pandas as pd
 import talib as ta
+
+from .base_strategy import BaseStrategy
 
 
 class Elder_Ray_Index(BaseStrategy):
@@ -32,10 +33,10 @@ class Elder_Ray_Index(BaseStrategy):
                    - threshold: Threshold factor for significant bullish/bearish power (default: 0.1)
         """
         super().__init__(params)
-        self.period = self.get_parameter('period', 13)
-        self.threshold = self.get_parameter('threshold', 0.1)
+        self.period = self.get_parameter("period", 13)
+        self.threshold = self.get_parameter("threshold", 0.1)
 
-    def _execute_strategy_logic(self, data: pd.DataFrame) -> int:
+    def _execute_strategy_logic(self, data: pd.DataFrame, symbol: str = "UNKNOWN") -> int:
         """
         Execute the Elder Ray Index strategy.
 
@@ -51,9 +52,9 @@ class Elder_Ray_Index(BaseStrategy):
 
         try:
             # Calculate EMA
-            close_prices = data['Close'].values
-            high_prices = data['High'].values
-            low_prices = data['Low'].values
+            close_prices = data["Close"].values
+            high_prices = data["High"].values
+            low_prices = data["Low"].values
 
             ema = ta.EMA(close_prices, timeperiod=self.period)
 
@@ -74,19 +75,28 @@ class Elder_Ray_Index(BaseStrategy):
 
             # Buy signal
             if bullish_power > significant_bp and close_prices[-1] > current_ema:
-                self.log_signal(1, f"Bullish Power: {bullish_power:.2f} > significant {significant_bp:.2f}, EMA({current_ema:.2f})", data)
+                self.log_signal(
+                    1,
+                    f"Bullish Power: {bullish_power:.2f} > significant {significant_bp:.2f}, EMA({current_ema:.2f})",
+                    data,
+                )
                 return 1
 
             # Sell signal
             if bearish_power > significant_bp and close_prices[-1] < current_ema:
-                self.log_signal(-1, f"Bearish Power: {bearish_power:.2f} > significant {significant_bp:.2f}, EMA({current_ema:.2f})", data)
+                self.log_signal(
+                    -1,
+                    f"Bearish Power: {bearish_power:.2f} > significant {significant_bp:.2f}, EMA({current_ema:.2f})",
+                    data,
+                )
                 return -1
 
             # Neutral signal
-            self.log_signal(-1, f"Neutral: Bullish {bullish_power:.2f}, Bearish {bearish_power:.2f}, EMA({current_ema:.2f})", data)
+            self.log_signal(
+                -1, f"Neutral: Bullish {bullish_power:.2f}, Bearish {bearish_power:.2f}, EMA({current_ema:.2f})", data
+            )
             return -1
 
         except Exception as e:
             self.log_signal(-1, f"Error in Elder Ray analysis: {str(e)}", data)
             return -1
-

@@ -1,22 +1,14 @@
 import logging
+
+from utils.logger import setup_logging
+
+setup_logging(verbose=True)
+
 from datetime import datetime, timezone
 
 import config
 from config import TRADING_OPTIONS
-from database import get_mongodb, get_open_positions
-from run_analysis import AutomatedStockAnalysis
-from utils.logger import setup_logging
 
-# Dynamic Engine Loading
-IS_PAPER = TRADING_OPTIONS.get("is_paper_trading", True)
-if IS_PAPER:
-    from scripts.execution_engine_paper import ExecutionEngine
-    from scripts.portfolio_monitor_paper import PortfolioMonitor
-else:
-    ExecutionEngine = None
-    PortfolioMonitor = None
-
-setup_logging(verbose=True)
 logger = logging.getLogger("Orchestrator")
 
 
@@ -24,7 +16,7 @@ def run_trading_cycle():
     print("\n" + "=" * 50)
     print("🚀 STARTING UNIFIED TRADING CYCLE")
     print("=" * 50 + "\n")
-    logger.info("=== STARTING UNIFIED TRADING CYCLE ===")
+    logger.warning("=== STARTING UNIFIED TRADING CYCLE ===")
 
     # Phase 1: Monitor Existing Portfolio
     if PortfolioMonitor:
@@ -33,9 +25,9 @@ def run_trading_cycle():
         PortfolioMonitor().monitor_all_positions()
 
     # Phase 2: Run Full Market Analysis (Unified with run_analysis.py)
-    print("🔍 Phase 2: Running full market analysis (FORCE FRESH)...")
-    logger.info("Phase 2: Running full market analysis (FORCE FRESH)...")
-    analysis_engine = AutomatedStockAnalysis(verbose=config.VERBOSE_LOGGING, fresh=True)
+    print("🔍 Phase 2: Running full market analysis (CACHED)...")
+    logger.info("Phase 2: Running full market analysis (CACHED)...")
+    analysis_engine = AutomatedStockAnalysis(verbose=config.VERBOSE_LOGGING, fresh=False)
     analysis_engine.run()
 
     # Phase 3: Execute New Recommendations from DB
@@ -112,7 +104,7 @@ def run_trading_cycle():
             if quantity <= 0:
                 quantity = 1
 
-            logger.info(f"🚀 Executing BUY for {symbol} | Qty: {quantity}")
+            logger.warning(f"🚀 Executing BUY for {symbol} | Qty: {quantity}")
             success = engine.execute_buy(
                 symbol,
                 quantity=quantity,
@@ -124,7 +116,7 @@ def run_trading_cycle():
             if success:
                 executed_count += 1
 
-    logger.info("=== UNIFIED CYCLE COMPLETE ===")
+    logger.warning("=== UNIFIED CYCLE COMPLETE ===")
 
 
 if __name__ == "__main__":

@@ -13,7 +13,7 @@ os.environ["VECLIB_MAXIMUM_THREADS"] = LIBRARY_MAX_THREADS
 os.environ["NUMEXPR_NUM_THREADS"] = LIBRARY_MAX_THREADS
 SECRET_KEY = "your_super_secret_key_here"
 PERSIST_LOGGING = False
-VERBOSE_LOGGING = True
+VERBOSE_LOGGING = False
 EPISODIC_PIVOT_MODE = True
 
 # Database configuration
@@ -49,9 +49,9 @@ NSE_CACHE_FILE = os.path.join(BACKEND_DIR, "data", "nse_symbols.json")
 
 # Performance & Pipeline
 MAX_WORKER_THREADS = 10  # Thread limit for parallel fetching
-DATA_FETCH_THREADS = 16  # Threads specifically for data fetching
+DATA_FETCH_THREADS = 4  # Reduced to avoid rate limiting
 BATCH_SIZE = 8  # Batch size for processing
-REQUEST_DELAY = 0.5  # Delay between requests
+REQUEST_DELAY = 1.0  # Increased delay between requests
 MAX_RETRIES = 1  # Max retries for failed requests
 TIMEOUT_SECONDS = 10  # Request timeout
 RATE_LIMIT_DELAY = 2.0  # Delay when rate limited
@@ -171,8 +171,8 @@ SWING_TRADING_GATES = {
             "adx_min": 15,
             "adx_max": 50,
             "macd_zero_buffer": 0.1,
-            "sma_period": 50, # Pivot out of neglect zone
-            "require_price_above_sma": False, # Allow Turnaround EPs
+            "sma_period": 50,  # Pivot out of neglect zone
+            "require_price_above_sma": False,  # Allow Turnaround EPs
             "require_sma_stack": False,
             "adx_slope_check": True,
         },
@@ -196,7 +196,7 @@ SWING_TRADING_GATES = {
     "MTF_GATE": {
         "enabled": True,
         "params": {
-            "weekly_trend_check": False, # EPs often start with bad weekly charts
+            "weekly_trend_check": False,  # EPs often start with bad weekly charts
             "weekly_sma_fast": 10,
             "weekly_sma_slow": 30,
             "rsi_alignment_min": 60,  # Increased from 50 for momentum velocity
@@ -210,7 +210,7 @@ SWING_PATTERNS = {
         {
             "name": "pullback_to_ema",
             "enabled": True,
-            "ema_period": 10, # Catch explosive momentum on 10-EMA
+            "ema_period": 10,  # Catch explosive momentum on 10-EMA
             "rsi_range": [40, 70],
             "bullish_candle_required": True,
         },

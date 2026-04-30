@@ -27,7 +27,7 @@ class ADX_Trend_Strength(BaseStrategy):
         self.adx_threshold = self.get_parameter("threshold", 15)
         self.strong_trend_threshold = self.adx_threshold + 5
 
-    def _execute_strategy_logic(self, data: pd.DataFrame) -> int:
+    def _execute_strategy_logic(self, data: pd.DataFrame, symbol: str = "UNKNOWN") -> int:
         """
         Execute the ADX trend strength strategy.
 
@@ -68,23 +68,23 @@ class ADX_Trend_Strength(BaseStrategy):
             if current_adx > self.adx_threshold and current_plus_di > current_minus_di:
                 if current_adx > self.strong_trend_threshold:
                     reason = f"Strong uptrend: ADX ({current_adx:.2f}) > {self.strong_trend_threshold}, +DI ({current_plus_di:.2f}) > -DI ({current_minus_di:.2f})"
-                    self.log_signal(1, reason, data)
+                    self.log_signal(1, reason, data, symbol=symbol)
                     return 1
                 else:
                     reason = f"Moderate uptrend: ADX ({current_adx:.2f}) > {self.adx_threshold}, +DI ({current_plus_di:.2f}) > -DI ({current_minus_di:.2f})"
-                    self.log_signal(1, reason, data)
+                    self.log_signal(1, reason, data, symbol=symbol)
                     return 1
 
             # Check for strong downtrend
             elif current_adx > self.adx_threshold and current_minus_di > current_plus_di:
                 reason = f"Strong downtrend: ADX ({current_adx:.2f}) > {self.adx_threshold}, -DI ({current_minus_di:.2f}) > +DI ({current_plus_di:.2f})"
-                self.log_signal(-1, reason, data)
+                self.log_signal(-1, reason, data, symbol=symbol)
                 return -1
 
             # Weak trend or sideways movement
             else:
                 reason = f"Weak trend: ADX ({current_adx:.2f}) <= {self.adx_threshold:.1f}"
-                self.log_signal(-1, reason, data)
+                self.log_signal(-1, reason, data, symbol=symbol)
                 return -1
 
         except Exception as e:

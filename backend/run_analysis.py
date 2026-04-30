@@ -81,8 +81,14 @@ class AutomatedStockAnalysis:
         results = []
         if config.USE_MULTIPROCESSING_PIPELINE:
             logger.info(f"Phase 2: Analyzing {len(fetched)} stocks using {config.NUM_WORKER_PROCESSES} processes...")
-            with multiprocessing.get_context("spawn").Pool(config.NUM_WORKER_PROCESSES, init_worker) as pool:
+            with multiprocessing.get_context("spawn").Pool(
+                config.NUM_WORKER_PROCESSES, init_worker, (self.verbose,)
+            ) as pool:
                 for i, res in enumerate(pool.imap_unordered(analyze_stock_worker, items)):
+                    if res.get("success"):
+                        # Real-time persistence
+                        self.persistence.save_recommendation(res["result"])
+                        self.persistence.save_backtest_results(res["result"])
                     results.append(res)
                     if not self.verbose:
                         print(f"\rProgress: {((i+1)/len(items))*100:.1f}%", end="", flush=True)

@@ -28,7 +28,7 @@ class SSEHandler(logging.Handler):
 def setup_logging(level=logging.INFO, verbose=None):
     os.makedirs("logs", exist_ok=True)
     if verbose is not None:
-        level = logging.INFO if verbose else logging.CRITICAL
+        level = logging.INFO if verbose else logging.WARNING
 
     root = logging.getLogger()
     root.setLevel(level)

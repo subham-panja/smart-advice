@@ -23,6 +23,9 @@ class PersistenceHandler:
             logger.error(f"Clear error: {e}")
 
     def save_recommendation(self, res: Dict[str, Any]) -> bool:
+        logger.info(
+            f"Saving Recomm attempt for {res.get('symbol')} | is_recomm: {res.get('is_recommended')} | strength: {res.get('recommendation_strength')}"
+        )
         if not res.get("is_recommended") or res.get("recommendation_strength") == "HOLD":
             return True
         try:

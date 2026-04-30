@@ -12,7 +12,6 @@ from scripts.risk_management import RiskManager
 from scripts.strategy_evaluator import StrategyEvaluator
 from scripts.swing_trading_signals import SwingTradingSignalAnalyzer
 from scripts.trade_logic import TradeLogic
-from utils.logger import setup_logging
 
 os.environ.update(
     {
@@ -26,7 +25,7 @@ os.environ.update(
         ]
     }
 )
-logger = setup_logging()
+logger = logging.getLogger(__name__)
 
 
 class StockAnalyzer:
@@ -101,6 +100,7 @@ class StockAnalyzer:
 
             if ANALYSIS_CONFIG.get("market_regime_detection", True):
                 from config import EPISODIC_PIVOT_MODE
+
                 mrd = MarketRegimeDetection().get_simple_regime_check()
                 if not mrd["passed"] and not EPISODIC_PIVOT_MODE:
                     res["technical_score"] = min(res["technical_score"], -0.5)
@@ -157,7 +157,7 @@ class StockAnalyzer:
         res["is_recommended"] = bool(score >= buy_t and bt_ok and passed_floors)
         res["recommendation_strength"] = "BUY" if res["is_recommended"] else "HOLD"
 
-        logger.info(
+        logger.warning(
             f"[{res.get('symbol')}] Result: {res['recommendation_strength']} | Score: {score:.2f} (Target: {buy_t}) | Tech: {res['technical_score']:.2f} | Fund: {res['fundamental_score']:.2f} | BT: {'Pass' if bt_ok else 'Fail'}"
         )
         return res
