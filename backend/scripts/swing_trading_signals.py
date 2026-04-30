@@ -25,13 +25,22 @@ class SwingTradingSignalAnalyzer:
         c = df["Close"].iloc[-1]
 
         # Trend Gate
-        adx = ta.ADX(df["High"], df["Low"], df["Close"], 14).iloc[-1]
+        adx_series = ta.ADX(df["High"], df["Low"], df["Close"], 14)
+        adx = adx_series.iloc[-1]
+        adx_prev = adx_series.iloc[-2]
+
         pdi, mdi = (
             ta.PLUS_DI(df["High"], df["Low"], df["Close"], 14).iloc[-1],
             ta.MINUS_DI(df["High"], df["Low"], df["Close"], 14).iloc[-1],
         )
         sma = ta.SMA(df["Close"], sma_p).iloc[-1]
-        trend_ok = adx > self.t_cfg.get("adx_min", 20) and c > sma and pdi > mdi
+
+        # Primary Trend Logic
+        trend_ok = adx > self.t_cfg.get("adx_min", 15) and c > sma and pdi > mdi
+
+        # Slope Check: If enabled, ADX must be rising to confirm momentum is building
+        if trend_ok and self.t_cfg.get("adx_slope_check", False):
+            trend_ok = adx > adx_prev
 
         # Volume Gate
         v_mean = df["Volume"].tail(20).mean()

@@ -63,13 +63,51 @@ class PortfolioMonitor:
                 engine.execute_sell(symbol, current_price, "STOP_LOSS_HIT")
                 return
 
-            # 3. Check for Hard Exit: Target Hit
-            if target and current_price >= target:
-                logger.info(f"🎯 TARGET HIT: {symbol} at ₹{current_price:.2f}")
-                engine.execute_sell(symbol, current_price, "TARGET_HIT")
-                return
+            # 6. Structured Target Monitoring (Scaling Out & Target Hits)
+            targets = self.exit_rules.get("targets", [])
+            # Fetch ATR for Target calculations
+            import talib as ta
 
-            # 4. Check for Time Stop (Sideways)
+            atr = ta.ATR(data["High"], data["Low"], data["Close"], timeperiod=14).iloc[-1]
+
+            # Find the next un-hit target
+            # Track which target we are currently on
+            current_target_idx = pos.get("current_target_idx", 0)
+
+            if current_target_idx < len(targets):
+                target_obj = targets[current_target_idx]
+                target_price = entry_price + (target_obj["atr_multiplier"] * atr)
+
+                if current_price >= target_price:
+                    sell_pct = target_obj.get("sell_percentage", 1.0)
+                    logger.info(f"🎯 {target_obj['name']} HIT: Price ₹{current_price:.2f} >= ₹{target_price:.2f}")
+
+                    if sell_pct < 1.0:
+                        # Partial Sell (Scale Out)
+                        sell_qty = int(pos["quantity"] * sell_pct)
+                        if sell_qty > 0:
+                            engine.execute_sell(
+                                symbol, current_price, f"PARTIAL_{target_obj['name']}", quantity=sell_qty
+                            )
+                            rem_qty = pos["quantity"] - sell_qty
+                            update_data = {
+                                "quantity": rem_qty,
+                                "current_target_idx": current_target_idx + 1,
+                                "is_scaled_out": True,
+                            }
+                            # Auto-Breakeven if enabled and this is Target 1
+                            if current_target_idx == 0 and self.exit_rules.get("breakeven_at_target_1", True):
+                                update_data["current_stop_loss"] = entry_price
+                                logger.info(f"🛡️ SL moved to Breakeven (₹{entry_price:.2f})")
+
+                            update_position(symbol, update_data)
+                            return  # Exit process for this stock today
+                    else:
+                        # Full Exit (Final Target)
+                        engine.execute_sell(symbol, current_price, f"FINAL_{target_obj['name']}")
+                        return
+
+            # 7. Time Stop (Sideways)
             days_held = (datetime.now() - entry_date).days
             if days_held >= self.time_stop_days:
                 pnl_pct = ((current_price - entry_price) / entry_price) * 100
@@ -77,27 +115,6 @@ class PortfolioMonitor:
                     logger.info(f"⏳ TIME STOP: {symbol} held for {days_held} days. Exit due to stagnation.")
                     engine.execute_sell(symbol, current_price, "TIME_STOP")
                     return
-
-            # 5. VTT-Style Trailing SL Update
-            from scripts.risk_management import RiskManager
-
-            rm = RiskManager()
-            sl_info = rm.calculate_stop_loss(
-                data, current_price, method="atr", atr_multiplier=self.exit_rules.get("atr_stop_multiplier", 1.5)
-            )
-
-            new_sl = sl_info["stop_loss"]
-            if new_sl > current_sl:
-                logger.info(f"📉 VTT UPDATE: Trailing {symbol} SL from {current_sl:.2f} to {new_sl:.2f}")
-                update_position(symbol, {"current_stop_loss": new_sl})
-                current_sl = new_sl  # Update local variable for next check
-
-            # 6. Breakeven Protection
-            if self.exit_rules.get("breakeven_at_target_1", True) and target:
-                half_target = entry_price + (target - entry_price) * 0.5
-                if current_price >= half_target and current_sl < entry_price:
-                    logger.info(f"🛡️ BREAKEVEN: {symbol} reached 50% of target. Moving SL to Entry.")
-                    update_position(symbol, {"current_stop_loss": entry_price})
 
             # Update days held metadata
             update_position(symbol, {"days_held": days_held})

@@ -13,6 +13,7 @@ os.environ["VECLIB_MAXIMUM_THREADS"] = LIBRARY_MAX_THREADS
 os.environ["NUMEXPR_NUM_THREADS"] = LIBRARY_MAX_THREADS
 SECRET_KEY = "your_super_secret_key_here"
 PERSIST_LOGGING = False
+VERBOSE_LOGGING = True
 
 # Database configuration
 MONGODB_HOST = os.getenv("MONGODB_HOST", "127.0.0.1")
@@ -20,10 +21,7 @@ MONGODB_PORT = int(os.getenv("MONGODB_PORT", "27017"))
 MONGODB_DATABASE = os.getenv("MONGODB_DATABASE", "super_advice")
 
 # Global Parameters
-MIN_RECOMMENDATION_SCORE = 0.50  # Minimum technical score to consider a buy
 HISTORICAL_DATA_PERIOD = "5y"  # Data lookback for backtesting
-FILTERED_SYMBOLS_CACHE_HOURS = 72  # Cache duration for stock lists
-FILTER_VALIDATION_PERIOD = "5y"  # Period for validating filters
 
 
 # Module Toggles
@@ -47,7 +45,6 @@ NEWS_DATE_RANGE = "10d"
 # Paths & Files
 BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
 NSE_CACHE_FILE = os.path.join(BACKEND_DIR, "data", "nse_symbols.json")
-SYMBOL_GROUPS_FILE = os.path.join(BACKEND_DIR, "data", "symbol_groups.json")
 
 # Performance & Pipeline
 MAX_WORKER_THREADS = 10  # Thread limit for parallel fetching
@@ -58,16 +55,16 @@ MAX_RETRIES = 1  # Max retries for failed requests
 TIMEOUT_SECONDS = 10  # Request timeout
 RATE_LIMIT_DELAY = 2.0  # Delay when rate limited
 BACKOFF_MULTIPLIER = 1.5  # Backoff multiplier for retries
-USE_MULTIPROCESSING_PIPELINE = True  # Use multiple CPUs for analysis
+USE_MULTIPROCESSING_PIPELINE = False  # Use multiple CPUs for analysis
 NUM_WORKER_PROCESSES = 8  # Number of CPU cores to use
 
 # External Integrations
 USE_CHARTINK = True  # Use Chartink for rapid stock screening
 USE_SCREENER = False  # Fallback screener integration
 
-# Chartink Momentum-Breakout Query
+# Chartink Momentum-Breakout Query (Synchronized with STOCK_FILTERING)
 CHARTINK_CONFIG = {
-    "scan_clause": "( {cash} ( latest close > latest sma( close,50 ) and latest close > latest sma( close,200 ) and latest volume > latest sma( volume,20 ) * 2 and latest close > 1 day ago max( 20, high ) and latest rsi( 14 ) > 60 and latest close > latest open and latest close >= latest high * 0.98 and latest close > 20 and latest close < 50000 and latest volume > 100000 and market cap > 500 ) )",
+    "scan_clause": "( {cash} ( latest close > latest sma( close,50 ) and latest close > latest sma( close,200 ) and latest volume > latest sma( volume,20 ) * 2 and latest rsi( 14 ) > 60 and latest close > latest open and latest close >= latest high * 0.98 and latest close > 20 and latest close < 3000 and latest volume > 100000 and market cap > 5000 ) )",
     "cache_ttl_minutes": 30,
 }
 
@@ -118,38 +115,38 @@ FIVEPAISA_CONFIG = {
     "api_key": os.getenv("FIVEPAISA_API_KEY"),
     "encry_key": os.getenv("FIVEPAISA_ENCRY_KEY"),
     "client_code": os.getenv("FIVEPAISA_CLIENT_CODE"),
-    "redirect_url": os.getenv("FIVEPAISA_REDIRECT_URL", "https://xstream.5paisa.com/"),
+    "redirect_url": os.getenv("FIVEPAISA_REDIRECT_URL"),
     "access_token": os.getenv("FIVEPAISA_ACCESS_TOKEN"),
 }
 
 # Technical Engine (Weights & Strategies)
 ANALYSIS_WEIGHTS = {
-    "technical": 0.80,  # Weight for technical momentum
-    "fundamental": 0.10,  # Weight for basic health filters
+    "technical": 0.90,  # Weight for technical momentum
+    "fundamental": 0.05,  # Weight for basic health filters
     "sentiment": 0.00,  # Weight for news sentiment
-    "sector": 0.10,  # Weight for sector strength
+    "sector": 0.05,  # Weight for sector strength
 }
 
 STRATEGY_CONFIG = {
-    "RSI_Overbought_Oversold": False,  # Momentum continuation mode
-    "MACD_Signal_Crossover": True,  # Trend momentum confirmation
-    "ADX_Trend_Strength": True,  # Trend strength filter
-    "On_Balance_Volume": True,  # Volume-based confirmation
-    "Bollinger_Band_Squeeze": True,  # Volatility contraction pattern
-    "Relative_Strength_Comparison": True,  # Outperformance vs Nifty 50
-    "Pocket_Pivot_Entry": True,  # Early entry volume signature
+    "RSI_Overbought_Oversold": {"enabled": False, "period": 14, "upper": 70, "lower": 30},
+    "MACD_Signal_Crossover": {"enabled": True, "fast": 12, "slow": 26, "signal": 9},
+    "ADX_Trend_Strength": {"enabled": True, "period": 14, "threshold": 15},
+    "On_Balance_Volume": {"enabled": True, "lookback": 20},
+    "Bollinger_Band_Squeeze": {"enabled": True, "period": 20, "std": 2, "volatility_limit": 2.5},
+    "Relative_Strength_Comparison": {"enabled": True, "period": 55, "threshold": 0.0},
+    "Pocket_Pivot_Entry": {"enabled": True, "max_down_days": 10},
 }
 
 RECOMMENDATION_THRESHOLDS = {
     "buy_combined": 0.40,  # Minimum total score for a BUY
-    "technical_minimum": 0.35,  # Minimum technical score floor
-    "fundamental_minimum": 0.05,  # Minimum fundamental health floor
-    "require_all_gates": False,  # Allow trade if core trend is strong
+    "technical_minimum": 0.38,  # Minimum technical score floor
+    "fundamental_minimum": 0.02,  # Minimum fundamental health floor
+    "require_all_gates": True,  # Allow trade if core trend is strong
     "min_risk_reward_ratio": 2,  # Minimum RR requirement
 }
 
 
-# Legacy Filtering (Fallback) - Synchronized with Chartink Scan Clause
+# NOTE: WE ARE NOT USING THE BELOW IF CHARTINK IS ENABLED (Legacy Fallback Only)
 STOCK_FILTERING = {
     "min_volume": 100000,
     "min_price": 20.0,
@@ -169,16 +166,17 @@ SWING_TRADING_GATES = {
     "TREND_GATE": {
         "enabled": True,
         "params": {
-            "adx_min": 20,
+            "adx_min": 15,
             "adx_max": 50,
             "macd_zero_buffer": 0.1,
             "sma_period": 200,
             "require_price_above_sma": True,
             "require_sma_stack": False,
+            "adx_slope_check": True,
         },
     },
     "VOLATILITY_GATE": {
-        "enabled": True,
+        "enabled": False,
         "params": {
             "min_percentile": 20,  # Avoid "dead" stocks
             "max_percentile": 80,  # Avoid "erratic" stocks
@@ -228,39 +226,42 @@ SWING_PATTERNS = {
         {"name": "volatility_contraction", "enabled": True, "min_contractions": 2, "volume_dry_up_required": True},
     ],
     "exit_rules": {
-        "atr_stop_multiplier": 1.5,  # Reduced from 2.0 to 1.5 for tighter risk
-        "target_1_atr": 3.0,  # Increased from 2.0 to 3.0 to achieve 1:2 RR
-        "target_2_atr": 4.5,  # Scaled accordingly
-        "trail_stop_atr": 3.0,  # Trailing stop distance
-        "time_stop_bars": 15,  # Max hold time without target hit
-        "breakeven_at_target_1": True,  # Move SL to entry after T1
+        "targets": [
+            {"name": "Target 1", "atr_multiplier": 3.0, "sell_percentage": 0.5},
+            {"name": "Target 2", "atr_multiplier": 4.5, "sell_percentage": 1.0},
+        ],
+        "atr_stop_multiplier": 1.5,
+        "time_stop_bars": 15,
+        "breakeven_at_target_1": True,
     },
 }
 
 # Portfolio & Risk Limits
 RISK_MANAGEMENT = {
     "position_sizing": {
-        "risk_per_trade": 0.01,  # 1% risk per trade rule
-        "max_position_pct": 0.10,  # Max 10% of capital per stock
+        "risk_per_trade": 0.01,
+        "max_position_pct": 0.10,
     },
     "portfolio_constraints": {
-        "max_concurrent_positions": 5,  # Max 5 active trades
-        "daily_loss_limit": 0.03,  # 3% portfolio loss limit per day
+        "max_concurrent_positions": 5,
+        "daily_loss_limit": 0.03,
     },
     "pyramiding": {
         "enabled": True,
         "max_adds": 2,
-        "trigger_step_atr": 1.5,  # Add more every 1.5 ATR move
-        "add_size_pct_steps": [0.5, 0.25],  # Tapered adds: 50% then 25%
+        "steps": [
+            {"name": "Add 1", "trigger_step_atr": 1.5, "add_size_pct": 0.5},
+            {"name": "Add 2", "trigger_step_atr": 1.5, "add_size_pct": 0.25},
+        ],
     },
 }
 
 # TRADING & EXECUTION OPTIONS
 TRADING_OPTIONS = {
     "is_paper_trading": True,
-    "initial_capital": 1000000.0,
+    "initial_capital": 100000.0,
     "brokerage_charges": 0.0020,  # 0.20% per side
     "allow_multiple_positions_same_stock": False,
     "time_stop_days": 15,  # Exit if sideways for 15 days
-    "auto_execute": True,  # Whether to auto-place orders or wait for user
+    "auto_execute": True,
 }

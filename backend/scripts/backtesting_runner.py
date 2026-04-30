@@ -34,8 +34,8 @@ class BacktestingRunner:
         for name in strategy_classes:
             try:
                 engine = BacktestingEngine(self.initial_cash, self.commission)
-                bt = engine.run_backtest(self._create_strategy(name), df)
-                results[name] = self._calc_metrics(bt, df)
+                bt_res = engine.run_backtest(self._create_strategy(name), df, params={"symbol": symbol})
+                results[name] = self._calc_metrics(bt_res, df)
             except Exception as e:
                 logger.error(f"Backtest {name} error: {e}")
 
@@ -50,10 +50,13 @@ class BacktestingRunner:
             "Bollinger_Band_Breakout": "scripts.strategies.bollinger_band_breakout",
         }
 
+        from config import STRATEGY_CONFIG
+
         class BTStrategy(BacktraderStrategy):
             def _execute_strategy_logic(self, data):
                 mod = importlib.import_module(mapping[name])
-                return getattr(mod, name)()._execute_strategy_logic(data)
+                strat_params = STRATEGY_CONFIG.get(name, {})
+                return getattr(mod, name)(strat_params)._execute_strategy_logic(data)
 
         return BTStrategy
 

@@ -19,11 +19,12 @@ logger = None
 class AutomatedStockAnalysis:
     """Orchestrates the two-phase stock analysis pipeline."""
 
-    def __init__(self, verbose=False):
+    def __init__(self, verbose=False, fresh=False):
         global logger
         logger = setup_logging(verbose=verbose)
         self.persistence = PersistenceHandler()
         self.verbose = verbose
+        self.fresh = fresh
         self.start_time = datetime.now()
 
     def run(self):
@@ -44,7 +45,10 @@ class AutomatedStockAnalysis:
 
         fetched = {}
         with ThreadPoolExecutor(max_workers=config.DATA_FETCH_THREADS) as ex:
-            f_map = {ex.submit(get_historical_data, s, config.HISTORICAL_DATA_PERIOD): s for s in symbols_list}
+            f_map = {
+                ex.submit(get_historical_data, s, config.HISTORICAL_DATA_PERIOD, fresh=self.fresh): s
+                for s in symbols_list
+            }
             for f in as_completed(f_map):
                 s = f_map[f]
                 try:
@@ -75,8 +79,18 @@ class AutomatedStockAnalysis:
         ]
 
         results = []
-        with multiprocessing.get_context("spawn").Pool(config.NUM_WORKER_PROCESSES, init_worker) as pool:
-            for i, res in enumerate(pool.imap_unordered(analyze_stock_worker, items)):
+        if config.USE_MULTIPROCESSING_PIPELINE:
+            logger.info(f"Phase 2: Analyzing {len(fetched)} stocks using {config.NUM_WORKER_PROCESSES} processes...")
+            with multiprocessing.get_context("spawn").Pool(config.NUM_WORKER_PROCESSES, init_worker) as pool:
+                for i, res in enumerate(pool.imap_unordered(analyze_stock_worker, items)):
+                    results.append(res)
+                    if not self.verbose:
+                        print(f"\rProgress: {((i+1)/len(items))*100:.1f}%", end="", flush=True)
+        else:
+            logger.info(f"Phase 2: Analyzing {len(fetched)} stocks serially (Multiprocessing Disabled)...")
+            init_worker()
+            for i, item in enumerate(items):
+                res = analyze_stock_worker(item)
                 results.append(res)
                 if not self.verbose:
                     print(f"\rProgress: {((i+1)/len(items))*100:.1f}%", end="", flush=True)
@@ -101,11 +115,14 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--verbose", action="store_true")
+    parser.add_argument("--verbose", action="store_true", help="Enable verbose logging (overrides config)")
     args = parser.parse_args()
 
+    # Priority: Command line flag > Config file
+    verbose = args.verbose or config.VERBOSE_LOGGING
+
     try:
-        AutomatedStockAnalysis(verbose=args.verbose).run()
+        AutomatedStockAnalysis(verbose=verbose).run()
         return 0
     except Exception as e:
         print(f"Critical Error: {e}")

@@ -120,18 +120,45 @@ class StockAnalyzer:
             return {"symbol": symbol, "is_recommended": False, "error": str(e)}
 
     def _combine(self, res: Dict[str, Any], consider_bt: bool = False) -> Dict[str, Any]:
-        t_w, f_w = ANALYSIS_WEIGHTS.get("technical", 0.7), ANALYSIS_WEIGHTS.get("fundamental", 0.3)
-        score = (res["technical_score"] * t_w) + (res["fundamental_score"] * f_w)
+        # Load weights from config
+        t_w = ANALYSIS_WEIGHTS.get("technical", 0.90)
+        f_w = ANALYSIS_WEIGHTS.get("fundamental", 0.05)
+        s_w = ANALYSIS_WEIGHTS.get("sector", 0.05)
+
+        # Calculate Sector Bonus (Placeholder: Using RS strength as a proxy for Sector Momentum)
+        sector_score = 0.5  # Neutral default
+        if res.get("swing_analysis", {}).get("gates", {}).get("trend"):
+            sector_score = 0.8  # Bonus if in a trending context
+
+        # Weighted Score Calculation
+        score = (res["technical_score"] * t_w) + (res["fundamental_score"] * f_w) + (sector_score * s_w)
         res["combined_score"] = score
 
+        # Floor Checks (Kicker Logic)
+        tech_floor = RECOMMENDATION_THRESHOLDS.get("technical_minimum", 0.38)
+        fund_floor = RECOMMENDATION_THRESHOLDS.get("fundamental_minimum", -0.5)
+
+        passed_floors = True
+        if res["technical_score"] < tech_floor:
+            res["reason"].append(f"Low Tech Score ({res['technical_score']:.2f})")
+            passed_floors = False
+        if res["fundamental_score"] < fund_floor:
+            res["reason"].append(f"Low Fund Score ({res['fundamental_score']:.2f})")
+            passed_floors = False
+
+        # Backtest Check
         bt_ok = True
         if consider_bt:
             cagr = res.get("backtest", {}).get("combined_metrics", {}).get("avg_cagr", 0)
             bt_ok = cagr >= RECOMMENDATION_THRESHOLDS.get("min_backtest_return", 0.0)
 
-        buy_t = RECOMMENDATION_THRESHOLDS.get("buy_combined", 0.2)
-        res["is_recommended"] = bool(score >= buy_t and bt_ok)
+        buy_t = RECOMMENDATION_THRESHOLDS.get("buy_combined", 0.40)
+        res["is_recommended"] = bool(score >= buy_t and bt_ok and passed_floors)
         res["recommendation_strength"] = "BUY" if res["is_recommended"] else "HOLD"
+
+        logger.info(
+            f"[{res.get('symbol')}] Result: {res['recommendation_strength']} | Score: {score:.2f} (Target: {buy_t}) | Tech: {res['technical_score']:.2f} | Fund: {res['fundamental_score']:.2f} | BT: {'Pass' if bt_ok else 'Fail'}"
+        )
         return res
 
 
