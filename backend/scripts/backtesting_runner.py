@@ -69,6 +69,10 @@ class BacktestingRunner:
                     res = self.analyzer.analyze_swing_opportunity(symbol, data, strategy_config=self.strat_params)
                     return 1 if res.get("recommendation") == "BUY" else 0
 
+                def notify_order(self, order):
+                    if order.status in [order.Completed]:
+                        self.last_executed_size = abs(order.executed.size)
+
             return DynamicBTStrategy
 
         mapping = {

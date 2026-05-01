@@ -50,7 +50,7 @@
         {
             "type": "market_cap",
             "op": ">",
-            "value": 8000.0
+            "value": 15000.0
         },
         {
             "type": "moving_average",

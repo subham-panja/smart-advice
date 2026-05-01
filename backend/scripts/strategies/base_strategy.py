@@ -154,4 +154,9 @@ class BacktraderStrategy(bt.Strategy, metaclass=BacktraderStrategyMeta):
 
         if sig == 1:
             self.buy()
+
+    def notify_order(self, order):
+        if order.status in [order.Completed]:
             self.bar_executed = len(self)
+            # Store the last executed size for the analyzer to pick up
+            self.last_executed_size = abs(order.executed.size)

@@ -18,17 +18,17 @@ class TradeList(bt.Analyzer):
     def notify_trade(self, trade):
         if trade.isclosed:
             try:
-                # Use bar indices to pull prices directly from the data feed for maximum reliability
-                entry_price = trade.price  # Average entry price
-
-                # To get the exact exit price, we look at the data feed at the close bar
-                # trade.barclose is the index of the bar when the trade was closed
+                # Use strategy's captured size and direct price access
+                entry_price = trade.price
                 exit_price = trade.data.close[0]
 
-                size = abs(trade.size)
-                pnl = trade.pnlcomm  # PnL after commission
+                # Get size from strategy if available, fallback to deriving from PnL
+                size = getattr(self.strategy, "last_executed_size", 0)
+                pnl = trade.pnlcomm
 
-                # Ensure prices are distinct if they actually were
+                if size == 0 and abs(exit_price - entry_price) > 0.01:
+                    size = abs(pnl / (exit_price - entry_price))
+
                 pnl_pct = (pnl / (entry_price * size)) * 100 if entry_price > 0 and size > 0 else 0
 
                 self.trades.append(
@@ -38,14 +38,14 @@ class TradeList(bt.Analyzer):
                         "entry_price": round(entry_price, 2),
                         "exit_date": bt.num2date(trade.dtclose).strftime("%Y-%m-%d %H:%M:%S"),
                         "exit_price": round(exit_price, 2),
-                        "quantity": size,
+                        "quantity": round(size, 0),
                         "pnl": round(pnl, 2),
                         "pnl_pct": round(pnl_pct, 2),
                         "is_profitable": pnl > 0,
                     }
                 )
             except Exception as e:
-                logger.error(f"Error extracting trade history for {self.strategy.p.symbol}: {e}")
+                logger.error(f"Error extracting trade details for {self.strategy.p.symbol}: {e}")
 
     def get_analysis(self):
         return self.trades
@@ -72,7 +72,7 @@ class BacktestingEngine:
             cerebro.addsizer(bt.sizers.PercentSizer, percents=pos_pct)
 
             cerebro.adddata(bt.feeds.PandasData(dataname=df))
-            cerebro.addstrategy(strategy_class, **params)
+            cerebro.addstrategy(strategy_class, tradehistory=True, **params)
 
             cerebro.addanalyzer(bt.analyzers.TradeAnalyzer, _name="trades")
             cerebro.addanalyzer(bt.analyzers.DrawDown, _name="drawdown")
