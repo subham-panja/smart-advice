@@ -153,6 +153,9 @@ class BacktraderStrategy(bt.Strategy, metaclass=BacktraderStrategyMeta):
         sig = 1 if sig_res.get("recommendation") == "BUY" else 0
 
         if sig == 1:
+            # Set stop loss for the sizer to calculate quantity
+            trade_plan = sig_res.get("trade_plan", {})
+            self.backtest_stop_loss = trade_plan.get("stop_loss")
             self.buy()
 
     def notify_order(self, order):
