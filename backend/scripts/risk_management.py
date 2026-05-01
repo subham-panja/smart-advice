@@ -16,9 +16,10 @@ class RiskManager:
         self.balance = account_balance if account_balance is not None else TRADING_OPTIONS["initial_capital"]
 
     def calculate_risk_params(self, df: pd.DataFrame, entry: float, app_config: Dict[str, Any]) -> Dict[str, Any]:
-        """Calculates optimal stop loss, position size, and targets based strictly on config."""
-        risk_mgmt = app_config["risk_management"]
-        sizing_cfg = risk_mgmt["position_sizing"]
+        """Calculates optimal stop loss, position size, and targets based on global and strategy config."""
+        from config import RISK_MANAGEMENT
+
+        sizing_cfg = RISK_MANAGEMENT["position_sizing"]
         exit_rules = app_config["exit_rules"]
         rec_thresholds = app_config["recommendation_thresholds"]
 

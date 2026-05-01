@@ -56,9 +56,16 @@ class SwingTradingSignalAnalyzer:
         # EP MODE Catalyst check
         has_recent_spike = False
         if is_ep_mode:
-            recent_v = df["Volume"].tail(6).iloc[:-1]
-            baseline_v = df["Volume"].rolling(window=50).mean().tail(6).iloc[:-1]
-            spike_mult = 3.0
+            # Look for the multiplier in stock_filters or volume_analysis_config
+            vol_spike_cfg = next(
+                (f for f in strategy_config.get("stock_filters", []) if f["type"] == "volume_spike_lookup"), {}
+            )
+            spike_mult = vol_spike_cfg.get("multiplier", 2.0)
+            lookback = vol_spike_cfg.get("lookback_days", 5)
+            ma_p = vol_spike_cfg.get("ma_period", 50)
+
+            recent_v = df["Volume"].tail(lookback + 1).iloc[:-1]
+            baseline_v = df["Volume"].rolling(window=ma_p).mean().tail(lookback + 1).iloc[:-1]
             has_recent_spike = any(recent_v > baseline_v * spike_mult)
 
         # Standard logic OR (EP Mode + Recent Spike)
@@ -79,13 +86,27 @@ class SwingTradingSignalAnalyzer:
         all_ok = all(gates.values())
 
         res = {"symbol": symbol, "all_gates_passed": all_ok, "gates": gates}
+
         if all_ok:
             entry_patterns = strategy_config["entry_patterns"]
-            p_cfg = next((p for p in entry_patterns if p["name"] == "pullback_to_ema"))
+            p_cfg = next((p for p in entry_patterns if p["name"] == "pullback_to_ema"), {"enabled": False})
+
             if p_cfg["enabled"]:
                 ema_p = p_cfg["ema_period"]
                 ema = ta.EMA(df["Close"], ema_p).iloc[-1]
                 if df["Low"].iloc[-1] <= ema * 1.03 and c > ema * 0.98:
                     res.update({"recommendation": "BUY", "pattern": "EMA_Pullback"})
 
+        # Construct Analysis Reason
+        reasons = []
+        if gates["trend"]:
+            reasons.append("Trend OK")
+        if gates["volume"]:
+            reasons.append("Volume Spike")
+        if gates["volatility"]:
+            reasons.append("Volatility Squeeze")
+        if res.get("pattern"):
+            reasons.append(f"Pattern: {res['pattern']}")
+
+        res["reason"] = " + ".join(reasons) if all_ok else "Gates failed"
         return res

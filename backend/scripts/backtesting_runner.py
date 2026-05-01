@@ -7,7 +7,6 @@ import pandas as pd
 from config import TRADING_OPTIONS
 from scripts.backtesting import BacktestingEngine
 from scripts.strategies.base_strategy import BacktraderStrategy
-from scripts.swing_trading_signals import SwingTradingSignalAnalyzer
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +31,9 @@ class BacktestingRunner:
         for name in execution_list:
             try:
                 engine = BacktestingEngine(self.initial_cash, self.commission)
-                bt_res = engine.run_backtest(self._create_strategy(name, app_config), df, params={"symbol": symbol})
+                bt_res = engine.run_backtest(
+                    self._create_strategy(name, app_config), df, params={"symbol": symbol, "strat_params": app_config}
+                )
                 results[name] = self._calc_metrics(bt_res, df)
             except Exception as e:
                 logger.error(f"Backtest {name} error for {symbol}: {e}")
@@ -46,12 +47,14 @@ class BacktestingRunner:
             # This is the "User's Strategy" - dynamic and based on JSON
             class DynamicBTStrategy(BacktraderStrategy):
                 def __init__(self, *args, **kwargs):
-                    super().__init__(*args, **kwargs)
+                    BacktraderStrategy.__init__(self, *args, **kwargs)
+                    from scripts.swing_trading_signals import SwingTradingSignalAnalyzer
+
                     self.analyzer = SwingTradingSignalAnalyzer()
 
                 def _execute_strategy_logic(self, data, symbol="UNKNOWN"):
-                    # We pass the full app_config to the analyzer for dynamic checks
-                    res = self.analyzer.analyze_swing_opportunity(symbol, data, strategy_config=app_config)
+                    # Use the full strat_params (which is app_config) for the analyzer
+                    res = self.analyzer.analyze_swing_opportunity(symbol, data, strategy_config=self.strat_params)
                     return 1 if res.get("recommendation") == "BUY" else 0
 
             return DynamicBTStrategy
@@ -77,27 +80,27 @@ class BacktestingRunner:
         return BTStrategy
 
     def _calc_metrics(self, bt: dict, df: pd.DataFrame) -> dict:
-        t = bt["trade_analysis"]
-        won, lost, total = (
-            t["won"]["total"],
-            t["lost"]["total"],
-            t["total"]["total"],
-        )
-        p_won, p_lost = (
-            t["won"]["pnl"]["total"],
-            abs(t["lost"]["pnl"]["total"]),
-        )
+        t = bt.get("trade_analysis", {})
+
+        # Safe extraction with defaults for no-trade scenarios
+
+        won = t.get("won", {}).get("total", 0)
+        lost = t.get("lost", {}).get("total", 0)
+        total = t.get("total", {}).get("total", 0)
+
+        p_won = t.get("won", {}).get("pnl", {}).get("total", 0.0)
+        p_lost = abs(t.get("lost", {}).get("pnl", {}).get("total", 0.0))
 
         wr = (won / total * 100) if total > 0 else 0
-        pf = (p_won / p_lost) if p_lost > 0 else (999.0 if p_won > 0 else 0)
-        exp = (
-            ((wr / 100 * (p_won / won if won > 0 else 0)) - ((1 - wr / 100) * (p_lost / lost if lost > 0 else 0)))
-            if total > 0
-            else 0
-        )
+        pf = (p_won / p_lost) if p_lost > 0 else (999.0 if p_won > 0 else 0.0)
+
+        # Safe expectancy calculation
+        avg_won = p_won / won if won > 0 else 0
+        avg_lost = p_lost / lost if lost > 0 else 0
+        exp = ((wr / 100 * avg_won) - ((1 - wr / 100) * avg_lost)) if total > 0 else 0.0
 
         years = len(df) / 365.25
-        cagr = ((bt["final_portfolio_value"] / bt["initial_cash"]) ** (1 / years) - 1) * 100 if years > 0 else 0
+        cagr = ((bt["final_portfolio_value"] / bt["initial_cash"]) ** (1 / years) - 1) * 100 if years > 0 else 0.0
 
         return {
             "cagr": round(cagr, 2),
@@ -116,4 +119,5 @@ class BacktestingRunner:
             "avg_win_rate": round(sum(r["win_rate"] for r in res) / len(res), 2),
             "avg_expectancy": round(sum(r["expectancy"] for r in res) / len(res), 2),
             "avg_profit_factor": round(sum(r["profit_factor"] for r in res) / len(res), 2),
+            "total_trades": sum(r["total_trades"] for r in res),
         }

@@ -57,12 +57,13 @@ class BaseStrategy(ABC):
         if signal == 0:
             return {"signal": 0, "reason": "No signal"}
 
-        from config import EPISODIC_PIVOT_MODE, STOCK_FILTERING
+        from config import EPISODIC_PIVOT_MODE, VOLUME_SPIKE_THRESHOLD
 
         if EPISODIC_PIVOT_MODE:
             return {"signal": signal, "reason": "EP Mode: Allowing dry volume entry"}
 
-        min_v = STOCK_FILTERING["require_volume_spike"]
+        min_v = VOLUME_SPIKE_THRESHOLD
+
         stype = "bullish" if signal == 1 else "bearish"
         v_analysis = get_enhanced_volume_confirmation(data, self.strat_params, stype)
 
@@ -76,16 +77,68 @@ class BacktraderStrategyMeta(type(ABC), type(bt.Strategy)):
     pass
 
 
-class BacktraderStrategy(BaseStrategy, bt.Strategy, metaclass=BacktraderStrategyMeta):
-    params = (("symbol", "UNKNOWN"),)
+class BacktraderStrategy(bt.Strategy, metaclass=BacktraderStrategyMeta):
+    params = (("symbol", "UNKNOWN"), ("strat_params", {}))
 
     def __init__(self, *args, **kwargs):
-        BaseStrategy.__init__(self, params=kwargs)
         bt.Strategy.__init__(self, *args, **kwargs)
         self.symbol = self.params.symbol
+        self.strat_params = self.params.strat_params
         self.data_close = self.datas[0].close
+        self.bar_executed = 0
+        from scripts.swing_trading_signals import SwingTradingSignalAnalyzer
+
+        self.analyzer = SwingTradingSignalAnalyzer()
+
+    def apply_volume_filtering(self, signal, data):
+        """Standardized volume filtering for backtests."""
+        if signal == 0:
+            return {"signal": 0, "reason": "No Signal"}
+
+        stype = self.strat_params.get("name", "SWING")
+        v_analysis = get_enhanced_volume_confirmation(data, self.strat_params, stype)
+        min_v = self.strat_params.get("strategy_config", {}).get("volume_analysis", {}).get("min_volume_score", 0.1)
+
+        if v_analysis["factor"] >= min_v:
+            return {"signal": signal, "reason": f"Vol OK: {v_analysis['strength']}"}
+        else:
+            return {"signal": 0, "reason": f"Vol Filtered: {v_analysis['strength']}"}
 
     def next(self):
+        # 1. Manage Active Position (Exit Logic)
+        if self.position:
+            # Check for Time Stop
+            time_stop = self.strat_params.get("exit_rules", {}).get("time_stop_bars", 15)
+            if len(self) - self.bar_executed >= time_stop:
+                self.close(reason="Time Stop")
+                return
+
+            current_price = self.datas[0].close[0]
+            # Precise ATR-based exit from config
+            atr = self.strat_params.get("indicators", {}).get("ATR_14", 0)  # Fallback to 0
+            if not atr:
+                # Calculate ATR if not available
+                import talib as ta
+
+                high = self.datas[0].high.get(size=14)
+                low = self.datas[0].low.get(size=14)
+                close = self.datas[0].close.get(size=14)
+                atr = ta.ATR(pd.Series(high), pd.Series(low), pd.Series(close), 14).iloc[-1]
+
+            sl_mult = self.strat_params.get("exit_rules", {}).get("atr_stop_multiplier", 1.5)
+            tp_mult = self.strat_params.get("exit_rules", {}).get("targets", [{}])[0].get("atr_multiplier", 3.0)
+
+            if current_price < self.position.price - (atr * sl_mult):
+                self.close(reason="ATR Stop")
+                return
+
+            if current_price > self.position.price + (atr * tp_mult):
+                self.close(reason="Target Hit")
+                return
+
+            return  # Stay in position
+
+        # 2. Look for New Entry
         df = pd.DataFrame(
             {
                 "Open": self.datas[0].open.get(size=len(self)),
@@ -95,8 +148,10 @@ class BacktraderStrategy(BaseStrategy, bt.Strategy, metaclass=BacktraderStrategy
                 "Volume": self.datas[0].volume.get(size=len(self)),
             }
         )
-        sig = self.run_strategy(df, symbol=self.symbol)
-        if sig == 1 and not self.position:
+
+        sig_res = self.analyzer.analyze_swing_opportunity(self.symbol, df, strategy_config=self.strat_params)
+        sig = 1 if sig_res.get("recommendation") == "BUY" else 0
+
+        if sig == 1:
             self.buy()
-        elif sig == -1 and self.position:
-            self.close()
+            self.bar_executed = len(self)

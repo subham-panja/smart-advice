@@ -54,7 +54,7 @@ class OptionsAnalyzer:
             "passed": True,
             "pcr": round(pcr, 2),
             "unwinding": unwinding,
-            "sentiment": "Bullish" if pcr > bull_t or unwinding else "Neutral",
+            "sentiment": "Bullish" if pcr < bull_t or unwinding else "Neutral",
         }
 
 

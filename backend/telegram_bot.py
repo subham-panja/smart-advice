@@ -106,8 +106,9 @@ def view_recs(m, today=False):
         rr = r.get("rr_ratio", 0)
 
         msg = (
-            f"📈 <b>{r['symbol']}</b> | Score: <b>{score:.1f}/100</b>\n"
+            f"📈 <b>{r['symbol']}</b> | <b>{r.get('strategy_name', 'Delayed_EP')}</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"🎯 Score: <b>{score:.1f}/100</b>\n"
             f"💰 <b>Trade Plan</b>:\n"
             f"• Entry: ₹{buy_price:.2f}\n"
             f"• Target: ₹{sell_price:.2f}\n"
@@ -117,10 +118,11 @@ def view_recs(m, today=False):
             f"• Quantity: <b>{quantity}</b>\n"
             f"• Allocation: <b>₹{total_cost:,.2f} ({cap_pct:.1f}%)</b>\n\n"
             f"📊 <b>Backtest Stats</b>:\n"
+            f"• Trades: <b>{bt.get('total_trades', 0)}</b>\n"
             f"• Win Rate: {bt.get('avg_win_rate', 0):.1f}%\n"
             f"• Avg CAGR: {bt.get('avg_cagr', 0):.1f}%\n"
-            f"• Expectancy: {bt.get('expectancy', 0):.2f}\n\n"
-            f"📝 <b>Analysis</b>: {r['reason']}"
+            f"• Expectancy: {bt.get('avg_expectancy', 0.0):.2f}\n\n"
+            f"📝 <b>Analysis</b>: {r.get('reason') or 'Technical Momentum Breakout'}"
         )
 
         bot.send_message(m.chat.id, msg, parse_mode="HTML")
@@ -169,7 +171,7 @@ def view_positions(m):
         allocation = p.get("allocation_pct", (total_cost / initial_cap) * 100)
 
         msg = (
-            f"{status_emoji} <b>{p['symbol']}</b> | {p.get('trade_type', 'LONG BUY')}\n"
+            f"{status_emoji} <b>{p['symbol']}</b> | {p.get('strategy_name', 'Delayed_EP')}\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
             f"📅 <b>Entered</b>: {p['entry_date'].strftime('%Y-%m-%d %H:%M')}\n"
             f"🔢 <b>Quantity</b>: {p['quantity']} @ ₹{p['entry_price']:.2f}\n"

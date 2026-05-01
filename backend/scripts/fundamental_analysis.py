@@ -56,8 +56,12 @@ class FundamentalAnalysis:
 
     @staticmethod
     def perform_fundamental_analysis(symbol: str) -> float:
-        """Entry point for fundamental analysis."""
-        data = FundamentalAnalysis.get_data(symbol)
-        score = FundamentalAnalysis.calculate_score(data)
-        logger.info(f"Fundamental {symbol}: {score:.2f}")
-        return score
+        """Entry point for fundamental analysis. Fails gracefully."""
+        try:
+            data = FundamentalAnalysis.get_data(symbol)
+            score = FundamentalAnalysis.calculate_score(data)
+            logger.info(f"Fundamental {symbol}: {score:.2f}")
+            return score
+        except Exception as e:
+            logger.warning(f"Fundamental analysis failed for {symbol}: {e}. Defaulting to 0.0")
+            return 0.0

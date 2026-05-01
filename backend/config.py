@@ -14,6 +14,9 @@ os.environ["NUMEXPR_NUM_THREADS"] = LIBRARY_MAX_THREADS
 SECRET_KEY = "your_super_secret_key_here"
 PERSIST_LOGGING = False
 VERBOSE_LOGGING = False
+EPISODIC_PIVOT_MODE = True
+VOLUME_SPIKE_THRESHOLD = 1.5
+
 
 # Database configuration
 MONGODB_HOST = os.getenv("MONGODB_HOST", "127.0.0.1")
@@ -27,6 +30,7 @@ HISTORICAL_DATA_PERIOD = "5y"  # Data lookback for backtesting
 BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
 NSE_CACHE_FILE = os.path.join(BACKEND_DIR, "data", "nse_symbols.json")
 STRATEGIES_DIR = os.path.join(BACKEND_DIR, "strategies")
+
 
 # Performance & Pipeline
 MAX_WORKER_THREADS = 10  # Thread limit for parallel fetching
@@ -72,12 +76,24 @@ FIVEPAISA_CONFIG = {
     "access_token": os.getenv("FIVEPAISA_ACCESS_TOKEN"),
 }
 
-# GLOBAL Portfolio & Risk Limits (Shared across strategies)
+# Portfolio & Risk Limits
 RISK_MANAGEMENT = {
+    "position_sizing": {
+        "risk_per_trade": 0.01,
+        "max_position_pct": 0.10,
+    },
     "portfolio_constraints": {
         "max_concurrent_positions": 10,
         "daily_loss_limit": 0.03,
-    }
+    },
+    "pyramiding": {
+        "enabled": True,
+        "max_adds": 2,
+        "steps": [
+            {"name": "Add 1", "trigger_step_atr": 1.5, "add_size_pct": 0.5},
+            {"name": "Add 2", "trigger_step_atr": 1.5, "add_size_pct": 0.25},
+        ],
+    },
 }
 
 # TRADING & EXECUTION OPTIONS
@@ -89,6 +105,3 @@ TRADING_OPTIONS = {
     "time_stop_days": 15,  # Exit if sideways for 15 days
     "auto_execute": True,
 }
-
-EPISODIC_PIVOT_MODE = True
-STOCK_FILTERING = {"require_volume_spike": 1.5}
