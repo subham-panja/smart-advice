@@ -111,32 +111,56 @@ class BacktraderStrategy(bt.Strategy, metaclass=BacktraderStrategyMeta):
             time_stop = self.strat_params.get("exit_rules", {}).get("time_stop_bars", 15)
             if len(self) - self.bar_executed >= time_stop:
                 self.close(reason="Time Stop")
-                return
 
             current_price = self.datas[0].close[0]
-            # Precise ATR-based exit from config
-            atr = self.strat_params.get("indicators", {}).get("ATR_14", 0)  # Fallback to 0
-            if not atr:
-                # Calculate ATR if not available
-                import talib as ta
 
-                high = self.datas[0].high.get(size=14)
-                low = self.datas[0].low.get(size=14)
-                close = self.datas[0].close.get(size=14)
-                atr = ta.ATR(pd.Series(high), pd.Series(low), pd.Series(close), 14).iloc[-1]
+            # 1. Manage Exits (Targets & Stops)
+            exit_cfg = self.strat_params.get("exit_rules", {})
+            targets = exit_cfg.get("targets", [])
+            sl_mult = exit_cfg.get("atr_stop_multiplier", 2.0)
 
-            sl_mult = self.strat_params.get("exit_rules", {}).get("atr_stop_multiplier", 1.5)
-            tp_mult = self.strat_params.get("exit_rules", {}).get("targets", [{}])[0].get("atr_multiplier", 3.0)
+            # ATR for exit
+            import talib as ta
 
-            if current_price < self.position.price - (atr * sl_mult):
-                self.close(reason="ATR Stop")
+            high = self.datas[0].high.get(size=14)
+            low = self.datas[0].low.get(size=14)
+            close = self.datas[0].close.get(size=14)
+            atr = ta.ATR(pd.Series(high), pd.Series(low), pd.Series(close), 14).iloc[-1]
+
+            # Initial Stop Loss logic
+            if not hasattr(self, "current_stop_loss"):
+                self.current_stop_loss = self.position.price - (atr * sl_mult)
+
+            # Check Stop Loss
+            if current_price < self.current_stop_loss:
+                self.close(reason=f"Stop Loss Hit @ {self.current_stop_loss:.2f}")
                 return
 
-            if current_price > self.position.price + (atr * tp_mult):
-                self.close(reason="Target Hit")
-                return
+            # Check Targets
+            if not hasattr(self, "targets_hit"):
+                self.targets_hit = 0
 
-            return  # Stay in position
+            for i, target_cfg in enumerate(targets):
+                if i < self.targets_hit:
+                    continue
+
+                target_price = self.position.price + (atr * target_cfg["atr_multiplier"])
+                if current_price >= target_price:
+                    sell_pct = target_cfg["sell_percentage"]
+                    # Calculate quantity to sell
+                    qty_to_sell = int(self.position.size * sell_pct)
+                    if qty_to_sell > 0:
+                        self.sell(size=qty_to_sell)
+                        self.targets_hit += 1
+
+                        # Breakeven logic
+                        if i == 0 and exit_cfg.get("breakeven_at_target_1"):
+                            self.current_stop_loss = self.position.price
+
+                        logger.info(f"Target {i+1} Hit: {self.symbol} | Sold {qty_to_sell} units")
+                        # If it was the last target, we'll be closed by the next check or final target
+
+            return
 
         # 2. Look for New Entry
         df = pd.DataFrame(
