@@ -46,9 +46,9 @@ class StockScanner:
         all_syms = get_all_nse_symbols()
         res = {s: {"name": s} for s in all_syms} if isinstance(all_syms, list) else all_syms
 
-        # Safety: If we are falling back to full NSE, cap it to 50 unless max_stocks is specified
+        # Safety: If we are falling back to full NSE, cap it to 100 unless max_stocks is specified
         if not use_all_symbols and not max_stocks:
-            max_stocks = 50
+            max_stocks = 100
             logger.warning(f"Safety: No Chartink result. Capping full scan to first {max_stocks} stocks.")
 
         return dict(list(res.items())[:max_stocks]) if max_stocks else res

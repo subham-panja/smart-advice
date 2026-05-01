@@ -12,10 +12,10 @@
         "options_oi": true
     },
     "analysis_weights": {
-        "technical": 0.90,
-        "fundamental": 0.05,
+        "technical": 0.70,
+        "fundamental": 0.15,
         "sentiment": 0.00,
-        "sector": 0.05
+        "sector": 0.10
     },
     "rs_config": {
         "benchmark_index": "^NSEI",
@@ -40,7 +40,7 @@
             "type": "price",
             "op": "between",
             "min": 20.0,
-            "max": 3000.0
+            "max": 6000.0
         },
         {
             "type": "volume",
@@ -56,14 +56,14 @@
             "type": "moving_average",
             "kind": "SMA",
             "period": 50,
-            "op": ">",
+            "op": "<",
             "target": "close"
         },
         {
             "type": "moving_average",
             "kind": "SMA",
             "period": 200,
-            "op": ">",
+            "op": "<",
             "target": "close"
         },
         {
@@ -80,8 +80,8 @@
         }
     ],
     "recommendation_thresholds": {
-        "buy_combined": 0.10,
-        "technical_minimum": 0.30,
+        "buy_combined": 0.30,
+        "technical_minimum": 0.40,
         "fundamental_minimum": -0.20,
         "require_all_gates": false,
         "min_risk_reward_ratio": 2,
@@ -92,27 +92,32 @@
     "strategy_config": {
         "RSI_Overbought_Oversold": {
             "enabled": false,
+            "is_bonus": true,
             "rsi_period": 14,
             "overbought_level": 70,
             "oversold_level": 30
         },
         "MACD_Signal_Crossover": {
             "enabled": true,
+            "is_bonus": false,
             "fast_period": 12,
             "slow_period": 26,
             "signal_period": 9
         },
         "ADX_Trend_Strength": {
             "enabled": true,
+            "is_bonus": false,
             "period": 14,
-            "threshold": 15
+            "threshold": 22
         },
         "On_Balance_Volume": {
-            "enabled": true,
+            "enabled": false,
+            "is_bonus": true,
             "lookback_period": 20
         },
         "Bollinger_Band_Squeeze": {
             "enabled": true,
+            "is_bonus": false,
             "period": 20,
             "std": 2,
             "volatility_limit": 2.5,
@@ -121,26 +126,38 @@
         },
         "Relative_Strength_Comparison": {
             "enabled": true,
+            "is_bonus": true,
             "period": 55,
             "threshold": 0.0
         },
         "Pocket_Pivot_Entry": {
-            "enabled": true,
+            "enabled": false,
+            "is_bonus": true,
             "lookback": 10,
             "sma_fast": 10,
             "sma_slow": 50
         },
         "Volume_Breakout": {
             "enabled": true,
+            "is_bonus": false,
             "period": 20,
             "threshold": 2.5
+        },
+        "Candlestick_Patterns": {
+            "enabled": true,
+            "is_bonus": true,
+            "patterns": {
+                "bullish_engulfing": true,
+                "hammer": true,
+                "morning_star": true
+            }
         }
     },
     "swing_trading_gates": {
         "TREND_GATE": {
             "enabled": true,
             "params": {
-                "adx_min": 15,
+                "adx_min": 22,
                 "adx_max": 50,
                 "macd_zero_buffer": 0.1,
                 "sma_period": 50,
@@ -150,7 +167,7 @@
             }
         },
         "VOLATILITY_GATE": {
-            "enabled": false,
+            "enabled": true,
             "params": {
                 "min_percentile": 20,
                 "max_percentile": 80,
@@ -168,7 +185,7 @@
         "MTF_GATE": {
             "enabled": true,
             "params": {
-                "weekly_trend_check": false,
+                "weekly_trend_check": true,
                 "weekly_sma_fast": 10,
                 "weekly_sma_slow": 30,
                 "rsi_alignment_min": 50
@@ -178,7 +195,7 @@
     "entry_patterns": [
         {
             "name": "pullback_to_ema",
-            "enabled": true,
+            "enabled": false,
             "ema_period": 10,
             "rsi_range": [
                 40,
@@ -192,7 +209,7 @@
             "bb_period": 20,
             "bb_std": 2,
             "squeeze_threshold": 0.05,
-            "retest_required": true,
+            "retest_required": false,
             "max_squeeze_duration_days": 20
         },
         {

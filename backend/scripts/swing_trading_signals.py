@@ -16,6 +16,7 @@ class SwingTradingSignalAnalyzer:
     def analyze_swing_opportunity(
         self, symbol: str, df: pd.DataFrame, strategy_config: Dict[str, Any]
     ) -> Dict[str, Any]:
+        # Basic Setup
         gates_cfg = strategy_config["swing_trading_gates"]
         t_cfg = gates_cfg["TREND_GATE"]["params"]
         v_cfg = gates_cfg["VOLATILITY_GATE"]["params"]
@@ -23,90 +24,127 @@ class SwingTradingSignalAnalyzer:
 
         sma_p = t_cfg["sma_period"]
         if len(df) < max(sma_p, 100):
-            return {"symbol": symbol, "all_gates_passed": False}
+            return {
+                "symbol": symbol,
+                "all_gates_passed": False,
+                "gates": {"trend": False, "volume": False, "volatility": False},
+            }
 
         c = df["Close"].iloc[-1]
 
+        # 1. GATE CHECKS (Hard Constraints)
+        # -------------------------------
         # Trend Gate
         adx_series = ta.ADX(df["High"], df["Low"], df["Close"], 14)
         adx = adx_series.iloc[-1]
-        adx_prev = adx_series.iloc[-2]
-
         pdi, mdi = (
             ta.PLUS_DI(df["High"], df["Low"], df["Close"], 14).iloc[-1],
             ta.MINUS_DI(df["High"], df["Low"], df["Close"], 14).iloc[-1],
         )
         sma = ta.SMA(df["Close"], sma_p).iloc[-1]
 
-        # Primary Trend Logic
-        require_above_sma = t_cfg["require_price_above_sma"]
         trend_ok = adx > t_cfg["adx_min"] and pdi > mdi
-        if require_above_sma:
+        if t_cfg.get("require_price_above_sma"):
             trend_ok = trend_ok and c > sma
 
-        # Slope Check
-        if trend_ok and t_cfg["adx_slope_check"]:
-            trend_ok = adx > adx_prev
-
         # Volume Gate
-        is_ep_mode = "EP" in strategy_config["name"].upper()
         v_mean = df["Volume"].tail(20).mean()
         v_latest = df["Volume"].iloc[-1]
-
-        # EP MODE Catalyst check
-        has_recent_spike = False
-        if is_ep_mode:
-            # Look for the multiplier in stock_filters or volume_analysis_config
-            vol_spike_cfg = next(
-                (f for f in strategy_config.get("stock_filters", []) if f["type"] == "volume_spike_lookup"), {}
-            )
-            spike_mult = vol_spike_cfg.get("multiplier", 2.0)
-            lookback = vol_spike_cfg.get("lookback_days", 5)
-            ma_p = vol_spike_cfg.get("ma_period", 50)
-
-            recent_v = df["Volume"].tail(lookback + 1).iloc[:-1]
-            baseline_v = df["Volume"].rolling(window=ma_p).mean().tail(lookback + 1).iloc[:-1]
-            has_recent_spike = any(recent_v > baseline_v * spike_mult)
-
-        # Standard logic OR (EP Mode + Recent Spike)
         vol_ok = v_latest > v_mean * (1 + vol_cfg["zscore_threshold"])
-        if is_ep_mode and has_recent_spike:
-            vol_ok = True
 
         # Volatility Gate
-        atr = ta.ATR(df["High"], df["Low"], df["Close"], 14)
-        lb = v_cfg["lookback_days"]
-        p_min, p_max = v_cfg["min_percentile"], v_cfg["max_percentile"]
-
         volatility_ok = True
         if gates_cfg["VOLATILITY_GATE"]["enabled"]:
+            atr = ta.ATR(df["High"], df["Low"], df["Close"], 14)
+            lb = v_cfg["lookback_days"]
+            p_min, p_max = v_cfg["min_percentile"], v_cfg["max_percentile"]
             volatility_ok = p_min <= (atr.iloc[-lb:] < atr.iloc[-1]).sum() <= p_max
 
         gates = {"trend": trend_ok, "volume": vol_ok, "volatility": volatility_ok}
-        all_ok = all(gates.values())
+        all_gates_passed = all(gates.values())
 
-        res = {"symbol": symbol, "all_gates_passed": all_ok, "gates": gates}
+        if not all_gates_passed:
+            return {"symbol": symbol, "all_gates_passed": False, "gates": gates, "reason": "Gates failed"}
 
-        if all_ok:
-            entry_patterns = strategy_config["entry_patterns"]
-            p_cfg = next((p for p in entry_patterns if p["name"] == "pullback_to_ema"), {"enabled": False})
+        # 2. INDICATOR SIGNALS (Hard & Bonus)
+        # ----------------------------------
+        signals = {}
+        strat_cfg = strategy_config["strategy_config"]
 
-            if p_cfg["enabled"]:
-                ema_p = p_cfg["ema_period"]
-                ema = ta.EMA(df["Close"], ema_p).iloc[-1]
-                if df["Low"].iloc[-1] <= ema * 1.03 and c > ema * 0.98:
-                    res.update({"recommendation": "BUY", "pattern": "EMA_Pullback"})
+        # MACD
+        if strat_cfg["MACD_Signal_Crossover"]["enabled"]:
+            macd, macdsignal, _ = ta.MACD(df["Close"], 12, 26, 9)
+            signals["MACD"] = 1 if macd.iloc[-1] > macdsignal.iloc[-1] else 0
 
-        # Construct Analysis Reason
-        reasons = []
-        if gates["trend"]:
-            reasons.append("Trend OK")
-        if gates["volume"]:
-            reasons.append("Volume Spike")
-        if gates["volatility"]:
-            reasons.append("Volatility Squeeze")
-        if res.get("pattern"):
-            reasons.append(f"Pattern: {res['pattern']}")
+        # RSI
+        if strat_cfg["RSI_Overbought_Oversold"]["enabled"]:
+            rsi = ta.RSI(df["Close"], 14).iloc[-1]
+            signals["RSI"] = 1 if rsi > 50 else 0
 
-        res["reason"] = " + ".join(reasons) if all_ok else "Gates failed"
-        return res
+        # Bollinger Bands
+        if strat_cfg["Bollinger_Band_Squeeze"]["enabled"]:
+            upper, middle, lower = ta.BBANDS(df["Close"], 20, 2, 2)
+            signals["BBANDS"] = 1 if c > middle.iloc[-1] else 0
+
+        # ADX Strength
+        if strat_cfg["ADX_Trend_Strength"]["enabled"]:
+            signals["ADX_Strength"] = 1 if adx > strat_cfg["ADX_Trend_Strength"]["threshold"] else 0
+
+        # Candlestick Patterns
+        candle_pats = []
+        if strat_cfg["Candlestick_Patterns"]["enabled"]:
+            pat_cfg = strat_cfg["Candlestick_Patterns"]["patterns"]
+            signals["Candlesticks"] = 0
+
+            if pat_cfg.get("bullish_engulfing"):
+                if ta.CDLENGULFING(df["Open"], df["High"], df["Low"], df["Close"]).iloc[-1] == 100:
+                    signals["Candlesticks"] = 1
+                    candle_pats.append("Engulfing")
+
+            if pat_cfg.get("hammer") and signals["Candlesticks"] == 0:
+                if ta.CDLHAMMER(df["Open"], df["High"], df["Low"], df["Close"]).iloc[-1] == 100:
+                    signals["Candlesticks"] = 1
+                    candle_pats.append("Hammer")
+
+            if pat_cfg.get("morning_star") and signals["Candlesticks"] == 0:
+                if ta.CDLMORNINGSTAR(df["Open"], df["High"], df["Low"], df["Close"]).iloc[-1] == 100:
+                    signals["Candlesticks"] = 1
+                    candle_pats.append("Morning Star")
+
+        # 3. APPLY BONUS/HARD LOGIC
+        # -------------------------
+        final_reasons = []
+        for name, config_key in [
+            ("MACD", "MACD_Signal_Crossover"),
+            ("RSI", "RSI_Overbought_Oversold"),
+            ("BBANDS", "Bollinger_Band_Squeeze"),
+            ("ADX_Strength", "ADX_Trend_Strength"),
+            ("Candlesticks", "Candlestick_Patterns"),
+        ]:
+            if name not in signals:
+                continue
+
+            is_bonus = strat_cfg[config_key].get("is_bonus", False)
+            if signals[name] == 0 and not is_bonus:
+                return {
+                    "symbol": symbol,
+                    "all_gates_passed": False,
+                    "gates": gates,
+                    "reason": f"Hard requirement failed: {name}",
+                }
+
+            if signals[name] == 1:
+                final_reasons.append(name if name != "Candlesticks" else f"Candle({', '.join(candle_pats)})")
+
+        # Calculate Technical Score
+        enabled_signals = [s for s in signals.values()]
+        technical_score = sum(enabled_signals) / len(enabled_signals) if enabled_signals else 0.0
+
+        return {
+            "symbol": symbol,
+            "all_gates_passed": True,
+            "gates": gates,  # Restored for compatibility
+            "recommendation": "BUY" if technical_score >= 0.5 else "HOLD",
+            "technical_score": technical_score,
+            "reason": " + ".join(final_reasons) if final_reasons else "Weak Signals",
+        }
