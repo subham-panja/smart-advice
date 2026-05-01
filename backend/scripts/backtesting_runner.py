@@ -21,7 +21,11 @@ class BacktestingRunner:
     def run(
         self, symbol: str, df: pd.DataFrame, strategy_classes: List[str], app_config: Dict[str, Any]
     ) -> Dict[str, Any]:
-        if len(df) < 60:
+        thresholds = app_config.get("RECOMMENDATION_THRESHOLDS", {})
+        min_days = thresholds.get("min_data_required_days", 252)
+
+        if len(df) < min_days:
+            logger.warning(f"Backtest skipped for {symbol}: Insufficient data ({len(df)} < {min_days} days)")
             return {"symbol": symbol, "status": "insufficient_data"}
 
         results = {}
@@ -99,8 +103,18 @@ class BacktestingRunner:
         avg_lost = p_lost / lost if lost > 0 else 0
         exp = ((wr / 100 * avg_won) - ((1 - wr / 100) * avg_lost)) if total > 0 else 0.0
 
-        years = len(df) / 365.25
-        cagr = ((bt["final_portfolio_value"] / bt["initial_cash"]) ** (1 / years) - 1) * 100 if years > 0 else 0.0
+        # Dynamic Year Calculation for CAGR
+        try:
+            # Ensure the index is datetime if it isn't already
+            if not isinstance(df.index, pd.DatetimeIndex):
+                df.index = pd.to_datetime(df.index)
+
+            days = (df.index[-1] - df.index[0]).days
+            years = days / 365.25
+        except Exception:
+            years = len(df) / 252.0  # Fallback to trading year estimate
+
+        cagr = ((bt["final_portfolio_value"] / bt["initial_cash"]) ** (1 / years) - 1) * 100 if years > 0.1 else 0.0
 
         return {
             "cagr": round(cagr, 2),

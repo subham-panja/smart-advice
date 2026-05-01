@@ -40,16 +40,16 @@ class AutomatedStockAnalysis:
                 return
 
         # Phase 1: Fetch Data
+        thresholds = strategy_config.get("recommendation_thresholds", {})
+        backtest_period = thresholds.get("backtest_period", config.HISTORICAL_DATA_PERIOD)
+
         symbols = StockScanner.get_symbols(strategy_config=strategy_config)
         symbols_list = list(symbols.keys())
-        logger.info(f"Phase 1: Fetching data for {len(symbols_list)} stocks...")
+        logger.info(f"Phase 1: Fetching data ({backtest_period}) for {len(symbols_list)} stocks...")
 
         fetched = {}
         with ThreadPoolExecutor(max_workers=config.DATA_FETCH_THREADS) as ex:
-            f_map = {
-                ex.submit(get_historical_data, s, config.HISTORICAL_DATA_PERIOD, fresh=self.fresh): s
-                for s in symbols_list
-            }
+            f_map = {ex.submit(get_historical_data, s, backtest_period, fresh=self.fresh): s for s in symbols_list}
             for f in as_completed(f_map):
                 s = f_map[f]
                 try:
