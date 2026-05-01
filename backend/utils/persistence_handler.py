@@ -71,7 +71,16 @@ class PersistenceHandler:
 
             m = bt["combined_metrics"]
             now = datetime.now(timezone.utc).replace(tzinfo=None)
-            # Save Summary
+
+            # Prepare Granular Trades
+            trades = bt.get("trades", [])
+            for t in trades:
+                t["filtered_stock_id"] = fs_id
+                t["strategy_name"] = res["strategy_name"]
+                t["created_at"] = now
+                t["updated_at"] = now
+
+            # Save Summary with Nested Details
             summary_id = db.backtest_results.insert_one(
                 {
                     "symbol": res["symbol"],
@@ -81,20 +90,16 @@ class PersistenceHandler:
                     "cagr": m["avg_cagr"],
                     "win_rate": m["avg_win_rate"],
                     "total_trades": m["total_trades"],
+                    "backtest_details": trades,
                     "created_at": now,
                     "updated_at": now,
                 }
             ).inserted_id
 
-            # Save Granular Trades
-            trades = bt.get("trades", [])
+            # Also keep separate collection for cross-stock analysis
             if trades:
                 for t in trades:
                     t["summary_id"] = summary_id
-                    t["filtered_stock_id"] = fs_id
-                    t["strategy_name"] = res["strategy_name"]
-                    t["created_at"] = now
-                    t["updated_at"] = now
                 db.backtest_trades.insert_many(trades)
 
             return True

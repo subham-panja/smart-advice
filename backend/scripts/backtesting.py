@@ -32,6 +32,7 @@ class TradeList(bt.Analyzer):
                     "quantity": abs(size),
                     "pnl": round(pnl, 2),
                     "pnl_pct": round((pnl / (entry_price * abs(size))) * 100, 2) if entry_price and size else 0,
+                    "is_profitable": pnl > 0,
                 }
             )
 
