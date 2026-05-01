@@ -1,5 +1,5 @@
 {
-    "name": "Delayed_EP",
+    "name": "Strict_Audit_EP",
     "enabled": true,
     "analysis_config": {
         "technical_analysis": true,
@@ -81,7 +81,7 @@
     ],
     "recommendation_thresholds": {
         "buy_combined": 0.30,
-        "technical_minimum": 0.30,
+        "technical_minimum": 0.40,
         "fundamental_minimum": -0.20,
         "require_all_gates": false,
         "min_risk_reward_ratio": 2,
@@ -99,7 +99,7 @@
         },
         "MACD_Signal_Crossover": {
             "enabled": true,
-            "is_bonus": true,
+            "is_bonus": false,
             "fast_period": 12,
             "slow_period": 26,
             "signal_period": 9
@@ -145,7 +145,7 @@
         },
         "Candlestick_Patterns": {
             "enabled": true,
-            "is_bonus": false,
+            "is_bonus": true,
             "patterns": {
                 "bullish_engulfing": true,
                 "hammer": true,
@@ -157,7 +157,7 @@
         "TREND_GATE": {
             "enabled": true,
             "params": {
-                "adx_min": 15,
+                "adx_min": 22,
                 "adx_max": 50,
                 "macd_zero_buffer": 0.1,
                 "sma_period": 50,
@@ -177,7 +177,7 @@
         "VOLUME_GATE": {
             "enabled": true,
             "params": {
-                "zscore_threshold": -0.2,
+                "zscore_threshold": 0.2,
                 "obv_trend_lookback": 10,
                 "logic_operator": "OR"
             }

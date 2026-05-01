@@ -43,6 +43,7 @@ class StockAnalyzer:
         self, symbol: str, name: str, hist: pd.DataFrame, app_config: Dict[str, Any], index_data: pd.DataFrame = None
     ) -> Dict[str, Any]:
         """Performs multi-pillar analysis on provided historical data with strict configuration."""
+        audit_entry = {"symbol": symbol, "steps": []}
         try:
             if not name:
                 meta = get_all_nse_symbols()
@@ -57,10 +58,14 @@ class StockAnalyzer:
                 "is_recommended": False,
                 "reason": [],
                 "detailed_analysis": {},
+                "audit_log": audit_entry,
             }
 
             if hist.empty:
+                audit_entry["steps"].append({"step": "Data Loading", "status": "FAIL", "reason": "Empty Data"})
                 raise ValueError(f"Empty data for {symbol}")
+
+            audit_entry["steps"].append({"step": "Data Loading", "status": "PASS"})
 
             # Technical & Swing
             if self.strategy_evaluator is None:
@@ -70,13 +75,24 @@ class StockAnalyzer:
                 symbol, hist, app_config=app_config, index_data=index_data
             )
             res["technical_score"] = tech["technical_score"]
+
             swing = self.swing_analyzer.analyze_swing_opportunity(symbol, hist, strategy_config=app_config)
             res["swing_analysis"] = swing
 
-            rec_thresholds = app_config["recommendation_thresholds"]
-            if rec_thresholds["require_all_gates"] and not swing["all_gates_passed"]:
+            # Audit Gates
+            for g_name, g_status in swing.get("gates", {}).items():
+                audit_entry["steps"].append(
+                    {"step": f"Gate: {g_name.capitalize()}", "status": "PASS" if g_status else "FAIL"}
+                )
+
+            if not swing["all_gates_passed"]:
+                audit_entry["steps"].append(
+                    {"step": "Final Gates", "status": "FAIL", "reason": swing.get("reason", "Unknown")}
+                )
                 res["technical_score"] = min(res["technical_score"], 0.1)
                 res["reason"].append("Gate failure")
+            else:
+                audit_entry["steps"].append({"step": "Final Gates", "status": "PASS"})
 
             # Smart Money & Options
             from scripts.smart_money_tracker import SmartMoneyTracker
@@ -134,14 +150,30 @@ class StockAnalyzer:
         rec_thresholds = app_config["recommendation_thresholds"]
         tech_floor = rec_thresholds["technical_minimum"]
         fund_floor = rec_thresholds["fundamental_minimum"]
+        audit_log = res.get("audit_log", {"steps": []})
 
         passed_floors = True
         if res["technical_score"] < tech_floor:
             res["reason"].append(f"Low Tech Score ({res['technical_score']:.2f})")
+            audit_log["steps"].append(
+                {"step": "Tech Floor", "status": "FAIL", "reason": f"Score {res['technical_score']:.2f} < {tech_floor}"}
+            )
             passed_floors = False
+        else:
+            audit_log["steps"].append({"step": "Tech Floor", "status": "PASS"})
+
         if res["fundamental_score"] < fund_floor:
             res["reason"].append(f"Low Fund Score ({res['fundamental_score']:.2f})")
+            audit_log["steps"].append(
+                {
+                    "step": "Fund Floor",
+                    "status": "FAIL",
+                    "reason": f"Score {res['fundamental_score']:.2f} < {fund_floor}",
+                }
+            )
             passed_floors = False
+        else:
+            audit_log["steps"].append({"step": "Fund Floor", "status": "PASS"})
 
         # Backtest Check
         bt_ok = True
@@ -150,9 +182,24 @@ class StockAnalyzer:
             m = res["backtest"]["combined_metrics"]
             # Check for min_backtest_return in threshold, if missing it will crash as requested
             bt_ok = m["avg_cagr"] >= rec_thresholds["min_backtest_return"]
+            audit_log["steps"].append(
+                {
+                    "step": "Backtest CAGR",
+                    "status": "PASS" if bt_ok else "FAIL",
+                    "reason": f"CAGR {m['avg_cagr']:.2f}% (Req: {rec_thresholds['min_backtest_return']}%)",
+                }
+            )
 
         buy_t = rec_thresholds["buy_combined"]
         res["is_recommended"] = bool(score >= buy_t and bt_ok and passed_floors)
+        audit_log["steps"].append(
+            {
+                "step": "Final Combined Score",
+                "status": "PASS" if score >= buy_t else "FAIL",
+                "reason": f"Combined {score:.2f} (Req: {buy_t})",
+            }
+        )
+
         res["recommendation_strength"] = "BUY" if res["is_recommended"] else "HOLD"
 
         logger.warning(

@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
+import json
 import multiprocessing
+import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from typing import Any, Dict
@@ -95,12 +97,21 @@ class AutomatedStockAnalysis:
             ) as pool:
                 for i, res in enumerate(pool.imap_unordered(analyze_stock_worker, items)):
                     if res["success"]:
-                        # Real-time persistence
                         self.persistence.save_recommendation(res["result"])
                         self.persistence.save_backtest_results(res["result"])
-                    results.append(res)
+                        results.append(res["result"])
+
                     if not self.verbose:
                         print(f"\rProgress: {((i+1)/len(items))*100:.1f}%", end="", flush=True)
+
+            # Save Audit Log
+            audit_data = [r.get("audit_log") for r in results if r.get("audit_log")]
+            os.makedirs("logs", exist_ok=True)
+            with open("logs/audit_log.json", "w") as f:
+                json.dump(audit_data, f, indent=4)
+
+            logger.info(f"Phase 2 Complete. Fetched {len(fetched)} stocks. Audit log saved.")
+            return results
         else:
             logger.info(f"Phase 2: Analyzing {len(fetched)} stocks serially (Multiprocessing Disabled)...")
             init_worker()
