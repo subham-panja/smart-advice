@@ -50,6 +50,9 @@ class PersistenceHandler:
                 "allocation_pct": res["risk_management"]["allocation_pct"],
                 "rr_ratio": res["risk_management"]["rr_ratio"],
                 "strategy_name": res["strategy_name"],
+                "recommendation_date": datetime.now(timezone.utc)
+                .replace(hour=0, minute=0, second=0, microsecond=0)
+                .replace(tzinfo=None),
                 "created_at": datetime.now(timezone.utc).replace(tzinfo=None),
                 "updated_at": datetime.now(timezone.utc).replace(tzinfo=None),
             }
