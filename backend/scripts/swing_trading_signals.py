@@ -111,9 +111,65 @@ class SwingTradingSignalAnalyzer:
                     signals["Candlesticks"] = 1
                     candle_pats.append("Morning Star")
 
-        # 3. APPLY BONUS/HARD LOGIC
+        # 3. ENTRY PATTERNS (One-of-many Triggers)
+        # ---------------------------------------
+        patterns_cfg = strategy_config.get("entry_patterns", [])
+        entry_signals = {}
+
+        for pat in patterns_cfg:
+            if not pat.get("enabled"):
+                continue
+
+            pat_name = pat["name"]
+            entry_signals[pat_name] = 0
+
+            if pat_name == "pullback_to_ema":
+                ema = ta.EMA(df["Close"], pat["ema_period"]).iloc[-1]
+                rsi = ta.RSI(df["Close"], 14).iloc[-1]
+                # Check if price is within 1% of EMA and RSI is in range
+                is_near_ema = abs(c - ema) / ema < 0.01
+                rsi_min, rsi_max = pat["rsi_range"]
+                if is_near_ema and rsi_min <= rsi <= rsi_max:
+                    entry_signals[pat_name] = 1
+
+            elif pat_name == "bollinger_squeeze_breakout":
+                upper, middle, lower = ta.BBANDS(df["Close"], pat["bb_period"], pat["bb_std"], pat["bb_std"])
+                bandwidth = (upper - lower) / middle
+                # Squeeze if bandwidth < threshold
+                is_squeeze = bandwidth.iloc[-2] < pat["squeeze_threshold"]
+                # Breakout if price crosses upper band today
+                is_breakout = c > upper.iloc[-1]
+                if is_squeeze and is_breakout:
+                    entry_signals[pat_name] = 1
+
+            elif pat_name == "macd_zero_cross":
+                macd, _, _ = ta.MACD(df["Close"], pat["fast"], pat["slow"], pat["signal"])
+                # Cross from below zero to above zero
+                if macd.iloc[-2] < 0 and macd.iloc[-1] > 0:
+                    entry_signals[pat_name] = 1
+
+            elif pat_name == "higher_low_structure":
+                # Simplified check for rising lows in the last X swings
+                lows = df["Low"].rolling(window=pat["pivot_lookback"]).min().dropna()
+                if len(lows) > 10:
+                    recent_lows = lows.iloc[-10:].unique()
+                    if len(recent_lows) >= pat["min_swings"]:
+                        if recent_lows[-1] > recent_lows[-2]:
+                            entry_signals[pat_name] = 1
+
+            elif pat_name == "volatility_contraction":
+                atr = ta.ATR(df["High"], df["Low"], df["Close"], 14)
+                # Check if ATR is decreasing over the last 5 days
+                if atr.iloc[-1] < atr.iloc[-5]:
+                    entry_signals[pat_name] = 1
+
+        # Add entry patterns to signals
+        signals.update(entry_signals)
+
+        # 4. APPLY BONUS/HARD LOGIC
         # -------------------------
         final_reasons = []
+        # Check standard indicators
         for name, config_key in [
             ("MACD", "MACD_Signal_Crossover"),
             ("RSI", "RSI_Overbought_Oversold"),
@@ -136,15 +192,31 @@ class SwingTradingSignalAnalyzer:
             if signals[name] == 1:
                 final_reasons.append(name if name != "Candlesticks" else f"Candle({', '.join(candle_pats)})")
 
+        # Check if at least one entry pattern is triggered (Mandatory)
+        active_entry_patterns = [p for p in entry_signals.values() if p == 1]
+        if not active_entry_patterns and entry_signals:
+            return {
+                "symbol": symbol,
+                "all_gates_passed": False,
+                "gates": gates,
+                "reason": "No Entry Pattern Triggered",
+            }
+
+        for p_name, p_val in entry_signals.items():
+            if p_val == 1:
+                final_reasons.append(f"Pattern({p_name})")
+
         # Calculate Technical Score
-        enabled_signals = [s for s in signals.values()]
-        technical_score = sum(enabled_signals) / len(enabled_signals) if enabled_signals else 0.0
+        all_signals = [s for s in signals.values()]
+        technical_score = sum(all_signals) / len(all_signals) if all_signals else 0.0
 
         return {
             "symbol": symbol,
             "all_gates_passed": True,
-            "gates": gates,  # Restored for compatibility
-            "recommendation": "BUY" if technical_score >= 0.5 else "HOLD",
+            "gates": gates,
+            "recommendation": "BUY"
+            if technical_score >= strategy_config["recommendation_thresholds"]["technical_minimum"]
+            else "HOLD",
             "technical_score": technical_score,
             "reason": " + ".join(final_reasons) if final_reasons else "Weak Signals",
         }

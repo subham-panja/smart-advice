@@ -1,6 +1,6 @@
 {
     "name": "Strict_Audit_EP",
-    "enabled": true,
+    "enabled": false,
     "analysis_config": {
         "technical_analysis": true,
         "fundamental_analysis": true,

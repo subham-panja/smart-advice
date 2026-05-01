@@ -108,7 +108,7 @@
             "enabled": true,
             "is_bonus": false,
             "period": 14,
-            "threshold": 22
+            "threshold": 20
         },
         "On_Balance_Volume": {
             "enabled": false,
@@ -144,8 +144,8 @@
             "threshold": 2.5
         },
         "Candlestick_Patterns": {
-            "enabled": true,
-            "is_bonus": false,
+            "enabled": false,
+            "is_bonus": true,
             "patterns": {
                 "bullish_engulfing": true,
                 "hammer": true,
