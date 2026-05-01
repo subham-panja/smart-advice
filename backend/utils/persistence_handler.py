@@ -81,7 +81,7 @@ class PersistenceHandler:
                 t["updated_at"] = now
 
             # Save Summary with Nested Details
-            summary_id = db.backtest_results.insert_one(
+            db.backtest_results.insert_one(
                 {
                     "symbol": res["symbol"],
                     "filtered_stock_id": fs_id,
@@ -94,13 +94,7 @@ class PersistenceHandler:
                     "created_at": now,
                     "updated_at": now,
                 }
-            ).inserted_id
-
-            # Also keep separate collection for cross-stock analysis
-            if trades:
-                for t in trades:
-                    t["summary_id"] = summary_id
-                db.backtest_trades.insert_many(trades)
+            )
 
             return True
         except Exception as e:

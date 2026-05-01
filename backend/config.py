@@ -60,8 +60,10 @@ MONGODB_COLLECTIONS = {
 
 TELEGRAM_CONFIG = {
     "enabled": True,
-    "bot_token": os.getenv("TELEGRAM_BOT_TOKEN"),
-    "allowed_user_ids": [int(uid.strip()) for uid in os.getenv("TELEGRAM_ALLOWED_USER_IDS").split(",") if uid.strip()],
+    "bot_token": os.getenv("TELEGRAM_BOT_TOKEN", ""),
+    "allowed_user_ids": [
+        int(uid.strip()) for uid in (os.getenv("TELEGRAM_ALLOWED_USER_IDS") or "").split(",") if uid.strip()
+    ],
 }
 
 FIVEPAISA_CONFIG = {
