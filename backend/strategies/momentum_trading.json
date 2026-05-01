@@ -1,8 +1,8 @@
 {
-    "name": "Delayed_EP",
+    "name": "Momentum_Trading",
     "enabled": true,
-    "description": "Playground strategy - Enhanced swing trading with trend-volatility-volume gates, multi-target exits, and pyramid compounding. Optimized for NSE mid-to-large cap stocks.",
-    "version": "2.0",
+    "description": "Momentum strategy focusing on 52-week high breakouts, relative strength leaders, and trending stocks. Wider stops, longer holds, and concentrated positions for capturing multi-month moves.",
+    "version": "1.0",
     "analysis_config": {
         "technical_analysis": true,
         "fundamental_analysis": true,
@@ -14,8 +14,8 @@
         "options_oi": true
     },
     "analysis_weights": {
-        "technical": 0.65,
-        "fundamental": 0.20,
+        "technical": 0.70,
+        "fundamental": 0.15,
         "sentiment": 0.00,
         "sector": 0.15
     },
@@ -31,7 +31,7 @@
     },
     "options_oi_config": {
         "enabled": true,
-        "weight": 0.15,
+        "weight": 0.10,
         "min_unwinding_pct": 5.0,
         "pcr_bullish_threshold": 1.0,
         "pcr_bearish_threshold": 1.3,
@@ -53,19 +53,6 @@
             "type": "market_cap",
             "op": ">",
             "value": 1000.0
-        },
-        {
-            "type": "rsi",
-            "op": ">",
-            "period": 14,
-            "value": 55
-        },
-        {
-            "type": "moving_average",
-            "kind": "SMA",
-            "period": 20,
-            "op": ">",
-            "target": "close"
         },
         {
             "type": "moving_average",
@@ -96,15 +83,15 @@
         }
     ],
     "recommendation_thresholds": {
-        "buy_combined": 0.40,
+        "buy_combined": 0.50,
         "technical_minimum": 0.40,
-        "fundamental_minimum": 0.00,
+        "fundamental_minimum": 0.10,
         "require_all_gates": true,
-        "min_risk_reward_ratio": 1.5,
+        "min_risk_reward_ratio": 2.0,
         "min_backtest_return": 0.0,
         "backtest_period": "5y",
         "min_data_required_days": 252,
-        "proximity_to_52_week_high_pct": 50.0
+        "proximity_to_52_week_high_pct": 40.0
     },
     "strategy_config": {
         "RSI_Overbought_Oversold": {
@@ -115,7 +102,7 @@
             "oversold_level": 30
         },
         "MACD_Signal_Crossover": {
-            "enabled": true,
+            "enabled": false,
             "is_bonus": false,
             "fast_period": 12,
             "slow_period": 26,
@@ -133,7 +120,7 @@
             "lookback_period": 20
         },
         "Bollinger_Band_Squeeze": {
-            "enabled": true,
+            "enabled": false,
             "is_bonus": false,
             "period": 20,
             "std": 2,
@@ -143,12 +130,12 @@
         },
         "Relative_Strength_Comparison": {
             "enabled": true,
-            "is_bonus": true,
+            "is_bonus": false,
             "period": 55,
             "threshold": 0.0
         },
         "Pocket_Pivot_Entry": {
-            "enabled": true,
+            "enabled": false,
             "is_bonus": true,
             "lookback": 10,
             "sma_fast": 10,
@@ -174,7 +161,7 @@
         "TREND_GATE": {
             "enabled": true,
             "params": {
-                "adx_min": 18,
+                "adx_min": 12,
                 "adx_max": 50,
                 "macd_zero_buffer": 0.1,
                 "sma_period": 50,
@@ -188,8 +175,8 @@
         "VOLATILITY_GATE": {
             "enabled": true,
             "params": {
-                "min_percentile": 25,
-                "max_percentile": 75,
+                "min_percentile": 5,
+                "max_percentile": 95,
                 "lookback_days": 100
             }
         },
@@ -232,7 +219,7 @@
         },
         {
             "name": "macd_zero_cross",
-            "enabled": true,
+            "enabled": false,
             "fast": 12,
             "slow": 26,
             "signal": 9,
@@ -241,7 +228,7 @@
         },
         {
             "name": "higher_low_structure",
-            "enabled": true,
+            "enabled": false,
             "pivot_lookback": 7,
             "min_swings": 3,
             "require_volume_confirmation": true
@@ -270,24 +257,24 @@
         "targets": [
             {
                 "name": "Target 1",
-                "atr_multiplier": 3.0,
+                "atr_multiplier": 5.0,
                 "sell_percentage": 0.5
             },
             {
                 "name": "Target 2",
-                "atr_multiplier": 5.0,
+                "atr_multiplier": 10.0,
                 "sell_percentage": 1.0
             }
         ],
-        "atr_stop_multiplier": 1.5,
-        "trail_stop_atr": 2.5,
-        "time_stop_bars": 15,
-        "breakeven_at_target_1": true,
+        "atr_stop_multiplier": 2.5,
+        "trail_stop_atr": 3.5,
+        "time_stop_bars": 40,
+        "breakeven_at_target_1": false,
         "max_daily_loss_pct": 2.0
     },
     "risk_management": {
-        "risk_per_trade_pct": 1.0,
-        "max_position_pct": 10.0,
+        "risk_per_trade_pct": 2.0,
+        "max_position_pct": 20.0,
         "max_positions": 8,
         "stop_loss_type": "ATR",
         "position_sizing": "risk_based"
@@ -298,12 +285,12 @@
         "steps": [
             {
                 "name": "First Add",
-                "trigger_step_atr": 1.5,
+                "trigger_step_atr": 2.0,
                 "add_size_pct": 0.5
             },
             {
                 "name": "Second Add",
-                "trigger_step_atr": 3.0,
+                "trigger_step_atr": 4.0,
                 "add_size_pct": 0.3
             }
         ]
@@ -313,7 +300,7 @@
         "max_debt_to_equity": 1.0,
         "min_profit_growth_3y": 10.0,
         "min_profit_growth_5y": 10.0,
-        "min_quarterly_eps_growth": 0.10
+        "min_quarterly_eps_growth": 0.20
     },
     "volume_analysis_config": {
         "breakout_multiplier": 2.0,
