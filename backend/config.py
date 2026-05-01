@@ -17,6 +17,9 @@ VERBOSE_LOGGING = False
 EPISODIC_PIVOT_MODE = True
 VOLUME_SPIKE_THRESHOLD = 1.5
 
+# Data Purge
+DATA_PURGE_DAYS = 7  # Purge recommendations and backtest results older than N days
+
 
 # Database configuration
 MONGODB_HOST = os.getenv("MONGODB_HOST", "127.0.0.1")

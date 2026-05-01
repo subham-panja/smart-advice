@@ -13,7 +13,11 @@ class PersistenceHandler:
     def __init__(self, app=None):
         self.app = app
 
-    def clear_old_data(self, days: int = 7):
+    def clear_old_data(self, days: int = None):
+        if days is None:
+            from config import DATA_PURGE_DAYS
+
+            days = DATA_PURGE_DAYS
         try:
             db = get_mongodb()
             cutoff = datetime.now(timezone.utc) - timedelta(days=days)

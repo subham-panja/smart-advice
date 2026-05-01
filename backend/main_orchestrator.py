@@ -37,7 +37,7 @@ def run_trading_cycle():
     logger.warning("=== STARTING UNIFIED TRADING CYCLE ===")
 
     # Pre-Cycle Cleanup
-    PersistenceHandler().clear_old_data(7)
+    PersistenceHandler().clear_old_data(config.DATA_PURGE_DAYS)
 
     # Phase 1: Monitor Existing Portfolio
     print("📍 Phase 1: Monitoring existing positions...")
