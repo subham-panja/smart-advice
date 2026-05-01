@@ -112,7 +112,10 @@ class StockAnalyzer:
 
             # Fundamental
             if ana_cfg["fundamental_analysis"]:
-                res["fundamental_score"] = self.fundamental_analyzer.perform_fundamental_analysis(symbol)
+                fund_cfg = app_config.get("fundamental_config", {})
+                res["fundamental_score"] = self.fundamental_analyzer.perform_fundamental_analysis(
+                    symbol, config=fund_cfg
+                )
 
             # Combine & Trade Plan
             res = self._combine(res, app_config)

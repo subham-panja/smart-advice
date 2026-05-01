@@ -27,8 +27,10 @@ class FundamentalAnalysis:
         }
 
     @staticmethod
-    def calculate_score(data: Dict[str, Any]) -> float:
-        """Calculates score strictly. If all metrics are None, it raises ValueError."""
+    def calculate_score(data: Dict[str, Any], config: Dict[str, Any] = None) -> float:
+        """Calculates score strictly. If all metrics are None, it raises ValueError.
+        Uses strategy config thresholds when provided."""
+        cfg = config or {}
         score, weight = 0.0, 0.0
 
         # P/E Ratio
@@ -39,15 +41,24 @@ class FundamentalAnalysis:
 
         # Debt to Equity
         de = data["de"]
+        max_de = cfg.get("max_debt_to_equity", 1.0)
         if de is not None:
-            score += (1.0 if de < 0.5 else (0.0 if de < 1.0 else -1.0)) * 0.4
+            score += (1.0 if de < max_de * 0.5 else (0.0 if de < max_de else -1.0)) * 0.4
             weight += 0.4
 
         # EPS Growth
         g = data["eps_g"]
+        min_eps_g = cfg.get("min_quarterly_eps_growth", 0.15)
         if g is not None:
-            score += (1.0 if g > 0.15 else (0.5 if g > 0 else -0.5)) * 0.3
+            score += (1.0 if g > min_eps_g else (0.5 if g > 0 else -0.5)) * 0.3
             weight += 0.3
+
+        # ROCE (if available)
+        roce = data.get("roce")
+        min_roce = cfg.get("min_roce")
+        if roce is not None and min_roce is not None:
+            score += (1.0 if roce > min_roce else -0.5) * 0.2
+            weight += 0.2
 
         if weight == 0:
             raise ValueError("No valid fundamental metrics found to calculate score.")
@@ -55,11 +66,11 @@ class FundamentalAnalysis:
         return score / weight
 
     @staticmethod
-    def perform_fundamental_analysis(symbol: str) -> float:
+    def perform_fundamental_analysis(symbol: str, config: Dict[str, Any] = None) -> float:
         """Entry point for fundamental analysis. Fails gracefully."""
         try:
             data = FundamentalAnalysis.get_data(symbol)
-            score = FundamentalAnalysis.calculate_score(data)
+            score = FundamentalAnalysis.calculate_score(data, config=config)
             logger.info(f"Fundamental {symbol}: {score:.2f}")
             return score
         except Exception as e:

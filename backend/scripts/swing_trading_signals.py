@@ -47,6 +47,13 @@ class SwingTradingSignalAnalyzer:
         if t_cfg.get("require_price_above_sma"):
             trend_ok = trend_ok and c > sma
 
+        # SMA Stack Check: 50 > 150 > 200 (Minervini/Weinstein requirement)
+        if t_cfg.get("require_sma_stack"):
+            sma50 = ta.SMA(df["Close"], 50).iloc[-1]
+            sma150 = ta.SMA(df["Close"], 150).iloc[-1]
+            sma200 = ta.SMA(df["Close"], 200).iloc[-1]
+            trend_ok = trend_ok and (sma50 > sma150 > sma200)
+
         # Volume Gate
         v_mean = df["Volume"].tail(20).mean()
         v_latest = df["Volume"].iloc[-1]
@@ -62,6 +69,18 @@ class SwingTradingSignalAnalyzer:
 
         gates = {"trend": trend_ok, "volume": vol_ok, "volatility": volatility_ok}
         all_gates_passed = all(gates.values())
+
+        # 52-Week High Proximity Check (Minervini/Darvas/CANSLIM)
+        proximity_pct = strategy_config["recommendation_thresholds"].get("proximity_to_52_week_high_pct", 100.0)
+        if len(df) >= 252:
+            high_52w = df["High"].tail(252).max()
+            if high_52w > 0 and ((high_52w - c) / high_52w * 100) > proximity_pct:
+                return {
+                    "symbol": symbol,
+                    "all_gates_passed": False,
+                    "gates": gates,
+                    "reason": f"Price > {proximity_pct}% below 52-week high",
+                }
 
         if not all_gates_passed:
             return {"symbol": symbol, "all_gates_passed": False, "gates": gates, "reason": "Gates failed"}
@@ -162,6 +181,30 @@ class SwingTradingSignalAnalyzer:
                 # Check if ATR is decreasing over the last 5 days
                 if atr.iloc[-1] < atr.iloc[-5]:
                     entry_signals[pat_name] = 1
+
+            elif pat_name == "twenty_day_high_breakout":
+                high_20 = df["High"].iloc[-21:-1].max()
+                if c > high_20:
+                    if pat.get("volume_confirm"):
+                        vol_ma20 = df["Volume"].tail(20).mean()
+                        if df["Volume"].iloc[-1] >= vol_ma20 * pat.get("min_volume_multiplier", 1.5):
+                            entry_signals[pat_name] = 1
+                    else:
+                        entry_signals[pat_name] = 1
+
+            elif pat_name == "nr7_volatility_squeeze":
+                lb = pat.get("lookback", 7)
+                if len(df) >= lb + 1:
+                    ranges = df["High"] - df["Low"]
+                    current_range = ranges.iloc[-1]
+                    min_range = ranges.tail(lb).min()
+                    if current_range <= min_range * 1.001:
+                        if pat.get("volume_dry_up"):
+                            vol_ma20 = df["Volume"].tail(20).mean()
+                            if df["Volume"].iloc[-1] < vol_ma20:
+                                entry_signals[pat_name] = 1
+                        else:
+                            entry_signals[pat_name] = 1
 
         # Add entry patterns to signals
         signals.update(entry_signals)

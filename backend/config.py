@@ -118,7 +118,7 @@ PORTFOLIO_BACKTEST_CONFIG = {
     "same_day_cash_recycling": True,  # If True, cash from exits can be reused same day
     "force_close_delisted": True,  # If True, close positions at last available price
     "auto_run_on_cycle": True,  # If True, portfolio backtest runs automatically per trading cycle
-    "auto_run_max_stocks": 20,  # Max stocks for auto-run (to keep cycle time reasonable)
+    "auto_run_max_stocks": 100,  # Max stocks for auto-run (to keep cycle time reasonable)
     "auto_run_period": "5y",  # Historical period for auto-run
 }
 
