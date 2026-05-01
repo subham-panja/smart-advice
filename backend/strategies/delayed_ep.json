@@ -70,12 +70,12 @@
             "type": "rsi",
             "period": 14,
             "op": ">",
-            "value": 60.0
+            "value": 55.0
         },
         {
             "type": "volume_spike_lookup",
-            "lookback_days": 5,
-            "multiplier": 1.5,
+            "lookback_days": 10,
+            "multiplier": 1.2,
             "ma_period": 50
         }
     ],
