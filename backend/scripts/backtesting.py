@@ -7,40 +7,6 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 
-class RiskPercentSizer(bt.Sizer):
-    """
-    Sizer that calculates quantity based on risk % of total portfolio value.
-    Example: Risk 1% of capital. If Stop Loss is 5% away, size = 20% of capital.
-    """
-
-    params = (
-        ("risk_pct", 1.0),  # Risk 1% of total value per trade
-        ("min_shares", 1),
-    )
-
-    def _getsizing(self, comminfo, cash, data, isbuy):
-        if not isbuy:
-            return self.broker.getposition(data).size
-
-        # Get total portfolio value (Cash + Open Positions) for compounding
-        total_value = self.broker.get_value()
-
-        # We need the stop loss price from the strategy to calculate risk distance
-        # Strategy should store it in self.current_stop_loss
-        stop_loss = getattr(self.strategy, "backtest_stop_loss", None)
-        entry_price = data.close[0]
-
-        if stop_loss is None or stop_loss >= entry_price:
-            # Fallback to simple % of capital if no SL provided
-            return int((total_value * 0.10) / entry_price)
-
-        risk_per_share = entry_price - stop_loss
-        total_risk_allowed = total_value * (self.params.risk_pct / 100.0)
-
-        size = int(total_risk_allowed / risk_per_share)
-        return max(size, self.params.min_shares)
-
-
 class TradeList(bt.Analyzer):
     """Custom analyzer to collect detailed list of trades."""
 
@@ -99,9 +65,8 @@ class BacktestingEngine:
             cerebro.broker.set_cash(self.initial_cash)
             cerebro.broker.setcommission(commission=self.commission)
 
-            # Risk-Based Position Sizing (Compounding)
-            risk_pct = params.get("strat_params", {}).get("risk_management", {}).get("risk_per_trade_pct", 1.0)
-            cerebro.addsizer(RiskPercentSizer, risk_pct=risk_pct)
+            # Default sizer (Strategy will override with explicit sizes)
+            cerebro.addsizer(bt.sizers.FixedSize, stake=1)
 
             cerebro.adddata(bt.feeds.PandasData(dataname=df))
             cerebro.addstrategy(strategy_class, tradehistory=True, **params)

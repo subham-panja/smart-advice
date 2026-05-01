@@ -108,7 +108,7 @@ class BacktraderStrategy(bt.Strategy, metaclass=BacktraderStrategyMeta):
         # 1. Manage Active Position (Exit Logic)
         if self.position:
             # Check for Time Stop
-            time_stop = self.strat_params.get("exit_rules", {}).get("time_stop_bars", 15)
+            time_stop = self.strat_params.get("exit_rules", {}).get("time_stop_bars", 45)
             if len(self) - self.bar_executed >= time_stop:
                 self.close(reason="Time Stop")
 
@@ -179,8 +179,26 @@ class BacktraderStrategy(bt.Strategy, metaclass=BacktraderStrategyMeta):
         if sig == 1:
             # Set stop loss for the sizer to calculate quantity
             trade_plan = sig_res.get("trade_plan", {})
-            self.backtest_stop_loss = trade_plan.get("stop_loss")
-            self.buy()
+            stop_loss = trade_plan.get("stop_loss")
+            entry_price = self.datas[0].close[0]
+
+            if stop_loss and stop_loss < entry_price:
+                # Calculate Risk-Based Size
+                risk_pct = self.strat_params.get("risk_management", {}).get("risk_per_trade_pct", 1.0)
+                total_value = self.broker.get_value()
+                total_risk_allowed = total_value * (risk_pct / 100.0)
+                risk_per_share = entry_price - stop_loss
+                size = int(total_risk_allowed / risk_per_share)
+                size = max(size, 1)
+
+                self.current_stop_loss = stop_loss
+                self.buy(size=size)
+                logger.info(
+                    f"BUY Signal: {self.symbol} | Price: {entry_price:.2f} | SL: {stop_loss:.2f} | Qty: {size} (Risk: {risk_pct}%)"
+                )
+            else:
+                # Fallback
+                self.buy()
 
     def notify_order(self, order):
         if order.status in [order.Completed]:

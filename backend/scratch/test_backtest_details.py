@@ -11,7 +11,7 @@ from scripts.strategies.base_strategy import BacktraderStrategy
 
 
 def test_single_stock():
-    symbol = "TITAN.NS"
+    symbol = "DMART.NS"
     print(f"--- Testing Backtest Details for {symbol} ---")
 
     # Load sample data
@@ -40,10 +40,7 @@ def test_single_stock():
     config["entry_patterns"] = []  # Allow all
 
     class SimpleStrategy(BacktraderStrategy):
-        def _execute_strategy_logic(self, data, symbol="UNKNOWN"):
-            if len(self) % 50 == 0:
-                return 1
-            return 0
+        pass
 
         def notify_order(self, order):
             if order.status in [order.Completed]:
@@ -54,11 +51,11 @@ def test_single_stock():
                 # The analyzer will pick up the size from self.last_executed_size
                 pass
 
-    engine = BacktestingEngine(initial_cash=100000, commission=0.001)
+    engine = BacktestingEngine(initial_cash=100000, commission=0.0005)
     res = engine.run_backtest(SimpleStrategy, df, params={"symbol": symbol, "strat_params": config})
 
-    print(f"Status: {res.get('ROI', 'OK')}")
     print(f"Total Trades: {len(res['trades'])}")
+    print(f"ROI: {res['roi']:.2f}%")
 
     if res["trades"]:
         print("\n--- SAMPLE TRADE DATA ---")
