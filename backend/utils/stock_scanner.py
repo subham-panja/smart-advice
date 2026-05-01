@@ -26,6 +26,8 @@ class StockScanner:
                 # Generate dynamic scan clause from stock_filters
                 filters = strategy_config["stock_filters"]
                 scan_clause = FilterTranslator.translate_to_chartink(filters)
+                logger.info(f"🚀 GENERATED CHARTINK QUERY: {scan_clause}")
+                print(f"🚀 GENERATED CHARTINK QUERY: {scan_clause}")
 
                 cf = ChartinkFilter()
                 # Pass the custom scan clause if generated

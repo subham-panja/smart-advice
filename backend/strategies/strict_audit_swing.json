@@ -56,14 +56,14 @@
             "type": "moving_average",
             "kind": "SMA",
             "period": 50,
-            "op": "<",
+            "op": ">",
             "target": "close"
         },
         {
             "type": "moving_average",
             "kind": "SMA",
             "period": 200,
-            "op": "<",
+            "op": ">",
             "target": "close"
         },
         {

@@ -24,6 +24,13 @@ logger = logging.getLogger("Orchestrator")
 
 
 def run_trading_cycle():
+    """Main entry point for the unified trading cycle."""
+    if config.TRADING_OPTIONS.get("circuit_breaker"):
+        msg = "🛑 CIRCUIT BREAKER ACTIVE: Trading cycle stopped from configuration."
+        print(f"\n{msg}")
+        logger.warning(msg)
+        return
+
     print("\n" + "=" * 50)
     print("🚀 STARTING UNIFIED TRADING CYCLE")
     print("=" * 50 + "\n")
@@ -64,7 +71,6 @@ def run_trading_cycle():
 
         # Fetch current state
         open_positions = get_open_positions()
-        open_pos_symbols = {p["symbol"] for p in open_positions}
 
         if len(open_positions) >= max_pos:
             logger.warning(

@@ -29,16 +29,20 @@ class AutomatedStockAnalysis:
         self.fresh = fresh
         self.start_time = datetime.now()
 
-    def run(self, strategy_config: Dict[str, Any]):
-        strat_name = strategy_config["name"]
-        logger.info(f"🚀 Starting analysis for Strategy: {strat_name}")
+    def run(self, strategy_config: Dict[str, Any], use_all_symbols: bool = False):
+        """Executes the analysis pipeline."""
+        if config.TRADING_OPTIONS.get("circuit_breaker"):
+            logger.warning("🛑 CIRCUIT BREAKER ACTIVE: Analysis skipped.")
+            return []
+
+        logger.info(f"🚀 Starting analysis for Strategy: {strategy_config['name']}")
 
         get_cache_manager().clean_corrupted_cache_files()
 
         # Macro Check
         if strategy_config["analysis_config"]["market_regime_detection"]:
             if not MarketRegimeDetection().get_simple_regime_check(strategy_config["market_regime_config"])["passed"]:
-                logger.warning(f"[{strat_name}] Market regime is BEARISH. Skipping strategy.")
+                logger.warning(f"[{strategy_config['name']}] Market regime is BEARISH. Skipping strategy.")
                 return
 
         # Phase 1: Fetch Data
@@ -77,7 +81,7 @@ class AutomatedStockAnalysis:
                 "BENCHMARK_DATA": bench.to_dict() if not bench.empty else {},
                 "BENCHMARK_INDEX": bench.index.strftime("%Y-%m-%d %H:%M:%S").tolist() if not bench.empty else [],
                 # Legacy keys for backward compatibility with analyzer.py if needed, but we'll update analyzer.py
-                "STRATEGY_NAME": strat_name,
+                "STRATEGY_NAME": strategy_config["name"],
                 "ANALYSIS_CONFIG": strategy_config["analysis_config"],
                 "STRATEGY_CONFIG": strategy_config["strategy_config"],
                 "RECOMMENDATION_THRESHOLDS": strategy_config["recommendation_thresholds"],
@@ -127,4 +131,6 @@ class AutomatedStockAnalysis:
         # Summary
         recos = sum(1 for r in results if r["success"] and r["recommended"])
         duration = (datetime.now() - self.start_time).total_seconds()
-        logger.info(f"[{strat_name}] Pipeline Finished: {duration/60:.1f}m | {recos} Recommendations found.")
+        logger.info(
+            f"[{strategy_config['name']}] Pipeline Finished: {duration/60:.1f}m | {recos} Recommendations found."
+        )

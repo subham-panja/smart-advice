@@ -104,4 +104,5 @@ TRADING_OPTIONS = {
     "allow_multiple_positions_same_stock": False,
     "time_stop_days": 15,  # Exit if sideways for 15 days
     "auto_execute": True,
+    "circuit_breaker": False,  # Set to True to stop all trading activity immediately
 }

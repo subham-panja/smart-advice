@@ -23,6 +23,10 @@ class ExecutionEngine:
 
     def execute_buy(self, symbol, quantity, price, stop_loss, target, recomm_id=None, strategy_name="UNKNOWN"):
         """Execute a buy order with detailed metadata and pyramiding support."""
+        if config.TRADING_OPTIONS.get("circuit_breaker"):
+            logger.warning(f"🛑 CIRCUIT BREAKER: Buy order for {symbol} blocked.")
+            return None
+
         mode = "PAPER" if self.is_paper_trading else "LIVE"
         if self.is_paper_trading:
             logger.info(f"{mode} TRADING: Executing BUY for {symbol} | Qty: {quantity} | Price: {price}")
@@ -129,6 +133,10 @@ class ExecutionEngine:
 
     def execute_sell(self, symbol, price, reason, quantity=None):
         """Execute a sell order (Supports Partial or Full exits)."""
+        if config.TRADING_OPTIONS.get("circuit_breaker"):
+            logger.warning(f"🛑 CIRCUIT BREAKER: Sell order for {symbol} blocked.")
+            return None
+
         if self.is_paper_trading:
             qty_str = f"Qty: {quantity}" if quantity else "FULL Position"
             logger.info(f"PAPER TRADING: Executing SELL for {symbol} | {qty_str} | Price: {price} | Reason: {reason}")
