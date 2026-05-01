@@ -1,6 +1,6 @@
 {
     "name": "Momentum_Trading",
-    "enabled": true,
+    "enabled": false,
     "description": "Momentum strategy focusing on 52-week high breakouts, relative strength leaders, and trending stocks. Wider stops, longer holds, and concentrated positions for capturing multi-month moves.",
     "version": "1.0",
     "analysis_config": {
@@ -274,10 +274,18 @@
     },
     "risk_management": {
         "risk_per_trade_pct": 2.0,
+        "max_risk_per_trade_pct": 2.0,
         "max_position_pct": 20.0,
         "max_positions": 8,
         "stop_loss_type": "ATR",
-        "position_sizing": "risk_based"
+        "position_sizing": "risk_based",
+        "volatility_scaling": {
+            "enabled": false,
+            "atr_lookback_days": 100,
+            "low_volatility_percentile": 25,
+            "high_volatility_percentile": 75,
+            "min_risk_multiplier": 0.6
+        }
     },
     "pyramiding": {
         "enabled": true,
