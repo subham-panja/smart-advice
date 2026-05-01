@@ -50,7 +50,7 @@
         {
             "type": "market_cap",
             "op": ">",
-            "value": 5000.0
+            "value": 1000.0
         },
         {
             "type": "moving_average",
@@ -67,12 +67,6 @@
             "target": "close"
         },
         {
-            "type": "rsi",
-            "period": 14,
-            "op": ">",
-            "value": 55.0
-        },
-        {
             "type": "volume_spike_lookup",
             "lookback_days": 10,
             "multiplier": 1.2,
@@ -85,7 +79,7 @@
         "fundamental_minimum": -0.20,
         "require_all_gates": false,
         "min_risk_reward_ratio": 2,
-        "min_backtest_return": 2.0,
+        "min_backtest_return": 0.0,
         "backtest_period": "10y",
         "min_data_required_days": 252
     },
@@ -195,7 +189,7 @@
     "entry_patterns": [
         {
             "name": "pullback_to_ema",
-            "enabled": false,
+            "enabled": true,
             "ema_period": 10,
             "rsi_range": [
                 40,
@@ -208,7 +202,7 @@
             "enabled": true,
             "bb_period": 20,
             "bb_std": 2,
-            "squeeze_threshold": 0.05,
+            "squeeze_threshold": 0.10,
             "retest_required": false,
             "max_squeeze_duration_days": 20
         },
@@ -246,7 +240,7 @@
                 "sell_percentage": 1.0
             }
         ],
-        "atr_stop_multiplier": 1.5,
+        "atr_stop_multiplier": 2.0,
         "trail_stop_atr": 2.5,
         "time_stop_bars": 15,
         "breakeven_at_target_1": true

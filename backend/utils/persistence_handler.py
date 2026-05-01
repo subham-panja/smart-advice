@@ -2,7 +2,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict
 
-from database import get_mongodb, insert_backtest_result
+from database import get_mongodb
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +59,9 @@ class PersistenceHandler:
             return False
         try:
             m = bt["combined_metrics"]
-            insert_backtest_result(
+            # Save Summary
+            db = get_mongodb()
+            summary_id = db.backtest_results.insert_one(
                 {
                     "symbol": res["symbol"],
                     "strategy_name": res["strategy_name"],
@@ -67,12 +69,42 @@ class PersistenceHandler:
                     "cagr": m["avg_cagr"],
                     "win_rate": m["avg_win_rate"],
                     "total_trades": m["total_trades"],
+                    "created_at": datetime.now(timezone.utc).replace(tzinfo=None),
                 }
-            )
+            ).inserted_id
+
+            # Save Granular Trades
+            trades = bt.get("trades", [])
+            if trades:
+                for t in trades:
+                    t["summary_id"] = summary_id
+                    t["strategy_name"] = res["strategy_name"]
+                    t["created_at"] = datetime.now(timezone.utc).replace(tzinfo=None)
+                db.backtest_trades.insert_many(trades)
+
             return True
         except Exception as e:
             logger.error(f"BT Save error for {res.get('symbol')}: {e}")
             raise e
+
+    def save_filtered_stock(self, symbol: str, strategy_name: str, scan_id: Any = None):
+        """Saves a stock that passed initial filters for a specific strategy."""
+        try:
+            db = get_mongodb()
+            db.filtered_stocks.update_one(
+                {"symbol": symbol, "strategy_name": strategy_name, "scan_id": scan_id},
+                {
+                    "$set": {
+                        "symbol": symbol,
+                        "strategy_name": strategy_name,
+                        "scan_id": scan_id,
+                        "detected_at": datetime.now(timezone.utc).replace(tzinfo=None),
+                    }
+                },
+                upsert=True,
+            )
+        except Exception as e:
+            logger.error(f"Error saving filtered stock {symbol}: {e}")
 
     def create_scan_run(self, cfg, macro=None):
         try:

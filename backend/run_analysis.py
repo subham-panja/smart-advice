@@ -51,6 +51,12 @@ class AutomatedStockAnalysis:
 
         symbols = StockScanner.get_symbols(strategy_config=strategy_config)
         symbols_list = list(symbols.keys())
+
+        # Save candidates to filtered_stocks
+        strat_name = strategy_config["name"]
+        for s in symbols_list:
+            self.persistence.save_filtered_stock(s, strat_name)
+
         logger.info(f"Phase 1: Fetching data ({backtest_period}) for {len(symbols_list)} stocks...")
 
         fetched = {}

@@ -9,6 +9,31 @@ from config import RISK_MANAGEMENT
 logger = logging.getLogger(__name__)
 
 
+class TradeList(bt.Analyzer):
+    """Custom analyzer to collect detailed list of trades."""
+
+    def __init__(self):
+        self.trades = []
+
+    def notify_trade(self, trade):
+        if trade.isclosed:
+            self.trades.append(
+                {
+                    "symbol": self.strategy.p.symbol,
+                    "entry_date": bt.num2date(trade.dtopen),
+                    "entry_price": trade.priceover,
+                    "exit_date": bt.num2date(trade.dtclose),
+                    "exit_price": trade.priceout,
+                    "quantity": trade.size,
+                    "pnl": trade.pnl,
+                    "pnl_pct": (trade.pnl / (trade.priceover * abs(trade.size))) * 100 if trade.priceover else 0,
+                }
+            )
+
+    def get_analysis(self):
+        return self.trades
+
+
 class BacktestingEngine:
     """Core backtesting engine using Backtrader with strict configuration."""
 
@@ -34,6 +59,7 @@ class BacktestingEngine:
 
             cerebro.addanalyzer(bt.analyzers.TradeAnalyzer, _name="trades")
             cerebro.addanalyzer(bt.analyzers.DrawDown, _name="drawdown")
+            cerebro.addanalyzer(TradeList, _name="tradelist")
 
             results = cerebro.run()
             strat = results[0]
@@ -45,6 +71,7 @@ class BacktestingEngine:
                 "roi": ((final_val - self.initial_cash) / self.initial_cash) * 100,
                 "trade_analysis": strat.analyzers.trades.get_analysis(),
                 "drawdown": strat.analyzers.drawdown.get_analysis(),
+                "trades": strat.analyzers.tradelist.get_analysis(),
             }
         except Exception as e:
             logger.error(f"Critical backtest failure: {e}")
