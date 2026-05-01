@@ -49,9 +49,11 @@ def run_analysis(m):
     if not check(m):
         return
     bot.reply_to(m, "⏳ <b>Starting Analysis...</b>", parse_mode="HTML")
+    import os
     import subprocess
 
-    res = subprocess.run([sys.executable, "run_analysis.py"], capture_output=True, text=True)
+    script_path = os.path.join(os.path.dirname(__file__), "run_analysis.py")
+    res = subprocess.run([sys.executable, script_path], capture_output=True, text=True)
     if res.returncode == 0:
         bot.send_message(m.chat.id, "✅ <b>Complete!</b>", parse_mode="HTML")
         view_recs(m, today=True)
@@ -66,9 +68,11 @@ def run_trading_cycle(m):
     is_paper = config.TRADING_OPTIONS.get("is_paper_trading", True)
     mode_text = "(Paper Trading)" if is_paper else "⚠️ (LIVE TRADING)"
     bot.reply_to(m, f"⚡ <b>Executing Trading Cycle {mode_text}...</b>", parse_mode="HTML")
+    import os
     import subprocess
 
-    res = subprocess.run([sys.executable, "main_orchestrator.py"], capture_output=True, text=True)
+    script_path = os.path.join(os.path.dirname(__file__), "main_orchestrator.py")
+    res = subprocess.run([sys.executable, script_path], capture_output=True, text=True)
     if res.returncode == 0:
         bot.send_message(m.chat.id, "✅ <b>Trading Cycle Complete!</b>", parse_mode="HTML")
         view_positions(m)
