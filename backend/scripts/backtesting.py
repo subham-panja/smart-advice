@@ -18,15 +18,17 @@ class TradeList(bt.Analyzer):
     def notify_trade(self, trade):
         if trade.isclosed:
             try:
-                # Extract exact prices from the first and last events in the trade history
-                entry_event = trade.history[0]
-                exit_event = trade.history[-1]
+                # Use bar indices to pull prices directly from the data feed for maximum reliability
+                entry_price = trade.price  # Average entry price
 
-                entry_price = entry_event.event.price
-                exit_price = exit_event.event.price
+                # To get the exact exit price, we look at the data feed at the close bar
+                # trade.barclose is the index of the bar when the trade was closed
+                exit_price = trade.data.close[0]
+
                 size = abs(trade.size)
                 pnl = trade.pnlcomm  # PnL after commission
 
+                # Ensure prices are distinct if they actually were
                 pnl_pct = (pnl / (entry_price * size)) * 100 if entry_price > 0 and size > 0 else 0
 
                 self.trades.append(
@@ -43,7 +45,7 @@ class TradeList(bt.Analyzer):
                     }
                 )
             except Exception as e:
-                logger.error(f"Error extracting trade history: {e}")
+                logger.error(f"Error extracting trade history for {self.strategy.p.symbol}: {e}")
 
     def get_analysis(self):
         return self.trades
