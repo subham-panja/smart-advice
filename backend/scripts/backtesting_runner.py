@@ -44,7 +44,15 @@ class BacktestingRunner:
                 raise e
 
         combined = self._combine(results)
-        return {"symbol": symbol, "status": "completed", "strategy_results": results, "combined_metrics": combined}
+        # Pull trades from DYNAMIC result or first strategy
+        first_res = results.get("DYNAMIC", next(iter(results.values())))
+        return {
+            "symbol": symbol,
+            "status": "completed",
+            "strategy_results": results,
+            "combined_metrics": combined,
+            "trades": first_res.get("trades", []),
+        }
 
     def _create_strategy(self, name: str, app_config: Dict[str, Any]):
         if name == "DYNAMIC":
@@ -122,6 +130,7 @@ class BacktestingRunner:
             "expectancy": round(exp, 2),
             "profit_factor": round(min(pf, 999.0), 2),
             "total_trades": total,
+            "trades": bt.get("trades", []),
         }
 
     def _combine(self, results: dict) -> dict:
