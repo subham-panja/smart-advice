@@ -14,9 +14,9 @@
         "options_oi": true
     },
     "analysis_weights": {
-        "technical": 0.70,
+        "technical": 0.7,
         "fundamental": 0.15,
-        "sentiment": 0.00,
+        "sentiment": 0.0,
         "sector": 0.15
     },
     "rs_config": {
@@ -31,7 +31,7 @@
     },
     "options_oi_config": {
         "enabled": true,
-        "weight": 0.10,
+        "weight": 0.1,
         "min_unwinding_pct": 5.0,
         "pcr_bullish_threshold": 1.0,
         "pcr_bearish_threshold": 1.3,
@@ -83,15 +83,15 @@
         }
     ],
     "recommendation_thresholds": {
-        "buy_combined": 0.50,
-        "technical_minimum": 0.40,
-        "fundamental_minimum": 0.10,
+        "buy_combined": 0.5,
+        "technical_minimum": 0.4,
+        "fundamental_minimum": 0.1,
         "require_all_gates": true,
         "min_risk_reward_ratio": 2.0,
         "min_backtest_return": 0.0,
         "backtest_period": "5y",
         "min_data_required_days": 252,
-        "proximity_to_52_week_high_pct": 40.0
+        "proximity_to_52_week_high_pct": 25.0
     },
     "strategy_config": {
         "RSI_Overbought_Oversold": {
@@ -166,7 +166,7 @@
                 "macd_zero_buffer": 0.1,
                 "sma_period": 50,
                 "require_price_above_sma": true,
-                "require_sma_stack": false,
+                "require_sma_stack": true,
                 "adx_slope_check": true,
                 "require_di_plus_above_di_minus": true,
                 "min_di_diff": 5
@@ -175,8 +175,8 @@
         "VOLATILITY_GATE": {
             "enabled": true,
             "params": {
-                "min_percentile": 5,
-                "max_percentile": 95,
+                "min_percentile": 25,
+                "max_percentile": 75,
                 "lookback_days": 100
             }
         },
@@ -204,7 +204,10 @@
             "name": "pullback_to_ema",
             "enabled": true,
             "ema_period": 21,
-            "rsi_range": [35, 65],
+            "rsi_range": [
+                35,
+                65
+            ],
             "bullish_candle_required": true,
             "max_distance_pct": 2.0
         },
@@ -213,7 +216,7 @@
             "enabled": true,
             "bb_period": 20,
             "bb_std": 2,
-            "squeeze_threshold": 0.10,
+            "squeeze_threshold": 0.1,
             "retest_required": false,
             "max_squeeze_duration_days": 20
         },
@@ -280,7 +283,7 @@
         "stop_loss_type": "ATR",
         "position_sizing": "risk_based",
         "volatility_scaling": {
-            "enabled": false,
+            "enabled": true,
             "atr_lookback_days": 100,
             "low_volatility_percentile": 25,
             "high_volatility_percentile": 75,
@@ -308,7 +311,7 @@
         "max_debt_to_equity": 1.0,
         "min_profit_growth_3y": 10.0,
         "min_profit_growth_5y": 10.0,
-        "min_quarterly_eps_growth": 0.20
+        "min_quarterly_eps_growth": 0.2
     },
     "volume_analysis_config": {
         "breakout_multiplier": 2.0,
