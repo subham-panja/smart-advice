@@ -17,29 +17,33 @@ class TradeList(bt.Analyzer):
 
     def notify_trade(self, trade):
         if trade.isclosed:
-            # Entry price is the average price of the open trade
-            entry_price = getattr(trade, "price", 0)
-            pnl = getattr(trade, "pnl", 0)
-            size = abs(getattr(trade, "size", 0))
+            try:
+                # Extract exact prices from the first and last events in the trade history
+                entry_event = trade.history[0]
+                exit_event = trade.history[-1]
 
-            # Derived exit price from PnL if priceout is missing
-            exit_price = (pnl / size) + entry_price if size > 0 else entry_price
+                entry_price = entry_event.event.price
+                exit_price = exit_event.event.price
+                size = abs(trade.size)
+                pnl = trade.pnlcomm  # PnL after commission
 
-            pnl_pct = (pnl / (entry_price * size)) * 100 if entry_price > 0 and size > 0 else 0
+                pnl_pct = (pnl / (entry_price * size)) * 100 if entry_price > 0 and size > 0 else 0
 
-            self.trades.append(
-                {
-                    "symbol": self.strategy.p.symbol,
-                    "entry_date": bt.num2date(trade.dtopen).strftime("%Y-%m-%d %H:%M:%S"),
-                    "entry_price": round(entry_price, 2),
-                    "exit_date": bt.num2date(trade.dtclose).strftime("%Y-%m-%d %H:%M:%S"),
-                    "exit_price": round(exit_price, 2),
-                    "quantity": size,
-                    "pnl": round(pnl, 2),
-                    "pnl_pct": round(pnl_pct, 2),
-                    "is_profitable": pnl > 0,
-                }
-            )
+                self.trades.append(
+                    {
+                        "symbol": self.strategy.p.symbol,
+                        "entry_date": bt.num2date(trade.dtopen).strftime("%Y-%m-%d %H:%M:%S"),
+                        "entry_price": round(entry_price, 2),
+                        "exit_date": bt.num2date(trade.dtclose).strftime("%Y-%m-%d %H:%M:%S"),
+                        "exit_price": round(exit_price, 2),
+                        "quantity": size,
+                        "pnl": round(pnl, 2),
+                        "pnl_pct": round(pnl_pct, 2),
+                        "is_profitable": pnl > 0,
+                    }
+                )
+            except Exception as e:
+                logger.error(f"Error extracting trade history: {e}")
 
     def get_analysis(self):
         return self.trades
