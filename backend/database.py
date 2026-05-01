@@ -133,3 +133,130 @@ def query_mongodb(collection_name, query_filter=None, projection=None, sort=None
     if limit:
         cursor = cursor.limit(limit)
     return list(cursor)
+
+
+# ---------------------------------------------------------------------------
+# Portfolio Backtest Session CRUD
+# ---------------------------------------------------------------------------
+
+
+def insert_backtest_session(doc: dict):
+    db = _get_db_internal()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    doc["created_at"] = doc.get("created_at", now)
+    doc["updated_at"] = now
+    col_name = config.MONGODB_COLLECTIONS["backtest_sessions"]
+    return db[col_name].insert_one(doc)
+
+
+def get_backtest_session(session_id: str):
+    db = _get_db_internal()
+    from bson.objectid import ObjectId
+
+    col_name = config.MONGODB_COLLECTIONS["backtest_sessions"]
+    return db[col_name].find_one({"_id": ObjectId(session_id)})
+
+
+def update_backtest_session(session_id: str, update_data: dict):
+    db = _get_db_internal()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    update_data["updated_at"] = now
+    from bson.objectid import ObjectId
+
+    col_name = config.MONGODB_COLLECTIONS["backtest_sessions"]
+    return db[col_name].update_one({"_id": ObjectId(session_id)}, {"$set": update_data})
+
+
+def get_backtest_sessions(filters=None, sort=None, limit=None):
+    db = _get_db_internal()
+    col_name = config.MONGODB_COLLECTIONS["backtest_sessions"]
+    cursor = db[col_name].find(filters or {})
+    if sort:
+        cursor = cursor.sort(sort)
+    if limit:
+        cursor = cursor.limit(limit)
+    return list(cursor)
+
+
+# ---------------------------------------------------------------------------
+# Portfolio Backtest Trade CRUD
+# ---------------------------------------------------------------------------
+
+
+def insert_portfolio_backtest_trade(doc: dict):
+    db = _get_db_internal()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    doc["created_at"] = doc.get("created_at", now)
+    doc["updated_at"] = now
+    col_name = config.MONGODB_COLLECTIONS["portfolio_backtest_trades"]
+    return db[col_name].insert_one(doc)
+
+
+def insert_many_portfolio_backtest_trades(docs: list):
+    if not docs:
+        return None
+    db = _get_db_internal()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    for d in docs:
+        d["created_at"] = d.get("created_at", now)
+        d["updated_at"] = now
+    col_name = config.MONGODB_COLLECTIONS["portfolio_backtest_trades"]
+    return db[col_name].insert_many(docs)
+
+
+def get_portfolio_backtest_trades(session_id: str, symbol=None):
+    db = _get_db_internal()
+    from bson.objectid import ObjectId
+
+    q = {"session_id": ObjectId(session_id)}
+    if symbol:
+        q["symbol"] = symbol
+    col_name = config.MONGODB_COLLECTIONS["portfolio_backtest_trades"]
+    return list(db[col_name].find(q).sort("entry_date", 1))
+
+
+# ---------------------------------------------------------------------------
+# Portfolio Backtest Daily Snapshot CRUD
+# ---------------------------------------------------------------------------
+
+
+def insert_portfolio_backtest_snapshot(doc: dict):
+    db = _get_db_internal()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    doc["created_at"] = doc.get("created_at", now)
+    doc["updated_at"] = now
+    col_name = config.MONGODB_COLLECTIONS["portfolio_backtest_daily_snapshots"]
+    return db[col_name].insert_one(doc)
+
+
+def insert_many_portfolio_backtest_snapshots(docs: list):
+    if not docs:
+        return None
+    db = _get_db_internal()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    for d in docs:
+        d["created_at"] = d.get("created_at", now)
+        d["updated_at"] = now
+    col_name = config.MONGODB_COLLECTIONS["portfolio_backtest_daily_snapshots"]
+    return db[col_name].insert_many(docs)
+
+
+def get_portfolio_backtest_snapshots(session_id: str):
+    db = _get_db_internal()
+    from bson.objectid import ObjectId
+
+    col_name = config.MONGODB_COLLECTIONS["portfolio_backtest_daily_snapshots"]
+    return list(db[col_name].find({"session_id": ObjectId(session_id)}).sort("date", 1))
+
+
+# ---------------------------------------------------------------------------
+# Backtest Results with Session Link
+# ---------------------------------------------------------------------------
+
+
+def get_backtest_results_by_session(session_id: str):
+    db = _get_db_internal()
+    from bson.objectid import ObjectId
+
+    col_name = config.MONGODB_COLLECTIONS["backtest_results"]
+    return list(db[col_name].find({"session_id": ObjectId(session_id)}).sort("cagr", -1))

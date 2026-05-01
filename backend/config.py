@@ -59,6 +59,9 @@ MONGODB_COLLECTIONS = {
     "analysis_snapshots": "analysis_snapshots",
     "swing_gate_results": "swing_gate_results",
     "positions": "positions",
+    "backtest_sessions": "backtest_sessions",
+    "portfolio_backtest_trades": "portfolio_backtest_trades",
+    "portfolio_backtest_daily_snapshots": "portfolio_backtest_daily_snapshots",
 }
 
 TELEGRAM_CONFIG = {
@@ -99,6 +102,21 @@ RISK_MANAGEMENT = {
             {"name": "Add 2", "trigger_step_atr": 1.5, "add_size_pct": 0.25},
         ],
     },
+}
+
+# PORTFOLIO BACKTEST CONFIGURATION
+PORTFOLIO_BACKTEST_CONFIG = {
+    "enabled": True,
+    "initial_capital": 1000000.0,  # 10 Lakhs
+    "brokerage_charges": 0.0020,  # 0.20% per side
+    "risk_per_trade": 0.01,  # 1% of portfolio per trade
+    "max_position_pct": 0.10,  # Max 10% in one stock
+    "max_concurrent_positions": 10,
+    "ranking_method": "combined_score",  # combined_score or rr_ratio
+    "save_daily_snapshots": True,
+    "pyramid_counts_as_new_position": False,  # If True, pyramid adds count against max_concurrent_positions
+    "same_day_cash_recycling": True,  # If True, cash from exits can be reused same day
+    "force_close_delisted": True,  # If True, close positions at last available price
 }
 
 # TRADING & EXECUTION OPTIONS

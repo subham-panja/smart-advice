@@ -147,3 +147,115 @@ class PersistenceHandler:
         except Exception as e:
             logger.error(f"Scan run completion error: {e}")
             raise e
+
+    # ------------------------------------------------------------------
+    # Portfolio Backtest Session Persistence
+    # ------------------------------------------------------------------
+
+    def create_backtest_session(
+        self, strategy_name: str, strategy_config: dict, capital_config: dict, symbols: list
+    ) -> Any:
+        """Creates a portfolio backtest session and returns its ID."""
+        try:
+            db = get_mongodb()
+            now = datetime.now(timezone.utc).replace(tzinfo=None)
+            doc = {
+                "session_type": "portfolio",
+                "session_name": f"{strategy_name}_Portfolio_{now.strftime('%Y_%m_%d_%H%M')}",
+                "strategy_name": strategy_name,
+                "strategy_config_snapshot": strategy_config,
+                "capital_config": capital_config,
+                "symbols_tested": symbols,
+                "total_symbols": len(symbols),
+                "status": "running",
+                "date_range": {"start_date": None, "end_date": None},
+                "summary_metrics": {},
+                "created_at": now,
+                "started_at": now,
+            }
+            return db.backtest_sessions.insert_one(doc).inserted_id
+        except Exception as e:
+            logger.error(f"Backtest session creation error: {e}")
+            raise e
+
+    def save_backtest_result_with_session(self, session_id: Any, res: dict) -> bool:
+        """Saves a per-stock backtest result linked to a portfolio session."""
+        try:
+            db = get_mongodb()
+            bt = res.get("backtest", {})
+            if bt.get("status") != "completed":
+                return False
+
+            m = bt.get("combined_metrics", {})
+            now = datetime.now(timezone.utc).replace(tzinfo=None)
+
+            doc = {
+                "session_id": session_id,
+                "symbol": res["symbol"],
+                "strategy_name": res.get("strategy_name", "UNKNOWN"),
+                "period": "Overall",
+                "cagr": m.get("avg_cagr", 0),
+                "win_rate": m.get("avg_win_rate", 0),
+                "total_trades": m.get("total_trades", 0),
+                "expectancy": m.get("avg_expectancy", 0),
+                "profit_factor": m.get("avg_profit_factor", 0),
+                "backtest_details": bt.get("trades", []),
+                "created_at": now,
+                "updated_at": now,
+            }
+            db.backtest_results.insert_one(doc)
+            return True
+        except Exception as e:
+            logger.error(f"Session backtest save error: {e}")
+            raise e
+
+    def save_portfolio_backtest_trades(self, session_id: Any, trades: list) -> bool:
+        """Bulk saves portfolio backtest trades."""
+        if not trades:
+            return True
+        try:
+            db = get_mongodb()
+            now = datetime.now(timezone.utc).replace(tzinfo=None)
+            for t in trades:
+                t["session_id"] = session_id
+                t.setdefault("created_at", now)
+                t.setdefault("updated_at", now)
+            db.portfolio_backtest_trades.insert_many(trades)
+            return True
+        except Exception as e:
+            logger.error(f"Portfolio trades save error: {e}")
+            raise e
+
+    def save_portfolio_backtest_snapshots(self, session_id: Any, snapshots: list) -> bool:
+        """Bulk saves daily portfolio snapshots."""
+        if not snapshots:
+            return True
+        try:
+            db = get_mongodb()
+            now = datetime.now(timezone.utc).replace(tzinfo=None)
+            for s in snapshots:
+                s["session_id"] = session_id
+                s.setdefault("created_at", now)
+                s.setdefault("updated_at", now)
+            db.portfolio_backtest_daily_snapshots.insert_many(snapshots)
+            return True
+        except Exception as e:
+            logger.error(f"Portfolio snapshots save error: {e}")
+            raise e
+
+    def complete_backtest_session(self, session_id: Any, summary: dict, date_range: dict = None):
+        """Marks a backtest session as completed with summary metrics."""
+        try:
+            db = get_mongodb()
+            now = datetime.now(timezone.utc).replace(tzinfo=None)
+            update = {
+                "status": "completed",
+                "completed_at": now,
+                "summary_metrics": summary,
+            }
+            if date_range:
+                update["date_range"] = date_range
+            db.backtest_sessions.update_one({"_id": session_id}, {"$set": update})
+        except Exception as e:
+            logger.error(f"Backtest session completion error: {e}")
+            raise e
