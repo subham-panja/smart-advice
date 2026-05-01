@@ -16,13 +16,14 @@ and compounds returns across all stocks simultaneously.
 
 import argparse
 import logging
+import os
 import sys
 from datetime import datetime
 from typing import Dict, List
 
 import pandas as pd
 
-sys.path.insert(0, "..")
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import config
 from scripts.data_fetcher import get_historical_data
@@ -62,7 +63,8 @@ def run_portfolio_backtest(
     verbose: bool = False,
 ):
     """Run a complete portfolio backtest session."""
-    setup_logging(verbose=verbose)
+    if verbose:
+        setup_logging(verbose=True)
 
     logger.info("=" * 60)
     logger.info("PORTFOLIO BACKTEST RUNNER")
@@ -120,16 +122,27 @@ def run_portfolio_backtest(
             persistence.save_portfolio_backtest_snapshots(session_id, results["daily_snapshots"])
             logger.info(f"Saved {len(results['daily_snapshots'])} daily snapshots")
 
-        # Save trades
+        # Save trades (convert numpy types to native Python types for MongoDB)
         if results.get("trades"):
-            trade_dicts = [t.__dict__ for t in results["trades"]]
+
+            def _to_native(obj):
+                if hasattr(obj, "item"):  # numpy scalar
+                    return obj.item()
+                if isinstance(obj, dict):
+                    return {k: _to_native(v) for k, v in obj.items()}
+                if isinstance(obj, list):
+                    return [_to_native(v) for v in obj]
+                return obj
+
+            trade_dicts = [_to_native(t.__dict__) for t in results["trades"]]
             persistence.save_portfolio_backtest_trades(session_id, trade_dicts)
             logger.info(f"Saved {len(trade_dicts)} trades")
 
-        # Complete session
+        # Complete session (pass metrics only, not raw trade objects)
+        summary_metrics = {k: v for k, v in results.items() if k not in ("trades", "daily_snapshots")}
         persistence.complete_backtest_session(
             session_id=session_id,
-            summary=results,
+            summary=summary_metrics,
             date_range=results.get("date_range", {}),
         )
         logger.info(f"Session {session_id} marked as completed")

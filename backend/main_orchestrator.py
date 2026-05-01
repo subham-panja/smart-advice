@@ -61,6 +61,35 @@ def run_trading_cycle():
         analyzer = AutomatedStockAnalysis(verbose=True)
         analyzer.run(strategy_config=strategy)
 
+        # Phase 2.5: Portfolio Backtest (auto-runs per config)
+        if config.PORTFOLIO_BACKTEST_CONFIG.get("enabled") and config.PORTFOLIO_BACKTEST_CONFIG.get(
+            "auto_run_on_cycle"
+        ):
+            print(f"📈 Phase 2.5: Running portfolio backtest for {strat_name}...")
+            logger.info(f"Phase 2.5: Running portfolio backtest for {strat_name}...")
+            try:
+                from scripts.run_portfolio_backtest import run_portfolio_backtest
+
+                pbt_cfg = config.PORTFOLIO_BACKTEST_CONFIG
+                results = run_portfolio_backtest(
+                    strategy_name=strat_name,
+                    max_stocks=pbt_cfg.get("auto_run_max_stocks", 20),
+                    period=pbt_cfg.get("auto_run_period", "5y"),
+                    save_to_db=True,
+                    verbose=False,
+                )
+                logger.info(
+                    f"Portfolio backtest for {strat_name}: "
+                    f"CAGR {results['cagr']:.1f}% | Final ₹{results['final_portfolio_value']:,.0f} | "
+                    f"Trades: {results['total_trades']} | Win Rate: {results['win_rate']:.1f}%"
+                )
+                print(
+                    f"   ✅ Portfolio Backtest Complete: CAGR {results['cagr']:.1f}% | {results['total_trades']} trades"
+                )
+            except Exception as e:
+                logger.error(f"Portfolio backtest failed for {strat_name}: {e}")
+                print(f"   ⚠️ Portfolio Backtest Error: {e}")
+
         # Phase 3: Execute Recommendations for this strategy
         print(f"💰 Phase 3: Executing recommendations for {strat_name}...")
         logger.info(f"Phase 3: Executing recommendations for {strat_name}...")

@@ -52,7 +52,7 @@
         {
             "type": "market_cap",
             "op": ">",
-            "value": 50000.0
+            "value": 1000.0
         },
         {
             "type": "moving_average",
@@ -237,12 +237,12 @@
         "targets": [
             {
                 "name": "Target 1",
-                "atr_multiplier": 3.0,
+                "atr_multiplier": 5.0,
                 "sell_percentage": 0.5
             },
             {
                 "name": "Target 2",
-                "atr_multiplier": 5.0,
+                "atr_multiplier": 8.0,
                 "sell_percentage": 1.0
             }
         ],
