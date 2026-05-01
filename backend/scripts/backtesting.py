@@ -17,16 +17,21 @@ class TradeList(bt.Analyzer):
 
     def notify_trade(self, trade):
         if trade.isclosed:
+            entry_price = getattr(trade, "price", 0)
+            pnl = getattr(trade, "pnl", 0)
+            size = getattr(trade, "size", 0)
+            exit_price = (pnl / size) + entry_price if size != 0 else entry_price
+
             self.trades.append(
                 {
                     "symbol": self.strategy.p.symbol,
                     "entry_date": bt.num2date(trade.dtopen),
-                    "entry_price": trade.priceover,
+                    "entry_price": round(entry_price, 2),
                     "exit_date": bt.num2date(trade.dtclose),
-                    "exit_price": trade.priceout,
-                    "quantity": trade.size,
-                    "pnl": trade.pnl,
-                    "pnl_pct": (trade.pnl / (trade.priceover * abs(trade.size))) * 100 if trade.priceover else 0,
+                    "exit_price": round(exit_price, 2),
+                    "quantity": abs(size),
+                    "pnl": round(pnl, 2),
+                    "pnl_pct": round((pnl / (entry_price * abs(size))) * 100, 2) if entry_price and size else 0,
                 }
             )
 
