@@ -2,21 +2,46 @@
 
 Follow these steps to add new features, components, or pages to the Next.js frontend.
 
-## 1. Create a New Component
-- Place shared UI components in `frontend/src/components/`.
-- Use functional components with generic CSS or Tailwind if applicable.
+## 1. Project Structure
+- **Framework**: Next.js 15 with App Router
+- **Styling**: Tailwind CSS v4
+- **Charts**: Chart.js with `react-chartjs-2`
+- **Icons**: Heroicons (`@heroicons/react`)
+- **Tables**: TanStack React Table (`@tanstack/react-table`)
+
+## 2. Existing Pages
+- `/` - Main dashboard with charts, analysis trigger, and recommendations
+- `/about` - About page with feature overview and system status
+- `/analysis` - Detailed analysis page with configuration
+- `/recommendations` - Recommendation listing with DataTable
+- `/fo-analysis` - Futures & Options analysis page
+- `/settings` - Settings and configuration page
+
+## 3. Create a New Component
+- Place shared UI components in `frontend/src/app/components/`.
+- Existing components: `Navbar`, `Sidebar`, `DataTable`, `ThemeToggle`, `ApiTest`, `Terminal`, `MainContent`.
+- Use functional components with Tailwind CSS.
 - Keep components small and focused on one task.
 
-## 2. Add or Modify Pages
+## 4. Add or Modify Pages
 - Pages are located in `frontend/src/app/` (using App Router).
 - Use `page.tsx` for the main page logic.
+- Follow the existing pattern with `'use client'` for interactive pages.
 
-## 3. Connecting to the Backend
-- Use the `API_URL` environment variable (mapped to `http://localhost:5001`).
+## 5. Connecting to the Backend
+- Use the `NEXT_PUBLIC_API_URL` environment variable (default: `http://127.0.0.1:5001`).
+- API utilities are in `frontend/src/lib/api.ts`.
+- Existing endpoints:
+  - `GET /` - Health check
+  - `GET /recommendations` - Fetch all stock recommendations
+  - `POST /trigger-analysis` - Start stock analysis (requires `group` in body)
+  - `GET /analyze_stock/<symbol>` - Single stock analysis
+  - `GET /symbol-groups` - Get available symbol groups
 - Fetch data in `useEffect` or use Server Components where appropriate.
-- Ensure all API calls handle errors gracefully.
+- Ensure all API calls handle errors gracefully (see `api.ts` for error handling patterns).
 
-## 4. Verification
+## 6. Verification
 - Run the dev server: `npm run dev` in the `frontend` directory.
 - Verify the UI layout and data responsiveness.
 - Check the browser console for any React warnings or errors.
+- Run tests: `npm run test` (Jest), `npm run test:e2e` (Playwright).

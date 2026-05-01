@@ -13,8 +13,28 @@ Smart Advice is a comprehensive stock market analysis application that provides 
 - **Technical Analysis**: Advanced technical indicators and chart pattern recognition using TA-Lib
 - **Fundamental Analysis**: Financial metrics and company performance evaluation
 - **Sentiment Analysis**: Market sentiment and news analysis using NLP models
-- **Multi-Strategy Backtesting**: Comprehensive backtesting with CAGR calculations
-- **Risk Management**: Advanced position sizing and risk assessment
+- **Multi-Strategy Backtesting**: Comprehensive backtesting with CAGR, win rate, and expectancy calculations
+- **Risk Management**: Advanced position sizing, risk-reward evaluation, and ATR-based stop losses
+
+### Trading & Execution
+- **Paper Trading Engine**: Full paper trading simulation with portfolio tracking and PnL monitoring
+- **Unified Trading Cycle**: Automated end-to-end pipeline from analysis to execution
+- **Pyramiding Support**: ATR-triggered position scaling with configurable add steps
+- **Circuit Breaker**: Global trading halt flag for risk control
+- **Telegram Bot**: Remote control bot for running analysis, viewing recommendations, positions, and broker balance
+
+### Strategy System
+- **JSON-Based Strategies**: Self-contained strategy configs in `backend/strategies/` (e.g., `Delayed_EP`, `Strict_Audit_Swing`)
+- **Swing Trading Gates**: Trend, Volatility, Volume, and Multi-Timeframe (MTF) gate system
+- **Entry Patterns**: Pullback to EMA, Bollinger Squeeze Breakout, MACD Zero Cross, Higher Low Structure, Volatility Contraction
+- **Multi-Target Exits**: ATR-based partial targets, breakeven at T1, trailing stop loss, and time-stop exits
+
+### Advanced Analytics
+- **Options OI Analysis**: NSE Option Chain analysis with PCR and unwinding detection
+- **Smart Money Tracker**: FII/DII flow tracking and delivery volume analysis
+- **Confluence Engine**: Multi-timeframe signal confluence analysis
+- **Market Regime Detection**: Automatic detection of bullish/bearish market conditions
+- **Screener.in Integration**: Web-scraping based fundamental stock screening
 
 ### Advanced Analytics
 - **Machine Learning Models**: Deep learning models for price prediction
@@ -41,9 +61,12 @@ Smart Advice is a comprehensive stock market analysis application that provides 
 ### Backend (Python Flask)
 - **API Framework**: Flask with CORS support
 - **Data Processing**: Pandas, NumPy, SciPy for numerical analysis
-- **Machine Learning**: PyTorch, scikit-learn, stable-baselines3
+- **Machine Learning**: PyTorch, scikit-learn, stable-baselines3, HMM
 - **Technical Analysis**: TA-Lib for indicators
 - **Market Data**: Yahoo Finance (yfinance) integration
+- **Trading Engine**: Paper trading execution with pyramiding and position monitoring
+- **Telegram Integration**: Remote bot for analysis and trading control
+- **Strategy System**: JSON-based dynamic strategy loader (`backend/strategies/`) with swing gates and entry patterns
 
 ### Database
 - **Primary**: MongoDB for document storage
@@ -53,8 +76,9 @@ Smart Advice is a comprehensive stock market analysis application that provides 
 
 ### Prerequisites
 - **Node.js** 18+ and npm
-- **Python** 3.8+ and pip
+- **Python** 3.9+ and pip
 - **MongoDB** database instance
+- **Redis** (optional, for caching)
 - **Git** for version control
 
 ### Backend Setup
@@ -159,14 +183,17 @@ npm run test:all     # Run all tests
 
 #### Backend Scripts
 ```bash
-python run_analysis.py          # Run complete stock analysis
-python test_complete_system.py  # Test system integration
-python scripts/backtesting.py   # Run backtesting analysis
+python run_analysis.py                    # Run complete stock analysis (JSON strategy-driven)
+python main_orchestrator.py               # Run unified trading cycle (analysis + execution)
+python telegram_bot.py                    # Start Telegram control bot
+python test_complete_system.py            # Test system integration
+python scripts/backtesting.py             # Run backtesting analysis
+python scripts/portfolio_monitor_paper.py # Monitor open positions and exits
 ```
 
 ## 📊 Analysis Strategies
 
-The platform includes 70+ built-in trading strategies:
+The platform includes 50+ technical indicator modules and JSON-configured trading strategies:
 
 ### Technical Indicators
 - Moving Average Crossovers (SMA, EMA, DEMA, TEMA)
@@ -185,6 +212,11 @@ The platform includes 70+ built-in trading strategies:
 - MACD Signal and Zero Line Crossovers
 - Parabolic SAR Reversals
 - Elder Ray Index
+- Multi-Timeframe Confluence Engine
+- Market Regime Detection
+- Options Chain OI Analysis (PCR, Unwinding)
+- Smart Money Tracking (FII/DII Flows)
+- Screener.in Fundamental Screening
 
 ## 🔧 Configuration
 
@@ -198,18 +230,37 @@ NEXT_PUBLIC_API_URL=http://127.0.0.1:5001
 **Backend (config.py)**:
 ```python
 # Database Configuration
-MONGODB_URI = "mongodb://localhost:27017/"
-DATABASE_NAME = "smart_advice"
+MONGODB_HOST = "127.0.0.1"
+MONGODB_PORT = 27017
+MONGODB_DATABASE = "super_advice"
 
 # Analysis Parameters
-DATA_PURGE_DAYS = 30
-MAX_ANALYSIS_STOCKS = 100
+HISTORICAL_DATA_PERIOD = "5y"
 ENABLE_VOLUME_FILTER = True
+VOLUME_SPIKE_THRESHOLD = 1.5
 
 # API Configuration
 FLASK_PORT = 5001
-CORS_ORIGINS = ["http://localhost:3000"]
+
+# Trading Options
+TRADING_OPTIONS = {
+    "is_paper_trading": True,
+    "initial_capital": 100000.0,
+    "brokerage_charges": 0.0020,
+    "auto_execute": True,
+    "circuit_breaker": False,
+}
+
+# Risk Management
+RISK_MANAGEMENT = {
+    "position_sizing": {"risk_per_trade": 0.01, "max_position_pct": 0.10},
+    "portfolio_constraints": {"max_concurrent_positions": 10, "daily_loss_limit": 0.03},
+    "pyramiding": {"enabled": True, "max_adds": 2, "steps": [...]},
+}
 ```
+
+**Strategy Configs (backend/strategies/*.json)**:
+Each strategy is a self-contained JSON file with analysis weights, stock filters, swing gates, entry patterns, and exit rules.
 
 ## 🧪 Testing
 
@@ -281,10 +332,11 @@ python test_new_strategies.py
 - [x] Real-time progress tracking
 
 ### Phase 2: Advanced Features 🚧
-- [ ] **F&O Analysis**: Options chain analysis and volatility insights
-- [ ] **Portfolio Management**: Multi-asset portfolio tracking
-- [ ] **Alert System**: Email/SMS notifications for triggers
+- [x] **F&O Analysis**: Options chain analysis and volatility insights (backend ready)
+- [x] **Portfolio Management**: Paper trading portfolio tracking with position monitoring
+- [x] **Alert System**: Telegram bot for remote notifications and control
 - [ ] **Mobile App**: React Native mobile application
+- [x] **Multi-Strategy System**: JSON-based dynamic strategy loading and execution
 
 ### Phase 3: Enterprise Features 📋
 - [ ] **Multi-user Support**: User authentication and management
