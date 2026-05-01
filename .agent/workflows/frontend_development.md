@@ -3,11 +3,14 @@
 Follow these steps to add new features, components, or pages to the Next.js frontend.
 
 ## 1. Project Structure
-- **Framework**: Next.js 15 with App Router
+- **Framework**: Next.js 15.5 with App Router
+- **React**: React 19
 - **Styling**: Tailwind CSS v4
-- **Charts**: Chart.js with `react-chartjs-2`
+- **Charts**: Chart.js 4 with `react-chartjs-2`
 - **Icons**: Heroicons (`@heroicons/react`)
 - **Tables**: TanStack React Table (`@tanstack/react-table`)
+- **UI**: Headless UI (`@headlessui/react`)
+- **HTTP**: Axios
 
 ## 2. Existing Pages
 - `/` - Main dashboard with charts, analysis trigger, and recommendations
@@ -15,12 +18,13 @@ Follow these steps to add new features, components, or pages to the Next.js fron
 - `/analysis` - Detailed analysis page with configuration
 - `/recommendations` - Recommendation listing with DataTable
 - `/fo-analysis` - Futures & Options analysis page
+- `/fo-recommendations` - F&O-specific recommendations
 - `/settings` - Settings and configuration page
 
 ## 3. Create a New Component
 - Place shared UI components in `frontend/src/app/components/`.
 - Existing components: `Navbar`, `Sidebar`, `DataTable`, `ThemeToggle`, `ApiTest`, `Terminal`, `MainContent`.
-- Use functional components with Tailwind CSS.
+- Use functional components with Tailwind CSS v4.
 - Keep components small and focused on one task.
 
 ## 4. Add or Modify Pages

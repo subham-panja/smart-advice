@@ -43,13 +43,13 @@ Use this for a complete new trading system with gates, entry patterns, and exit 
 ### 1. Create JSON File
 - Location: `backend/strategies/`
 - Filename: `[strategy_name].json` (snake_case)
-- Template: Copy from `backend/strategies/delayed_ep.json`.
+- Template: Copy from `backend/strategies/hybrid_trading.json`.
 
 ### 2. Define Key Sections
 - `name`: Unique strategy name.
 - `enabled`: Set to `true` to activate.
 - `analysis_config`: Toggle technical/fundamental/sentiment/sector/backtesting/risk/options_oi.
-- `analysis_weights`: Weight distribution (must sum to 1.0).
+- `analysis_weights`: Weight distribution (must sum to 1.0 across technical, fundamental, sentiment, sector).
 - `stock_filters`: Price, volume, market cap, moving average filters.
 - `swing_trading_gates`: TREND_GATE, VOLATILITY_GATE, VOLUME_GATE, MTF_GATE.
 - `entry_patterns`: pullback_to_ema, bollinger_squeeze_breakout, macd_zero_cross, etc.
@@ -87,6 +87,8 @@ Supported patterns:
 - `macd_zero_cross`: MACD crosses from below to above zero.
 - `higher_low_structure`: Rising swing lows.
 - `volatility_contraction`: Decreasing ATR over last 5 days.
+- `nr7_volatility_squeeze`: Narrowest range in 7 days with volume dry-up.
+- `twenty_day_high_breakout`: Breakout of 20-day high with volume confirmation.
 
 To add a new pattern type, you must update both:
 1. The JSON schema in the strategy file.

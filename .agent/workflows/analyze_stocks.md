@@ -41,9 +41,11 @@ Send "Run Analysis" to the configured Telegram bot.
 - **Logs**: Check `backend/logs/` for any "Network Error" or "API 429" warnings.
 - **Database**: Check MongoDB collections:
   - `recommended_shares` - New recommendations
-  - `backtest_results` - Backtest metrics
+  - `backtest_results` - Backtest metrics per strategy
   - `scan_runs` - Scan execution history
   - `swing_gate_results` - Gate pass/fail data
+  - `positions` - Open paper trading positions
+  - `portfolio_backtest_daily_snapshots` - Portfolio backtest equity curves (if auto-run enabled)
 - **Audit Log**: Check `backend/logs/audit_log.json` for detailed per-stock analysis logs.
 - **Frontend**: Refresh `http://localhost:3000` to see the new dashboard data.
 - **Positions**: If running the full cycle, check `positions` collection for new/open trades.

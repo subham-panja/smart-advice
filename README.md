@@ -24,24 +24,22 @@ Smart Advice is a comprehensive stock market analysis application that provides 
 - **Telegram Bot**: Remote control bot for running analysis, viewing recommendations, positions, and broker balance
 
 ### Strategy System
-- **JSON-Based Strategies**: Self-contained strategy configs in `backend/strategies/` (e.g., `Delayed_EP`, `Strict_Audit_Swing`)
+- **JSON-Based Strategies**: Self-contained strategy configs in `backend/strategies/` (e.g., `Hybrid_Trading`, `Momentum_Trading`, `Swing_Trading`)
 - **Swing Trading Gates**: Trend, Volatility, Volume, and Multi-Timeframe (MTF) gate system
-- **Entry Patterns**: Pullback to EMA, Bollinger Squeeze Breakout, MACD Zero Cross, Higher Low Structure, Volatility Contraction
+- **Entry Patterns**: Pullback to EMA, Bollinger Squeeze Breakout, MACD Zero Cross, Higher Low Structure, Volatility Contraction, NR7 Volatility Squeeze, 20-Day High Breakout
 - **Multi-Target Exits**: ATR-based partial targets, breakeven at T1, trailing stop loss, and time-stop exits
 
 ### Advanced Analytics
 - **Options OI Analysis**: NSE Option Chain analysis with PCR and unwinding detection
 - **Smart Money Tracker**: FII/DII flow tracking and delivery volume analysis
 - **Confluence Engine**: Multi-timeframe signal confluence analysis
-- **Market Regime Detection**: Automatic detection of bullish/bearish market conditions
+- **Market Regime Detection**: HMM-based automatic detection of bullish/bearish market conditions
 - **Screener.in Integration**: Web-scraping based fundamental stock screening
-
-### Advanced Analytics
-- **Machine Learning Models**: Deep learning models for price prediction
-- **Reinforcement Learning**: Trading agents for decision optimization
-- **Market Regime Detection**: Automatic detection of market conditions
+- **Machine Learning Models**: PyTorch LSTMs and custom classifiers for price prediction
+- **Reinforcement Learning**: Trading agents for decision optimization (stable-baselines3)
 - **Sector Analysis**: Industry-specific insights and comparisons
 - **Market Microstructure**: Order flow and liquidity analysis
+- **Sentiment Analysis**: NLP-based news and market sentiment (HuggingFace Transformers)
 
 ### Modern Web Interface
 - **Real-time Dashboard**: Interactive charts and visualizations using Chart.js
@@ -51,10 +49,11 @@ Smart Advice is a comprehensive stock market analysis application that provides 
 
 ## 🏗️ Architecture
 
-### Frontend (Next.js 15 + TypeScript)
-- **Framework**: Next.js 15 with App Router
+### Frontend (Next.js 15 + React 19 + TypeScript)
+- **Framework**: Next.js 15.5 with App Router
 - **Styling**: Tailwind CSS v4 with custom design system
-- **Charts**: Chart.js with React integration
+- **Charts**: Chart.js 4 with `react-chartjs-2`
+- **UI Libraries**: Headless UI, Heroicons, TanStack Table
 - **State Management**: React hooks and context
 - **Testing**: Jest + Playwright for unit and E2E testing
 
@@ -183,17 +182,18 @@ npm run test:all     # Run all tests
 
 #### Backend Scripts
 ```bash
-python run_analysis.py                    # Run complete stock analysis (JSON strategy-driven)
-python main_orchestrator.py               # Run unified trading cycle (analysis + execution)
-python telegram_bot.py                    # Start Telegram control bot
-python test_complete_system.py            # Test system integration
-python scripts/backtesting.py             # Run backtesting analysis
-python scripts/portfolio_monitor_paper.py # Monitor open positions and exits
+python run_analysis.py                              # Run complete stock analysis (JSON strategy-driven)
+python main_orchestrator.py                         # Run unified trading cycle (analysis + execution + portfolio backtest)
+python telegram_bot.py                              # Start Telegram control bot
+python scripts/portfolio_monitor_paper.py           # Monitor open positions and exits
+python scripts/run_portfolio_backtest.py            # Run portfolio-level backtest simulation
+python scripts/backtesting.py                       # Run per-strategy backtesting
+python tests/test_complete_system.py               # Test system integration
 ```
 
 ## 📊 Analysis Strategies
 
-The platform includes 50+ technical indicator modules and JSON-configured trading strategies:
+The platform includes 55+ technical indicator modules and JSON-configured trading strategies:
 
 ### Technical Indicators
 - Moving Average Crossovers (SMA, EMA, DEMA, TEMA)
@@ -281,17 +281,22 @@ npm run test:coverage
 
 ### Backend Testing
 ```bash
-# Run basic system tests
-python test_basic.py
+cd backend
 
-# Test data fetching
-python test_data_fetch.py
+# Run complete system integration test
+python tests/test_complete_system.py
 
-# Test complete system integration
-python test_complete_system.py
+# Run swing trading gate tests
+python tests/test_swing_trading_gates.py
 
-# Test specific strategies
-python test_new_strategies.py
+# Run activated strategy tests
+python tests/test_activated_strategies.py
+
+# Run new strategy tests
+python tests/test_new_strategies.py
+
+# Run all tests (if using pytest)
+python -m pytest tests/
 ```
 
 ## 📈 Performance

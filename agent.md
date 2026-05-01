@@ -7,17 +7,17 @@ To provide a robust, AI-powered stock analysis platform for the Indian Equity Ma
 
 ## 🏗️ Technology Stack
 - **Backend**: Python (Flask), MongoDB (Core Data), Redis (Caching), Multi-processing/Threading pipeline (Optimized for Apple Silicon).
-- **Analysis**: TA-Lib (Technical Indicators), yfinance (Data Fetching).
-- **ML/AI**: PyTorch (LSTMs), HuggingFace Transformers (Sentiment), stable-baselines3 (RL), HMM (Market Regime).
-- **Frontend**: Next.js 15, Tailwind CSS v4, Chart.js.
+- **Analysis**: TA-Lib (Technical Indicators), yfinance (Data Fetching), Chartink (Screening).
+- **ML/AI**: PyTorch (LSTMs, custom classifiers), HuggingFace Transformers (Sentiment), stable-baselines3 (RL), HMM (Market Regime).
+- **Frontend**: Next.js 15.5, React 19, Tailwind CSS v4, Chart.js 4, TanStack Table, Headless UI.
 - **Broker Integration**: 5Paisa API (for live trading balance/holdings).
 - **Notifications**: Telegram Bot for remote control.
 
 ## 🤖 Agent Role & Identity
 You are **Antigravity**, the lead agentic developer for this project.
 Your core responsibilities:
-1.  **Maintain High Liquidity Standards**: Always filter for tradeable stocks (>100k volume, >5000cr market cap) unless explicitly using `--disable-volume-filter`.
-2.  **Preserve Strategy Integrity**: Ensure 50+ technical indicator modules remain modular and testable. Strategies are now **JSON-configured** in `backend/strategies/` (not hardcoded in Python).
+1.  **Maintain High Liquidity Standards**: Always filter for tradeable stocks (>100k volume, >500cr market cap) unless explicitly using `--disable-volume-filter`.
+2.  **Preserve Strategy Integrity**: Ensure 55+ technical indicator modules remain modular and testable. Strategies are now **JSON-configured** in `backend/strategies/` (not hardcoded in Python).
 3.  **Optimize Performance**: Use the two-phase pipeline (`I/O Threads` + `CPU Multiprocessing`) for high-speed scanning of 2000+ NSE symbols. Respect rate limits and local caching strategies (`NSE_CACHE_FILE`, groups).
 4.  **Verifiable Work**: Every change must be verified with local tests before finishing.
 5.  **Respect Risk Controls**: Never bypass `circuit_breaker`, position limits, or stop-loss logic.
@@ -41,12 +41,16 @@ Whenever you receive a task, follow this precedence:
 ## 📂 Key Directory Structure
 - Workflows: `.agent/workflows/`
 - Skills: `skills/`
-- Strategy JSONs: `backend/strategies/` (e.g., `delayed_ep.json`, `strict_audit_swing.json`)
-- Indicator Modules: `backend/scripts/strategies/` (50+ TA-Lib based modules)
+- Strategy JSONs: `backend/strategies/` (e.g., `hybrid_trading.json`, `momentum_trading.json`, `swing_trading.json`)
+- Indicator Modules: `backend/scripts/strategies/` (55+ TA-Lib based modules inheriting from `BaseStrategy`)
 - Trading Engine: `backend/scripts/execution_engine_paper.py`
 - Portfolio Monitor: `backend/scripts/portfolio_monitor_paper.py`
+- Portfolio Backtest: `backend/scripts/run_portfolio_backtest.py`
 - Orchestrator: `backend/main_orchestrator.py`
 - Data: `backend/data/` (Includes `symbol_groups.json` and `nse_symbols.json`)
+- ML Models: `backend/ml/` (classifier_trainer, feature_extractor, secondary_ranker)
+- Data Models: `backend/models/` (Pydantic models for recommendation, stock)
+- Tests: `backend/tests/` (15+ test files)
 
 ## 🔄 Unified Trading Cycle (End-to-End Flow)
 1. **Portfolio Monitor** checks existing positions for exits (SL hit, target hit, time stop, trailing SL update).
@@ -54,13 +58,14 @@ Whenever you receive a task, follow this precedence:
 3. **Analysis** runs for each strategy: Macro check -> Symbol scanning -> Data fetch -> Parallel analysis.
 4. **Execution Engine** places paper (or live) BUY orders for qualified recommendations.
 5. **Pyramiding** adds to existing positions if ATR-based price triggers are met.
-6. **Telegram Bot** can trigger the entire cycle remotely and report results.
+6. **Portfolio Backtest** (auto-run) simulates strategy performance over historical data.
+7. **Telegram Bot** can trigger the entire cycle remotely and report results.
 
 ## 🚪 Swing Trading System Architecture
 Each JSON strategy defines:
 - **Stock Filters**: Price, volume, market cap, moving average filters.
 - **Swing Gates**: TREND_GATE (ADX + DI), VOLATILITY_GATE (ATR percentile), VOLUME_GATE (z-score + OBV), MTF_GATE (weekly alignment).
-- **Entry Patterns**: pullback_to_ema, bollinger_squeeze_breakout, macd_zero_cross, higher_low_structure, volatility_contraction.
+- **Entry Patterns**: pullback_to_ema, bollinger_squeeze_breakout, macd_zero_cross, higher_low_structure, volatility_contraction, nr7_volatility_squeeze, twenty_day_high_breakout.
 - **Exit Rules**: Multi-target ATR-based exits, trailing stop, breakeven at T1, time-stop (15 days).
 - **Strategy Config**: Individual indicator on/off switches with `is_bonus` flag (bonus indicators don't block, hard indicators do).
 
