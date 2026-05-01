@@ -50,9 +50,7 @@ class FilterTranslator:
 
                 spike_clauses = []
                 for i in range(1, lookback + 1):
-                    spike_clauses.append(
-                        f"[0] {i} day ago volume > [0] {i} day ago sma(volume,{ma_period}) * {multiplier}"
-                    )
+                    spike_clauses.append(f"{i} day ago volume > {i} day ago sma(volume,{ma_period}) * {multiplier}")
 
                 clauses.append(f"( {' or '.join(spike_clauses)} )")
 
