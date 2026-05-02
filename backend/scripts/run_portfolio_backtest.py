@@ -78,18 +78,29 @@ def _walk_forward_mc_worker(args):
     """Worker function for walk-forward Monte Carlo iteration.
 
     Args:
-        args: tuple of (strategy_config_dict, sampled_data_dict, window_idx, mc_iter, sim_start_date, sim_end_date)
+        args: tuple of (strategy_config_dict, data_dir, symbol_list, window_idx, mc_iter, sim_start_date, sim_end_date)
 
     Returns:
         dict with metrics or error info (pickle-serializable)
     """
-    strategy_config, sampled_data, window_idx, mc_iter, sim_start_date, sim_end_date = args
+    import shutil
+
+    strategy_config, data_dir, symbol_list, window_idx, mc_iter, sim_start_date, sim_end_date = args
+
+    # Load data from parquet files
+    sampled_data = {}
+    for sym in symbol_list:
+        fpath = os.path.join(data_dir, f"{sym}.parquet")
+        if os.path.exists(fpath):
+            sampled_data[sym] = pd.read_parquet(fpath)
 
     # Each worker creates its own engine (spawn-safe, no shared state)
     engine = PortfolioBacktestSession(strategy_config=strategy_config)
 
     try:
         result = engine.run(sampled_data, sim_start_date=sim_start_date, sim_end_date=sim_end_date)
+        # Clean up temp data
+        shutil.rmtree(data_dir, ignore_errors=True)
         return {
             "window": window_idx,
             "mc_iteration": mc_iter,
@@ -104,6 +115,7 @@ def _walk_forward_mc_worker(args):
             "profit_factor": float(result["profit_factor"]),
         }
     except Exception as e:
+        shutil.rmtree(data_dir, ignore_errors=True)
         return {
             "window": window_idx,
             "mc_iteration": mc_iter,
@@ -395,24 +407,34 @@ def run_walk_forward_backtest(
             logger.warning(f"Too few symbols in window {window_idx+1}, skipping")
             continue
 
-        # Pre-sample stocks for each MC iteration (build sample_map in main process)
+        # Pre-sample stocks for each MC iteration and write to parquet files
         import random
+        import tempfile
+        import uuid
 
         sample_map = {}
-        tasks = []
+        task_args = []
         for mc_iter in range(mc_iterations):
             sample_size = max(int(len(window_data) * 0.7), 20)
             sampled_symbols = random.sample(list(window_data.keys()), sample_size)
-            sampled_data = {s: window_data[s] for s in sampled_symbols}
             sample_map[(window_idx + 1, mc_iter + 1)] = sampled_symbols
-            tasks.append((strategy, sampled_data, window_idx + 1, mc_iter + 1, window_start, window_end))
+
+            # Write sampled data to temp parquet files
+            data_dir = os.path.join(tempfile.gettempdir(), f"wf_data_{uuid.uuid4().hex[:8]}")
+            os.makedirs(data_dir, exist_ok=True)
+            for sym in sampled_symbols:
+                window_data[sym].to_parquet(os.path.join(data_dir, f"{sym}.parquet"))
+
+            task_args.append(
+                (strategy, data_dir, sampled_symbols, window_idx + 1, mc_iter + 1, window_start, window_end)
+            )
 
         # Run MC iterations in parallel
         num_workers = min(config.NUM_WORKER_PROCESSES, mc_iterations)
         ctx = multiprocessing.get_context("spawn")
 
         with ctx.Pool(processes=num_workers) as pool:
-            for result in pool.imap_unordered(_walk_forward_mc_worker, tasks):
+            for result in pool.imap_unordered(_walk_forward_mc_worker, task_args):
                 completed_count += 1
                 elapsed = (datetime.now() - start_time).total_seconds()
 
