@@ -383,12 +383,12 @@ def run_walk_forward_backtest(
         logger.info(f"WINDOW {window_idx+1}/{len(windows)}: {window_start.date()} → {window_end.date()}")
         logger.info(f"{'='*50}")
 
-        # Slice data to window + 252-day warm-up (needed for SMA 200, ATR lookback, etc.)
-        warmup_days = 252
+        # Slice data to window + 200-day warm-up (needed for SMA 200, ATR lookback, etc.)
+        warmup_days = 200
         window_data = {}
         for sym, df in symbols_data.items():
             sliced = df[(df.index >= window_start - pd.Timedelta(days=warmup_days)) & (df.index <= window_end)]
-            if len(sliced) >= 250:  # Min data required (warmup + window)
+            if len(sliced) >= 200:  # Min data required (warmup + partial window)
                 window_data[sym] = sliced
 
         if len(window_data) < 20:
