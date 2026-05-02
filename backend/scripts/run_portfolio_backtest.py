@@ -179,6 +179,8 @@ def run_portfolio_backtest(
 
     # 4. Run Backtest (multiprocessing if enabled)
     start_time = datetime.now()
+    session_id = None
+    persistence = PersistenceHandler() if save_to_db else None
 
     if config.USE_MULTIPROCESSING_PIPELINE and len(symbols_data) >= 20:
         # Split symbols into chunks for parallel processing
@@ -207,8 +209,6 @@ def run_portfolio_backtest(
     else:
         # Single-threaded backtest
         logger.info(f"🚀 Starting portfolio backtest for strategy: {strategy['name']}")
-        persistence = PersistenceHandler()
-        session_id = None
         if save_to_db:
             capital_cfg = config.PORTFOLIO_BACKTEST_CONFIG
             session_id = persistence.create_backtest_session(
