@@ -27,7 +27,7 @@ MONGODB_PORT = int(os.getenv("MONGODB_PORT", "27017"))
 MONGODB_DATABASE = os.getenv("MONGODB_DATABASE", "super_advice")
 
 # Global Parameters
-HISTORICAL_DATA_PERIOD = "5y"  # Data lookback for backtesting
+HISTORICAL_DATA_PERIOD = "2y"  # Data lookback for backtesting
 
 # SINGLE SOURCE OF TRUTH FOR CAPITAL
 # All paper trading, live trading, and backtesting use this same capital value.
@@ -42,7 +42,7 @@ STRATEGIES_DIR = os.path.join(BACKEND_DIR, "strategies")
 # Performance & Pipeline
 MAX_WORKER_THREADS = 10  # Thread limit for parallel fetching
 DATA_FETCH_THREADS = 4  # Reduced to avoid rate limiting
-BATCH_SIZE = 4  # Batch size for processing
+BATCH_SIZE = 8  # Batch size for processing
 REQUEST_DELAY = 1.0  # Increased delay between requests
 MAX_RETRIES = 1  # Max retries for failed requests
 TIMEOUT_SECONDS = 10  # Request timeout
@@ -123,7 +123,7 @@ PORTFOLIO_BACKTEST_CONFIG = {
     "force_close_delisted": True,  # If True, close positions at last available price
     "auto_run_on_cycle": True,  # If True, portfolio backtest runs automatically per trading cycle
     "auto_run_max_stocks": 1000,  # Max stocks for auto-run (to keep cycle time reasonable)
-    "auto_run_period": "5y",  # Historical period for auto-run
+    "auto_run_period": "2y",  # Historical period for auto-run
 }
 
 # TRADING & EXECUTION OPTIONS
