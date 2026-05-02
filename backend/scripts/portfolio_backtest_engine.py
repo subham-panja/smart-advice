@@ -24,7 +24,7 @@ import numpy as np
 import pandas as pd
 import talib as ta
 
-from config import PORTFOLIO_BACKTEST_CONFIG
+from config import PORTFOLIO_BACKTEST_CONFIG, PYRAMID_COUNTS_AS_NEW_POSITION
 from scripts.risk_management import RiskManager
 from scripts.swing_trading_signals import SwingTradingSignalAnalyzer
 
@@ -91,14 +91,19 @@ class PortfolioBacktestSession:
 
         self.initial_capital = cfg["initial_capital"]
         self.brokerage = cfg["brokerage_charges"]
-        self.risk_per_trade = cfg["risk_per_trade"]
-        self.max_position_pct = cfg["max_position_pct"]
-        self.max_positions = cfg["max_concurrent_positions"]
         self.ranking_method = cfg.get("ranking_method", "combined_score")
         self.save_snapshots = cfg.get("save_daily_snapshots", True)
-        self.pyramid_counts_as_new = cfg.get("pyramid_counts_as_new_position", False)
         self.same_day_recycling = cfg.get("same_day_cash_recycling", True)
         self.force_close_delisted = cfg.get("force_close_delisted", True)
+
+        # Risk params from strategy's risk_management section (matches live trading)
+        risk_cfg = strategy_config.get("risk_management", {})
+        self.risk_per_trade = risk_cfg.get("risk_per_trade_pct", 2.0) / 100.0
+        self.max_position_pct = risk_cfg.get("max_position_pct", 10.0) / 100.0
+        self.max_positions = risk_cfg.get("max_positions", 15)
+
+        # Global pyramid flag (matches live trading)
+        self.pyramid_counts_as_new = PYRAMID_COUNTS_AS_NEW_POSITION
 
         # State
         self.cash = self.initial_capital

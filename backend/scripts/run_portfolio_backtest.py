@@ -38,7 +38,7 @@ from utils.strategy_loader import StrategyLoader
 logger = logging.getLogger(__name__)
 
 
-def _run_partial_backtest(strategy_config, symbols_chunk, initial_capital, max_positions):
+def _run_partial_backtest(strategy_config, symbols_chunk, initial_capital):
     """Worker function for multiprocessing - runs backtest on a chunk of symbols."""
     from scripts.portfolio_backtest_engine import PortfolioBacktestSession
 
@@ -53,12 +53,8 @@ def _run_partial_backtest(strategy_config, symbols_chunk, initial_capital, max_p
         capital_config={
             "initial_capital": chunk_capital,
             "brokerage_charges": 0.002,
-            "risk_per_trade": 2.0,
-            "max_position_pct": 10.0,
-            "max_concurrent_positions": max(2, max_positions // 4),
             "ranking_method": "combined_score",
             "save_daily_snapshots": False,
-            "pyramid_counts_as_new_position": False,
             "same_day_cash_recycling": True,
             "force_close_delisted": True,
         },
@@ -202,7 +198,6 @@ def run_portfolio_backtest(
                         strategy,
                         chunk,
                         config.INITIAL_CAPITAL,
-                        config.PORTFOLIO_BACKTEST_CONFIG["max_concurrent_positions"],
                     )
                     for chunk in chunks
                 ],

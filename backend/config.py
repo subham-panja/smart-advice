@@ -110,21 +110,21 @@ RISK_MANAGEMENT = {
 
 # PORTFOLIO BACKTEST CONFIGURATION
 # Uses global flags: HISTORICAL_DATA_PERIOD, NUM_WORKER_PROCESSES, USE_MULTIPROCESSING_PIPELINE
+# Risk params (risk_per_trade, max_position_pct, max_positions) come from strategy's risk_management section
 PORTFOLIO_BACKTEST_CONFIG = {
     "enabled": True,
     "initial_capital": INITIAL_CAPITAL,
     "brokerage_charges": 0.0020,  # 0.20% per side
-    "risk_per_trade": 0.02,  # 2% of portfolio per trade
-    "max_position_pct": 0.10,  # Max 10% in one stock
-    "max_concurrent_positions": 20,
     "ranking_method": "combined_score",  # combined_score or rr_ratio
     "save_daily_snapshots": True,
-    "pyramid_counts_as_new_position": False,  # If True, pyramid adds count against max_concurrent_positions
     "same_day_cash_recycling": True,  # If True, cash from exits can be reused same day
     "force_close_delisted": True,  # If True, close positions at last available price
     "auto_run_on_cycle": True,  # If True, portfolio backtest runs automatically per trading cycle
     "auto_run_max_stocks": 1000,  # Max stocks for auto-run (to keep cycle time reasonable)
 }
+
+# GLOBAL POSITION MANAGEMENT
+PYRAMID_COUNTS_AS_NEW_POSITION = False  # If True, pyramid adds count against max_positions
 
 # TRADING & EXECUTION OPTIONS
 TRADING_OPTIONS = {
