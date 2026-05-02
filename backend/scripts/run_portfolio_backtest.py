@@ -16,6 +16,7 @@ and compounds returns across all stocks simultaneously.
 
 import argparse
 import logging
+import multiprocessing
 import os
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -35,6 +36,83 @@ from utils.stock_scanner import StockScanner
 from utils.strategy_loader import StrategyLoader
 
 logger = logging.getLogger(__name__)
+
+
+def _run_partial_backtest(strategy_config, symbols_chunk, initial_capital, max_positions):
+    """Worker function for multiprocessing - runs backtest on a chunk of symbols."""
+    from scripts.portfolio_backtest_engine import PortfolioBacktestSession
+
+    chunk_capital = (
+        initial_capital // len(multiprocessing.current_process().name.split("-"))
+        if "-" in multiprocessing.current_process().name
+        else initial_capital
+    )
+
+    engine = PortfolioBacktestSession(
+        strategy_config=strategy_config,
+        capital_config={
+            "initial_capital": chunk_capital,
+            "brokerage_charges": 0.002,
+            "risk_per_trade": 2.0,
+            "max_position_pct": 10.0,
+            "max_concurrent_positions": max(2, max_positions // 4),
+            "ranking_method": "combined_score",
+            "save_daily_snapshots": False,
+            "pyramid_counts_as_new_position": False,
+            "same_day_cash_recycling": True,
+            "force_close_delisted": True,
+        },
+    )
+
+    results = engine.run(symbols_chunk)
+    return results
+
+
+def merge_backtest_results(results_list):
+    """Merge multiple partial backtest results into a single summary."""
+    if not results_list:
+        return {}
+
+    total_value = sum(r.get("final_portfolio_value", 0) for r in results_list)
+    total_initial = sum(r.get("initial_capital", 0) for r in results_list)
+    total_trades = sum(r.get("total_trades", 0) for r in results_list)
+    total_return = ((total_value - total_initial) / total_initial * 100) if total_initial > 0 else 0
+
+    # Average CAGR across chunks
+    cagrs = [r.get("cagr", 0) for r in results_list if r.get("cagr")]
+    avg_cagr = sum(cagrs) / len(cagrs) if cagrs else 0
+
+    # Average win rate
+    win_rates = [r.get("win_rate", 0) for r in results_list if r.get("win_rate")]
+    avg_win_rate = sum(win_rates) / len(win_rates) if win_rates else 0
+
+    # Max drawdown (worst case)
+    max_dd = min(r.get("max_drawdown_pct", 0) for r in results_list) if results_list else 0
+
+    # Merge trades
+    all_trades = []
+    for r in results_list:
+        all_trades.extend(r.get("trades", []))
+
+    return {
+        "strategy_name": results_list[0].get("strategy_name", "Unknown"),
+        "status": "completed",
+        "initial_capital": total_initial,
+        "final_portfolio_value": total_value,
+        "cash_remaining": sum(r.get("cash_remaining", 0) for r in results_list),
+        "total_return_pct": total_return,
+        "cagr": avg_cagr,
+        "max_drawdown_pct": max_dd,
+        "sharpe_ratio": sum(r.get("sharpe_ratio", 0) for r in results_list) / len(results_list),
+        "total_trades": total_trades,
+        "win_rate": avg_win_rate,
+        "profit_factor": sum(r.get("profit_factor", 0) for r in results_list) / len(results_list),
+        "expectancy": sum(r.get("expectancy", 0) for r in results_list) / len(results_list),
+        "avg_positions_held": sum(r.get("avg_positions_held", 0) for r in results_list) / len(results_list),
+        "trades": all_trades,
+        "daily_snapshots": [],
+        "date_range": results_list[0].get("date_range", {}),
+    }
 
 
 def fetch_symbols_data(symbols: Dict[str, str], period: str = "5y", verbose: bool = False) -> Dict[str, pd.DataFrame]:
@@ -103,25 +181,52 @@ def run_portfolio_backtest(
     if len(symbols_data) < 5:
         raise RuntimeError(f"Too few symbols with valid data: {len(symbols_data)}")
 
-    # 4. Create Session in DB
-    persistence = PersistenceHandler()
-    session_id = None
-    if save_to_db:
-        capital_cfg = config.PORTFOLIO_BACKTEST_CONFIG
-        session_id = persistence.create_backtest_session(
-            strategy_name=strategy["name"],
-            strategy_config=strategy,
-            capital_config=capital_cfg,
-            symbols=list(symbols_data.keys()),
-        )
-        logger.info(f"DB Session created: {session_id}")
-
-    # 5. Run Engine
-    engine = PortfolioBacktestSession(strategy_config=strategy)
-    engine.session_id = session_id
-
+    # 4. Run Backtest (multiprocessing if enabled)
     start_time = datetime.now()
-    results = engine.run(symbols_data)
+
+    if config.PORTFOLIO_BACKTEST_CONFIG.get("use_multiprocessing", True) and len(symbols_data) >= 20:
+        # Split symbols into chunks for parallel processing
+        num_workers = min(config.NUM_WORKER_PROCESSES, len(symbols_data))
+        symbols_list = list(symbols_data.items())
+        chunk_size = len(symbols_list) // num_workers
+        chunks = [dict(symbols_list[i : i + chunk_size]) for i in range(0, len(symbols_list), chunk_size)]
+
+        logger.info(f"🚀 Running portfolio backtest with {num_workers} parallel workers...")
+        logger.info(f"   Split {len(symbols_data)} symbols into {len(chunks)} chunks")
+
+        with multiprocessing.Pool(processes=num_workers) as pool:
+            partial_results = pool.starmap(
+                _run_partial_backtest,
+                [
+                    (
+                        strategy,
+                        chunk,
+                        config.INITIAL_CAPITAL,
+                        config.PORTFOLIO_BACKTEST_CONFIG["max_concurrent_positions"],
+                    )
+                    for chunk in chunks
+                ],
+            )
+
+        results = merge_backtest_results(partial_results)
+    else:
+        # Single-threaded backtest
+        logger.info(f"🚀 Starting portfolio backtest for strategy: {strategy['name']}")
+        persistence = PersistenceHandler()
+        session_id = None
+        if save_to_db:
+            capital_cfg = config.PORTFOLIO_BACKTEST_CONFIG
+            session_id = persistence.create_backtest_session(
+                strategy_name=strategy["name"],
+                strategy_config=strategy,
+                capital_config=capital_cfg,
+                symbols=list(symbols_data.keys()),
+            )
+            logger.info(f"DB Session created: {session_id}")
+
+        engine = PortfolioBacktestSession(strategy_config=strategy)
+        engine.session_id = session_id
+        results = engine.run(symbols_data)
     duration = (datetime.now() - start_time).total_seconds()
 
     # 6. Save Results to DB
