@@ -282,8 +282,8 @@
                 "sell_percentage": 1.0
             }
         ],
-        "atr_stop_multiplier": 1.5,
-        "trail_stop_atr": 2.5,
+        "atr_stop_multiplier": 3.0,
+        "trail_stop_atr": 4.0,
         "time_stop_bars": 15,
         "breakeven_at_target_1": true,
         "max_daily_loss_pct": 2.0

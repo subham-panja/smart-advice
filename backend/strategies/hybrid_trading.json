@@ -58,7 +58,7 @@
             "type": "rsi",
             "op": ">",
             "period": 14,
-            "value": 55
+            "value": 55.0
         },
         {
             "type": "moving_average",
@@ -282,16 +282,16 @@
                 "sell_percentage": 1.0
             }
         ],
-        "atr_stop_multiplier": 2.5,
-        "trail_stop_atr": 3.5,
+        "atr_stop_multiplier": 3.0,
+        "trail_stop_atr": 4.0,
         "time_stop_bars": 40,
-        "breakeven_at_target_1": false,
+        "breakeven_at_target_1": true,
         "max_daily_loss_pct": 2.0
     },
     "risk_management": {
         "risk_per_trade_pct": 2.0,
         "max_risk_per_trade_pct": 2.0,
-        "max_position_pct": 20.0,
+        "max_position_pct": 25.0,
         "max_positions": 8,
         "stop_loss_type": "ATR",
         "position_sizing": "risk_based",
