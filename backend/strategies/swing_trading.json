@@ -188,14 +188,14 @@
         "VOLATILITY_GATE": {
             "enabled": true,
             "params": {
-                "max_percentile": 30,
+                "max_percentile": 50,
                 "lookback_days": 100
             }
         },
         "VOLUME_GATE": {
             "enabled": true,
             "params": {
-                "min_volume_ratio": 0.8,
+                "min_volume_ratio": 0.5,
                 "obv_trend_lookback": 10,
                 "logic_operator": "AND"
             }

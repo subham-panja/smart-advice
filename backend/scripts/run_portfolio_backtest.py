@@ -18,6 +18,7 @@ import argparse
 import logging
 import os
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from typing import Dict, List
 
@@ -37,20 +38,28 @@ logger = logging.getLogger(__name__)
 
 
 def fetch_symbols_data(symbols: Dict[str, str], period: str = "5y", verbose: bool = False) -> Dict[str, pd.DataFrame]:
-    """Fetch historical data for all symbols."""
+    """Fetch historical data for all symbols in parallel."""
     data = {}
     total = len(symbols)
-    for i, (sym, name) in enumerate(symbols.items()):
-        try:
-            df = get_historical_data(sym, period=period)
-            if df is not None and not df.empty and len(df) > 100:
-                data[sym] = df
-                if verbose:
-                    print(f"  [{i+1}/{total}] {sym}: {len(df)} bars")
-            else:
-                logger.warning(f"Insufficient data for {sym}: {len(df) if df is not None else 0} bars")
-        except Exception as e:
-            logger.error(f"Failed to fetch {sym}: {e}")
+    logger.info(f"Fetching data for {total} symbols in parallel...")
+
+    with ThreadPoolExecutor(max_workers=config.DATA_FETCH_THREADS) as executor:
+        future_to_sym = {executor.submit(get_historical_data, sym, period=period): sym for sym in symbols.keys()}
+
+        for i, future in enumerate(as_completed(future_to_sym)):
+            sym = future_to_sym[future]
+            try:
+                df = future.result()
+                if df is not None and not df.empty and len(df) > 100:
+                    data[sym] = df
+                    if verbose:
+                        print(f"  [{i+1}/{total}] {sym}: {len(df)} bars")
+                else:
+                    logger.warning(f"Insufficient data for {sym}: {len(df) if df is not None else 0} bars")
+            except Exception as e:
+                logger.error(f"Failed to fetch {sym}: {e}")
+
+    logger.info(f"Successfully fetched data for {len(data)}/{total} symbols")
     return data
 
 

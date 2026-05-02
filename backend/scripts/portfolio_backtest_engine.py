@@ -343,9 +343,9 @@ class PortfolioBacktestSession:
         df = symbols_data[symbol]
         current_price = df.loc[date, "Close"]
 
-        # Calculate risk params using current portfolio value
+        # Calculate risk params using initial capital (not inflated portfolio value)
         portfolio_value = self._current_portfolio_value(symbols_data, date)
-        self.risk_manager.balance = portfolio_value
+        self.risk_manager.balance = self.initial_capital
 
         hist = df.loc[:date]
         risk = self.risk_manager.calculate_risk_params(hist, current_price, self.strategy_config)
