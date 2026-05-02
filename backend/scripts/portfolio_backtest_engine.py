@@ -192,6 +192,76 @@ class PortfolioBacktestSession:
             "date_range": {"start_date": str(self.start_date.date()), "end_date": str(self.end_date.date())},
         }
 
+    def run_with_signals(
+        self, symbols_data: Dict[str, pd.DataFrame], precomputed_signals: Dict[str, Dict]
+    ) -> Dict[str, Any]:
+        """Run portfolio backtest using pre-computed signals (from multiprocessing workers).
+
+        Args:
+            symbols_data: Dict mapping symbol -> DataFrame (OHLCV)
+            precomputed_signals: Dict[symbol, Dict[date, {score, swing_result}]]
+
+        Returns:
+            Dict with session summary, trades, and per-stock metrics.
+        """
+        if not symbols_data:
+            raise ValueError("No symbols data provided for portfolio backtest")
+
+        logger.info(f"🚀 Starting portfolio backtest for strategy: {self.strategy_config['name']}")
+        logger.info(f"   Capital: ₹{self.initial_capital:,.0f} | Max Positions: {self.max_positions}")
+        logger.info(f"   Using pre-computed signals for {len(precomputed_signals)} symbols")
+
+        # 1. Build common timeline
+        common_dates = self._get_common_dates(symbols_data)
+        if len(common_dates) < 100:
+            raise ValueError(f"Insufficient common trading days: {len(common_dates)}")
+
+        self.start_date = common_dates[0]
+        self.end_date = common_dates[-1]
+
+        logger.info(
+            f"   Simulation range: {self.start_date.date()} → {self.end_date.date()} ({len(common_dates)} days)"
+        )
+
+        # 2. Pre-compute last available date per symbol
+        self._last_dates = {sym: df.index[-1] for sym, df in symbols_data.items()}
+
+        # 3. Day-by-day simulation using pre-computed signals
+        for i, date in enumerate(common_dates):
+            self.bar_count = i
+            self._simulate_day_with_signals(date, symbols_data, precomputed_signals)
+
+        # 4. Force-close any remaining open positions
+        self._force_close_all_at_end(symbols_data)
+
+        # 5. Calculate final metrics
+        metrics = self._calculate_metrics(common_dates)
+
+        logger.info(
+            f"🏁 Portfolio backtest complete: Final Value ₹{metrics['final_portfolio_value']:,.0f} "
+            f"| CAGR {metrics['cagr']:.1f}% | Max DD {metrics['max_drawdown_pct']:.1f}%"
+        )
+
+        return {
+            "strategy_name": self.strategy_config["name"],
+            "status": "completed",
+            "initial_capital": self.initial_capital,
+            "final_portfolio_value": metrics["final_portfolio_value"],
+            "cash_remaining": self.cash,
+            "total_return_pct": metrics["total_return_pct"],
+            "cagr": metrics["cagr"],
+            "max_drawdown_pct": metrics["max_drawdown_pct"],
+            "sharpe_ratio": metrics["sharpe_ratio"],
+            "total_trades": metrics["total_trades"],
+            "win_rate": metrics["win_rate"],
+            "profit_factor": metrics["profit_factor"],
+            "expectancy": metrics["expectancy"],
+            "avg_positions_held": metrics["avg_positions_held"],
+            "trades": self.trades,
+            "daily_snapshots": self.daily_snapshots,
+            "date_range": {"start_date": str(self.start_date.date()), "end_date": str(self.end_date.date())},
+        }
+
     # ------------------------------------------------------------------
     # Simulation Core
     # ------------------------------------------------------------------
@@ -204,6 +274,44 @@ class PortfolioBacktestSession:
 
         # --- Phase 2: Scan for New Signals ---
         candidates = self._scan_for_signals(date, symbols_data)
+
+        # --- Phase 3: Rank and Execute Buys ---
+        if candidates:
+            candidates.sort(key=lambda c: c["score"], reverse=True)
+            for cand in candidates:
+                if not self._can_open_new_position(cand["symbol"]):
+                    continue
+                self._execute_buy(cand, date, symbols_data)
+
+        # --- Phase 4: Pyramiding ---
+        self._process_pyramiding(date, symbols_data)
+
+        # --- Phase 5: Record Snapshot ---
+        if self.save_snapshots:
+            self._record_snapshot(date, symbols_data)
+
+    def _simulate_day_with_signals(
+        self, date: pd.Timestamp, symbols_data: Dict[str, pd.DataFrame], precomputed_signals: Dict[str, Dict]
+    ):
+        """Process a single trading day using pre-computed signals (from multiprocessing workers)."""
+        # --- Phase 1: Process Exits ---
+        exits_today = self._process_exits(date, symbols_data)
+        _ = sum(e.pnl for e in exits_today if e.pnl > 0)
+
+        # --- Phase 2: Use pre-computed signals for this date ---
+        candidates = []
+        for symbol, date_signals in precomputed_signals.items():
+            if symbol in self.positions:
+                continue
+            if date in date_signals:
+                sig_data = date_signals[date]
+                candidates.append(
+                    {
+                        "symbol": symbol,
+                        "score": sig_data["score"],
+                        "swing_result": sig_data["swing_result"],
+                    }
+                )
 
         # --- Phase 3: Rank and Execute Buys ---
         if candidates:

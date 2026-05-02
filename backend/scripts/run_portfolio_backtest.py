@@ -38,77 +38,40 @@ from utils.strategy_loader import StrategyLoader
 logger = logging.getLogger(__name__)
 
 
-def _run_partial_backtest(strategy_config, symbols_chunk, initial_capital):
-    """Worker function for multiprocessing - runs backtest on a chunk of symbols."""
-    from scripts.portfolio_backtest_engine import PortfolioBacktestSession
+def _compute_signals_worker(strategy_config, symbols_chunk):
+    """Worker function for multiprocessing - pre-computes daily signals for a chunk of symbols."""
+    from scripts.swing_trading_signals import SwingTradingSignalAnalyzer
 
-    chunk_capital = (
-        initial_capital // len(multiprocessing.current_process().name.split("-"))
-        if "-" in multiprocessing.current_process().name
-        else initial_capital
-    )
+    analyzer = SwingTradingSignalAnalyzer()
+    all_signals = {}
 
-    engine = PortfolioBacktestSession(
-        strategy_config=strategy_config,
-        capital_config={
-            "initial_capital": chunk_capital,
-            "brokerage_charges": 0.002,
-            "ranking_method": "combined_score",
-            "save_daily_snapshots": False,
-            "same_day_cash_recycling": True,
-            "force_close_delisted": True,
-        },
-    )
+    for symbol, df in symbols_chunk.items():
+        symbol_signals = {}
+        for date in df.index:
+            hist = df.loc[:date]
+            if len(hist) < 50:
+                continue
+            try:
+                swing = analyzer.analyze_swing_opportunity(symbol, hist, strategy_config=strategy_config)
+                if swing.get("all_gates_passed") and swing.get("recommendation") == "BUY":
+                    symbol_signals[date] = {
+                        "score": swing.get("technical_score", 0.0),
+                        "swing_result": swing,
+                    }
+            except Exception:
+                pass
+        if symbol_signals:
+            all_signals[symbol] = symbol_signals
 
-    results = engine.run(symbols_chunk)
-    return results
+    return all_signals
 
 
-def merge_backtest_results(results_list):
-    """Merge multiple partial backtest results into a single summary."""
-    if not results_list:
-        return {}
-
-    total_value = sum(r.get("final_portfolio_value", 0) for r in results_list)
-    total_initial = sum(r.get("initial_capital", 0) for r in results_list)
-    total_trades = sum(r.get("total_trades", 0) for r in results_list)
-    total_return = ((total_value - total_initial) / total_initial * 100) if total_initial > 0 else 0
-
-    # Average CAGR across chunks
-    cagrs = [r.get("cagr", 0) for r in results_list if r.get("cagr")]
-    avg_cagr = sum(cagrs) / len(cagrs) if cagrs else 0
-
-    # Average win rate
-    win_rates = [r.get("win_rate", 0) for r in results_list if r.get("win_rate")]
-    avg_win_rate = sum(win_rates) / len(win_rates) if win_rates else 0
-
-    # Max drawdown (worst case)
-    max_dd = min(r.get("max_drawdown_pct", 0) for r in results_list) if results_list else 0
-
-    # Merge trades
-    all_trades = []
-    for r in results_list:
-        all_trades.extend(r.get("trades", []))
-
-    return {
-        "strategy_name": results_list[0].get("strategy_name", "Unknown"),
-        "status": "completed",
-        "initial_capital": total_initial,
-        "final_portfolio_value": total_value,
-        "cash_remaining": sum(r.get("cash_remaining", 0) for r in results_list),
-        "total_return_pct": total_return,
-        "cagr": avg_cagr,
-        "max_drawdown_pct": max_dd,
-        "sharpe_ratio": sum(r.get("sharpe_ratio", 0) for r in results_list) / len(results_list),
-        "total_trades": total_trades,
-        "win_rate": avg_win_rate,
-        "profit_factor": sum(r.get("profit_factor", 0) for r in results_list) / len(results_list),
-        "expectancy": sum(r.get("expectancy", 0) for r in results_list) / len(results_list),
-        "avg_positions_held": sum(r.get("avg_positions_held", 0) for r in results_list) / len(results_list),
-        "trades": all_trades,
-        "daily_snapshots": [],
-        "date_range": results_list[0].get("date_range", {}),
-    }
+def merge_signal_results(results_list):
+    """Merge multiple partial signal results into a single signal dictionary."""
+    merged = {}
+    for result in results_list:
+        merged.update(result)
+    return merged
 
 
 def fetch_symbols_data(symbols: Dict[str, str], period: str = "5y", verbose: bool = False) -> Dict[str, pd.DataFrame]:
@@ -190,7 +153,7 @@ def run_portfolio_backtest(
         chunks = [dict(symbols_list[i : i + chunk_size]) for i in range(0, len(symbols_list), chunk_size)]
 
         logger.info(f"🚀 Running portfolio backtest with {num_workers} parallel workers...")
-        logger.info(f"   Split {len(symbols_data)} symbols into {len(chunks)} chunks")
+        logger.info(f"   Split {len(symbols_data)} symbols into {len(chunks)} chunks for signal generation")
 
         # Create session before multiprocessing
         if save_to_db and persistence:
@@ -203,22 +166,22 @@ def run_portfolio_backtest(
             )
             logger.info(f"DB Session created: {session_id}")
 
+        # Phase 1: Parallel signal generation
         with multiprocessing.Pool(processes=num_workers) as pool:
-            partial_results = pool.starmap(
-                _run_partial_backtest,
-                [
-                    (
-                        strategy,
-                        chunk,
-                        config.INITIAL_CAPITAL,
-                    )
-                    for chunk in chunks
-                ],
+            partial_signals = pool.starmap(
+                _compute_signals_worker,
+                [(strategy, chunk) for chunk in chunks],
             )
 
-        results = merge_backtest_results(partial_results)
+        precomputed_signals = merge_signal_results(partial_signals)
+        logger.info(f"   Pre-computed signals for {len(precomputed_signals)} symbols")
+
+        # Phase 2: Single-threaded simulation with pre-computed signals
+        engine = PortfolioBacktestSession(strategy_config=strategy)
+        engine.session_id = session_id
+        results = engine.run_with_signals(symbols_data, precomputed_signals)
     else:
-        # Single-threaded backtest
+        # Single-threaded backtest (signal generation + simulation)
         logger.info(f"🚀 Starting portfolio backtest for strategy: {strategy['name']}")
         if save_to_db:
             capital_cfg = config.PORTFOLIO_BACKTEST_CONFIG
