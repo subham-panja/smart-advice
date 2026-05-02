@@ -29,6 +29,10 @@ MONGODB_DATABASE = os.getenv("MONGODB_DATABASE", "super_advice")
 # Global Parameters
 HISTORICAL_DATA_PERIOD = "5y"  # Data lookback for backtesting
 
+# SINGLE SOURCE OF TRUTH FOR CAPITAL
+# All paper trading, live trading, and backtesting use this same capital value.
+INITIAL_CAPITAL = 100000.0  # ₹1,00,000 (1 Lakh)
+
 # Paths & Files
 BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
 NSE_CACHE_FILE = os.path.join(BACKEND_DIR, "data", "nse_symbols.json")
@@ -107,9 +111,9 @@ RISK_MANAGEMENT = {
 # PORTFOLIO BACKTEST CONFIGURATION
 PORTFOLIO_BACKTEST_CONFIG = {
     "enabled": True,
-    "initial_capital": 1000000.0,  # 10 Lakhs
+    "initial_capital": INITIAL_CAPITAL,
     "brokerage_charges": 0.0020,  # 0.20% per side
-    "risk_per_trade": 0.02,  # 1% of portfolio per trade
+    "risk_per_trade": 0.02,  # 2% of portfolio per trade
     "max_position_pct": 0.10,  # Max 10% in one stock
     "max_concurrent_positions": 20,
     "ranking_method": "combined_score",  # combined_score or rr_ratio
@@ -125,7 +129,7 @@ PORTFOLIO_BACKTEST_CONFIG = {
 # TRADING & EXECUTION OPTIONS
 TRADING_OPTIONS = {
     "is_paper_trading": True,
-    "initial_capital": 100000.0,
+    "initial_capital": INITIAL_CAPITAL,
     "brokerage_charges": 0.0020,  # 0.20% per side
     "allow_multiple_positions_same_stock": False,
     "time_stop_days": 15,  # Exit if sideways for 15 days
