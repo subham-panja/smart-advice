@@ -25,9 +25,13 @@ Smart Advice is a comprehensive stock market analysis application that provides 
 
 ### Strategy System
 - **JSON-Based Strategies**: Self-contained strategy configs in `backend/strategies/` (e.g., `Hybrid_Trading`, `Momentum_Trading`, `Swing_Trading`)
-- **Swing Trading Gates**: Trend, Volatility, Volume, and Multi-Timeframe (MTF) gate system
+- **Swing Trading Gates**: 
+  - **TREND_GATE**: ADX strength + DI alignment + price above SMA 50/150/200 stack
+  - **VOLATILITY_GATE**: ATR must be in bottom 30% of 100-day lookback (volatility contraction)
+  - **VOLUME_GATE**: Volume >= 80% of 20-day average + positive OBV trend slope (accumulation)
+  - **MTF_GATE**: Multi-timeframe weekly trend confirmation
 - **Entry Patterns**: Pullback to EMA, Bollinger Squeeze Breakout, MACD Zero Cross, Higher Low Structure, Volatility Contraction, NR7 Volatility Squeeze, 20-Day High Breakout
-- **Multi-Target Exits**: ATR-based partial targets, breakeven at T1, trailing stop loss, and time-stop exits
+- **Multi-Target Exits**: ATR-based partial targets (T1: 3x, T2: 5x), breakeven at T1, trailing stop loss, and time-stop exits
 
 ### Advanced Analytics
 - **Options OI Analysis**: NSE Option Chain analysis with PCR and unwinding detection
@@ -187,9 +191,32 @@ python main_orchestrator.py                         # Run unified trading cycle 
 python telegram_bot.py                              # Start Telegram control bot
 python scripts/portfolio_monitor_paper.py           # Monitor open positions and exits
 python scripts/run_portfolio_backtest.py            # Run portfolio-level backtest simulation
+python scripts/run_portfolio_backtest.py --strategy Hybrid_Trading --walk-forward --mc-iterations 10  # Walk-forward robustness test
 python scripts/backtesting.py                       # Run per-strategy backtesting
 python tests/test_complete_system.py               # Test system integration
 ```
+
+### Walk-Forward Backtesting
+
+Validate your strategy across different time periods and stock universes to ensure robustness:
+
+```bash
+cd backend
+python scripts/run_portfolio_backtest.py --strategy Hybrid_Trading --walk-forward --mc-iterations 10 --period 5y
+```
+
+**How it works:**
+1. Splits 5-year period into rolling 6-month windows with 3-month steps
+2. For each window: runs Monte Carlo sampling (70% of stocks, 10 iterations)
+3. Aggregates results: mean CAGR, std dev, min/max, robustness score, positive CAGR %
+
+**Output metrics:**
+- **CAGR**: Mean ± std, range (min → max), median
+- **Risk & Return**: Avg win rate, Sharpe, max drawdown, profit factor
+- **Robustness Score**: 0-100 (higher = more consistent across periods/universes)
+- **Positive CAGR %**: % of runs with positive returns
+
+A robust strategy shows: robustness_score > 60 AND positive_cagr_pct > 70%
 
 ## 📊 Analysis Strategies
 
@@ -217,6 +244,13 @@ The platform includes 55+ technical indicator modules and JSON-configured tradin
 - Options Chain OI Analysis (PCR, Unwinding)
 - Smart Money Tracking (FII/DII Flows)
 - Screener.in Fundamental Screening
+
+### Portfolio Backtesting & Validation
+- **Portfolio-Level Simulation**: Multi-stock backtest with shared capital pool (₹10L default)
+- **Parallel Signal Generation**: 8-worker multiprocessing for pre-computing daily signals across all stocks
+- **Single Simulation Engine**: One pass with shared capital gives correct CAGR (not averaged mini-portfolios)
+- **Walk-Forward + Monte Carlo**: Rolling 6-month windows with random stock universe sampling for robustness validation
+- **Identical Strategy Logic**: Entry gates, exits, trailing stops, pyramiding — same across individual backtest, portfolio backtest, and live trading
 
 ## 🔧 Configuration
 

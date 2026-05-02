@@ -61,13 +61,43 @@ Whenever you receive a task, follow this precedence:
 6. **Portfolio Backtest** (auto-run) simulates strategy performance over historical data.
 7. **Telegram Bot** can trigger the entire cycle remotely and report results.
 
+**Note**: The trading cycle does NOT run walk-forward backtesting. Walk-forward is a separate validation tool for strategy robustness testing.
+
+## 🧪 Walk-Forward Backtesting & Strategy Validation
+To validate that a strategy works across different time periods and stock universes:
+
+```bash
+cd backend
+python scripts/run_portfolio_backtest.py --strategy Hybrid_Trading --walk-forward --mc-iterations 10 --period 5y
+```
+
+**How it works:**
+1. Splits the historical period into rolling 6-month windows with 3-month steps
+2. For each window: runs Monte Carlo sampling (70% of stocks, N iterations)
+3. Aggregates: mean CAGR, std dev, min/max, robustness score, positive CAGR %
+
+**Robustness criteria:**
+- **Robustness Score > 60**: Low coefficient of variation across windows
+- **Positive CAGR % > 70**: Strategy profitable in majority of runs
+- **Worst Max Drawdown**: Acceptable risk in worst-case window
+
 ## 🚪 Swing Trading System Architecture
 Each JSON strategy defines:
 - **Stock Filters**: Price, volume, market cap, moving average filters.
-- **Swing Gates**: TREND_GATE (ADX + DI), VOLATILITY_GATE (ATR percentile), VOLUME_GATE (z-score + OBV), MTF_GATE (weekly alignment).
+- **Swing Gates**: 
+  - **TREND_GATE**: ADX strength + DI alignment + price above SMA 50/150/200 stack
+  - **VOLATILITY_GATE**: ATR must be in bottom 30% of 100-day lookback (volatility contraction)
+  - **VOLUME_GATE**: Volume >= 80% of 20-day average + positive OBV trend slope (accumulation)
+  - **MTF_GATE**: Multi-timeframe weekly trend confirmation
 - **Entry Patterns**: pullback_to_ema, bollinger_squeeze_breakout, macd_zero_cross, higher_low_structure, volatility_contraction, nr7_volatility_squeeze, twenty_day_high_breakout.
-- **Exit Rules**: Multi-target ATR-based exits, trailing stop, breakeven at T1, time-stop (15 days).
+- **Exit Rules**: Multi-target ATR-based exits (T1: 3x, T2: 5x), trailing stop (2x ATR), breakeven at T1, time-stop (20 days).
 - **Strategy Config**: Individual indicator on/off switches with `is_bonus` flag (bonus indicators don't block, hard indicators do).
 
+## 📊 Portfolio Backtest Engine
+- **Parallel Signal Generation**: 8-worker multiprocessing pre-computes daily signals via `SwingTradingSignalAnalyzer`
+- **Single Simulation**: One pass with shared capital pool (₹10L) gives correct CAGR
+- **Identical Logic**: Entry gates, exits, trailing stops, pyramiding — same across individual backtest, portfolio backtest, and live trading
+- **Risk Management**: 2% risk per trade, 10% max position, 15 max positions, ATR-based stops/targets
+
 ---
-*Last Updated: 2026-05-01*
+*Last Updated: 2026-05-02*
