@@ -91,6 +91,8 @@ class BacktraderStrategy(bt.Strategy, metaclass=BacktraderStrategyMeta):
         self.strat_params = self.params.strat_params
         self.data_close = self.datas[0].close
         self.bar_executed = 0
+        self.pyramid_adds_count = 0  # Track pyramid adds for current position
+        self.last_add_price = 0.0  # Track last add price for pyramid triggers
         from scripts.swing_trading_signals import SwingTradingSignalAnalyzer
 
         self.analyzer = SwingTradingSignalAnalyzer()
@@ -165,6 +167,47 @@ class BacktraderStrategy(bt.Strategy, metaclass=BacktraderStrategyMeta):
                         logger.info(f"Target {i+1} Hit: {self.symbol} | Sold {qty_to_sell} units")
                         # If it was the last target, we'll be closed by the next check or final target
 
+            # Trailing Stop Loss Update (matches portfolio_backtest_engine.py)
+            if atr > 0:
+                trail_mult = exit_cfg.get("trail_stop_atr", 2.5)
+                new_sl = current_price - (atr * trail_mult)
+                if new_sl > self.current_stop_loss:
+                    logger.info(f"📉 {self.symbol}: Trailing SL updated {self.current_stop_loss:.2f} → {new_sl:.2f}")
+                    self.current_stop_loss = new_sl
+
+            # Pyramiding - Check for add triggers (matches portfolio_backtest_engine.py)
+            pyramid_cfg = self.strat_params.get("pyramiding", {})
+            if pyramid_cfg.get("enabled", False) and self.pyramid_adds_count < len(pyramid_cfg.get("steps", [])):
+                steps = pyramid_cfg.get("steps", [])
+                step = steps[self.pyramid_adds_count]
+                trigger_mult = step.get("trigger_step_atr", 1.5)
+                required_price = self.last_add_price + (trigger_mult * atr)
+
+                if current_price >= required_price:
+                    add_pct = step.get("add_size_pct", 0.5)
+                    add_qty = max(int(self.position.size * add_pct), 1)
+
+                    # Check if pyramid counts as new position
+                    from config import PYRAMID_COUNTS_AS_NEW_POSITION
+
+                    if PYRAMID_COUNTS_AS_NEW_POSITION:
+                        # For single-stock backtest, skip this check (not applicable)
+                        pass
+
+                    # Check max position pct
+                    max_position_pct = (
+                        self.strat_params.get("risk_management", {}).get("max_position_pct", 10.0) / 100.0
+                    )
+                    portfolio_value = self.broker.get_value()
+                    new_position_value = self.position.size * current_price + add_qty * current_price
+                    if (new_position_value / portfolio_value) <= max_position_pct:
+                        self.buy(size=add_qty)
+                        self.pyramid_adds_count += 1
+                        self.last_add_price = current_price
+                        logger.info(
+                            f"🔼 PYRAMID ADD {self.symbol} @ ₹{current_price:.2f} | Qty: {add_qty} | Step: {self.pyramid_adds_count}"
+                        )
+
             return
 
         # 2. Look for New Entry
@@ -197,12 +240,16 @@ class BacktraderStrategy(bt.Strategy, metaclass=BacktraderStrategyMeta):
                 size = max(size, 1)
 
                 self.current_stop_loss = stop_loss
+                self.pyramid_adds_count = 0  # Reset pyramid tracking for new position
+                self.last_add_price = entry_price  # Set base price for pyramid triggers
                 self.buy(size=size)
                 logger.info(
                     f"BUY Signal: {self.symbol} | Price: {entry_price:.2f} | SL: {stop_loss:.2f} | Qty: {size} (Risk: {risk_pct}%)"
                 )
             else:
                 # Fallback
+                self.pyramid_adds_count = 0
+                self.last_add_price = self.datas[0].close[0]
                 self.buy()
 
     def notify_order(self, order):
