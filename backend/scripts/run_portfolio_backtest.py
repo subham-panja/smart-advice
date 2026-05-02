@@ -256,6 +256,211 @@ def run_portfolio_backtest(
     return results
 
 
+def run_walk_forward_backtest(
+    strategy_name: str,
+    period: str = "5y",
+    max_stocks: int = 200,
+    mc_iterations: int = 10,
+    verbose: bool = False,
+) -> Dict:
+    """Run walk-forward backtesting with Monte Carlo sampling to validate strategy robustness.
+
+    Approach:
+    1. Split the historical period into rolling windows (6-month test, roll forward 3 months)
+    2. For each window: run backtest on stocks that existed at window start
+    3. Monte Carlo: randomly subsample stocks to test universe independence
+    4. Aggregate results: mean CAGR, std dev, min/max, consistency score
+
+    Returns dict with aggregated metrics and per-run breakdown.
+    """
+
+    logger.info("=" * 70)
+    logger.info("WALK-FORWARD + MONTE CARLO PORTFOLIO BACKTEST")
+    logger.info("=" * 70)
+
+    strategy = StrategyLoader.get_strategy_by_name(strategy_name)
+    if not strategy:
+        raise RuntimeError(f"Strategy {strategy_name} not found")
+
+    # Fetch all symbols from Chartink scanner
+    scanner = StockScanner()
+    symbols = scanner.get_symbols(strategy_config=strategy)
+    symbols_list = list(symbols.keys())[:max_stocks]
+    logger.info(f"Scanner returned {len(symbols_list)} symbols for universe")
+
+    # Fetch full historical data for all symbols
+    logger.info(f"Fetching {period} historical data for {len(symbols_list)} symbols...")
+    symbols_data = fetch_symbols_data(symbols, period=period, verbose=verbose)
+
+    # Determine date range
+    all_dates = set()
+    for df in symbols_data.values():
+        all_dates.update(df.index)
+    all_dates = sorted(all_dates)
+    start_date = all_dates[0]
+    end_date = all_dates[-1]
+    total_days = (end_date - start_date).days
+    logger.info(f"Full date range: {start_date.date()} → {end_date.date()} ({total_days} days)")
+
+    # Define walk-forward windows (6-month test, 3-month step)
+    window_days = 180  # ~6 months
+    step_days = 90  # ~3 months
+    windows = []
+    current_start = start_date
+    while current_start + pd.Timedelta(days=window_days) <= end_date:
+        window_end = current_start + pd.Timedelta(days=window_days)
+        windows.append((current_start, window_end))
+        current_start += pd.Timedelta(days=step_days)
+
+    logger.info(f"Walk-forward windows: {len(windows)}")
+    for i, (ws, we) in enumerate(windows):
+        logger.info(f"  Window {i+1}: {ws.date()} → {we.date()}")
+
+    all_results = []
+
+    # Run each window
+    for window_idx, (window_start, window_end) in enumerate(windows):
+        logger.info(f"\n{'='*50}")
+        logger.info(f"WINDOW {window_idx+1}/{len(windows)}: {window_start.date()} → {window_end.date()}")
+        logger.info(f"{'='*50}")
+
+        # Slice data to window
+        window_data = {}
+        for sym, df in symbols_data.items():
+            sliced = df[(df.index >= window_start) & (df.index <= window_end)]
+            if len(sliced) >= 50:  # Min data required
+                window_data[sym] = sliced
+
+        if len(window_data) < 20:
+            logger.warning(f"Too few symbols in window {window_idx+1}, skipping")
+            continue
+
+        # Monte Carlo: run multiple random subsamples
+        mc_results = []
+        for mc_iter in range(mc_iterations):
+            import random
+
+            # Randomly sample 70% of available stocks
+            sample_size = max(int(len(window_data) * 0.7), 20)
+            sampled_symbols = random.sample(list(window_data.keys()), sample_size)
+            sampled_data = {s: window_data[s] for s in sampled_symbols}
+
+            # Run single backtest on this sample
+            engine = PortfolioBacktestSession(strategy_config=strategy)
+            try:
+                result = engine.run(sampled_data)
+                mc_results.append(
+                    {
+                        "window": window_idx + 1,
+                        "mc_iteration": mc_iter + 1,
+                        "symbols_count": len(sampled_symbols),
+                        "cagr": result["cagr"],
+                        "total_return": result["total_return_pct"],
+                        "max_drawdown": result["max_drawdown_pct"],
+                        "sharpe": result["sharpe_ratio"],
+                        "total_trades": result["total_trades"],
+                        "win_rate": result["win_rate"],
+                        "profit_factor": result["profit_factor"],
+                    }
+                )
+            except Exception as e:
+                logger.warning(f"Window {window_idx+1}, MC {mc_iter+1} failed: {e}")
+
+        all_results.extend(mc_results)
+        if mc_results:
+            avg_cagr = sum(r["cagr"] for r in mc_results) / len(mc_results)
+            logger.info(f"  Window {window_idx+1} complete: {len(mc_results)} MC runs, avg CAGR {avg_cagr:.1f}%")
+
+    # Aggregate results
+    if not all_results:
+        return {"status": "failed", "reason": "No successful runs"}
+
+    cagrs = [r["cagr"] for r in all_results]
+    win_rates = [r["win_rate"] for r in all_results]
+    sharpe_ratios = [r["sharpe"] for r in all_results]
+    max_drawdowns = [r["max_drawdown"] for r in all_results]
+    profit_factors = [r["profit_factor"] for r in all_results]
+
+    # Consistency score: % of runs with positive CAGR
+    positive_cagr_pct = sum(1 for c in cagrs if c > 0) / len(cagrs) * 100
+
+    # Robustness score: inverse of coefficient of variation (lower variance = more robust)
+    mean_cagr = sum(cagrs) / len(cagrs)
+    std_cagr = (sum((c - mean_cagr) ** 2 for c in cagrs) / len(cagrs)) ** 0.5
+    cv = abs(std_cagr / mean_cagr) if mean_cagr != 0 else 999
+    robustness_score = max(0, 100 - cv * 100)  # 100 = perfectly consistent, 0 = highly variable
+
+    aggregated = {
+        "status": "completed",
+        "total_runs": len(all_results),
+        "windows_tested": len(windows),
+        "mc_iterations_per_window": mc_iterations,
+        "date_range": {
+            "start": str(start_date.date()),
+            "end": str(end_date.date()),
+            "total_days": total_days,
+        },
+        "cagr": {
+            "mean": round(mean_cagr, 2),
+            "std": round(std_cagr, 2),
+            "min": round(min(cagrs), 2),
+            "max": round(max(cagrs), 2),
+            "median": round(sorted(cagrs)[len(cagrs) // 2], 2),
+        },
+        "win_rate": {
+            "mean": round(sum(win_rates) / len(win_rates), 2),
+            "min": round(min(win_rates), 2),
+            "max": round(max(win_rates), 2),
+        },
+        "sharpe": {
+            "mean": round(sum(sharpe_ratios) / len(sharpe_ratios), 2),
+            "min": round(min(sharpe_ratios), 2),
+            "max": round(max(sharpe_ratios), 2),
+        },
+        "max_drawdown": {
+            "mean": round(sum(max_drawdowns) / len(max_drawdowns), 2),
+            "worst": round(min(max_drawdowns), 2),
+        },
+        "profit_factor": {
+            "mean": round(sum(profit_factors) / len(profit_factors), 2),
+        },
+        "positive_cagr_pct": round(positive_cagr_pct, 1),
+        "robustness_score": round(robustness_score, 1),
+        "per_run_results": all_results,
+    }
+
+    # Print summary
+    print("\n" + "=" * 70)
+    print("WALK-FORWARD + MONTE CARLO SUMMARY")
+    print("=" * 70)
+    print(f"Strategy:          {strategy_name}")
+    print(f"Period:            {start_date.date()} → {end_date.date()} ({total_days} days)")
+    print(f"Windows:           {len(windows)} | MC per window: {mc_iterations}")
+    print(f"Total runs:        {len(all_results)}")
+    print()
+    print("CAGR:")
+    print(f"  Mean:   {mean_cagr:.1f}% ± {std_cagr:.1f}%")
+    print(f"  Range:  {min(cagrs):.1f}% → {max(cagrs):.1f}%")
+    print(f"  Median: {sorted(cagrs)[len(cagrs)//2]:.1f}%")
+    print()
+    print("Risk & Return:")
+    print(f"  Avg Win Rate:  {aggregated['win_rate']['mean']:.1f}%")
+    print(f"  Avg Sharpe:    {aggregated['sharpe']['mean']:.2f}")
+    print(f"  Avg Max DD:    {aggregated['max_drawdown']['mean']:.1f}%")
+    print(f"  Worst Max DD:  {aggregated['max_drawdown']['worst']:.1f}%")
+    print(f"  Avg Profit F:  {aggregated['profit_factor']['mean']:.2f}")
+    print()
+    print("Robustness:")
+    print(f"  Positive CAGR in: {positive_cagr_pct:.0f}% of runs")
+    print(f"  Robustness Score: {robustness_score:.0f}/100")
+    print(
+        f"  {'✅ STRATEGY IS ROBUST' if robustness_score > 60 and positive_cagr_pct > 70 else '⚠️ STRATEGY NEEDS IMPROVEMENT'}"
+    )
+    print("=" * 70)
+
+    return aggregated
+
+
 def main():
     parser = argparse.ArgumentParser(description="Run a portfolio-level backtest")
     parser.add_argument("--strategy", type=str, required=True, help="Strategy name (e.g., Delayed_EP)")
@@ -264,19 +469,30 @@ def main():
     parser.add_argument("--period", type=str, default="5y", help="Historical data period")
     parser.add_argument("--no-db", action="store_true", help="Skip saving to database")
     parser.add_argument("--verbose", action="store_true", help="Verbose logging")
+    parser.add_argument("--walk-forward", action="store_true", help="Run walk-forward + Monte Carlo backtest")
+    parser.add_argument("--mc-iterations", type=int, default=10, help="Monte Carlo iterations per window")
 
     args = parser.parse_args()
 
     symbol_list = args.symbols.split(",") if args.symbols else None
 
-    run_portfolio_backtest(
-        strategy_name=args.strategy,
-        max_stocks=args.max_stocks,
-        symbol_list=symbol_list,
-        period=args.period,
-        save_to_db=not args.no_db,
-        verbose=args.verbose,
-    )
+    if args.walk_forward:
+        run_walk_forward_backtest(
+            strategy_name=args.strategy,
+            period=args.period,
+            max_stocks=args.max_stocks,
+            mc_iterations=args.mc_iterations,
+            verbose=args.verbose,
+        )
+    else:
+        run_portfolio_backtest(
+            strategy_name=args.strategy,
+            max_stocks=args.max_stocks,
+            symbol_list=symbol_list,
+            period=args.period,
+            save_to_db=not args.no_db,
+            verbose=args.verbose,
+        )
 
 
 if __name__ == "__main__":
