@@ -95,13 +95,13 @@ def _walk_forward_mc_worker(args):
             "mc_iteration": mc_iter,
             "symbols_count": len(sampled_data),
             "status": "success",
-            "cagr": result["cagr"],
-            "total_return": result["total_return_pct"],
-            "max_drawdown": result["max_drawdown_pct"],
-            "sharpe": result["sharpe_ratio"],
-            "total_trades": result["total_trades"],
-            "win_rate": result["win_rate"],
-            "profit_factor": result["profit_factor"],
+            "cagr": float(result["cagr"]),
+            "total_return": float(result["total_return_pct"]),
+            "max_drawdown": float(result["max_drawdown_pct"]),
+            "sharpe": float(result["sharpe_ratio"]),
+            "total_trades": int(result["total_trades"]),
+            "win_rate": float(result["win_rate"]),
+            "profit_factor": float(result["profit_factor"]),
         }
     except Exception as e:
         return {
