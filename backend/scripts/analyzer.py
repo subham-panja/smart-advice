@@ -120,7 +120,12 @@ class StockAnalyzer:
             # Combine & Trade Plan
             res = self._combine(res, app_config)
             res["trade_plan"] = self.trade_logic.analyze(symbol, hist, app_config=app_config)
-            res["backtest"] = self.backtest_utils.perform_backtesting(symbol, hist, app_config=app_config)
+
+            # Individual stock backtesting (optional - can be disabled for faster analysis)
+            if app_config["analysis_config"].get("individual_stock_backtest", True):
+                res["backtest"] = self.backtest_utils.perform_backtesting(symbol, hist, app_config=app_config)
+            else:
+                res["backtest"] = {"status": "skipped", "combined_metrics": {"avg_cagr": 0.0, "avg_win_rate": 0.0}}
 
             if res["is_recommended"]:
                 res = self._combine(res, app_config, consider_bt=True)

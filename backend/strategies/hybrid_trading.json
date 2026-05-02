@@ -10,6 +10,7 @@
         "sector_analysis": true,
         "market_regime_detection": true,
         "backtesting": true,
+        "individual_stock_backtest": false,
         "risk_management": true,
         "options_oi": true
     },
