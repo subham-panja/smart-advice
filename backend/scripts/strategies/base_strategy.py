@@ -62,6 +62,11 @@ class BaseStrategy(ABC):
         if EPISODIC_PIVOT_MODE:
             return {"signal": signal, "reason": "EP Mode: Allowing dry volume entry"}
 
+        # strat_params from individual strategy configs don't contain volume_analysis_config
+        # Only skip if volume config is explicitly present in strat_params
+        if "volume_analysis_config" not in self.strat_params:
+            return {"signal": signal, "reason": "Volume config not available, passing signal through"}
+
         min_v = VOLUME_SPIKE_THRESHOLD
 
         stype = "bullish" if signal == 1 else "bearish"

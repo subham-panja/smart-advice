@@ -14,7 +14,7 @@ os.environ["NUMEXPR_NUM_THREADS"] = LIBRARY_MAX_THREADS
 SECRET_KEY = "your_super_secret_key_here"
 PERSIST_LOGGING = False
 VERBOSE_LOGGING = False
-EPISODIC_PIVOT_MODE = True
+EPISODIC_PIVOT_MODE = False
 VOLUME_SPIKE_THRESHOLD = 1.5
 
 # Data Purge
@@ -42,7 +42,7 @@ STRATEGIES_DIR = os.path.join(BACKEND_DIR, "strategies")
 # Performance & Pipeline
 MAX_WORKER_THREADS = 10  # Thread limit for parallel fetching
 DATA_FETCH_THREADS = 4  # Reduced to avoid rate limiting
-BATCH_SIZE = 8  # Batch size for processing
+BATCH_SIZE = 4  # Batch size for processing
 REQUEST_DELAY = 1.0  # Increased delay between requests
 MAX_RETRIES = 1  # Max retries for failed requests
 TIMEOUT_SECONDS = 10  # Request timeout

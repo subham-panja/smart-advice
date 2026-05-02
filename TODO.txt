@@ -1,0 +1,31 @@
+# Trading System TODO Items
+
+## Priority 1: Fix Position Sizing Bug in Portfolio Backtest
+- **File**: `backend/scripts/portfolio_backtest_engine.py`
+- **Issue**: Line 348 sets `self.risk_manager.balance = portfolio_value` which uses total portfolio value (cash + market value) instead of available cash
+- **Impact**: Backtest overallocates capital, showing inflated position sizes and unrealistic returns
+- **Fix**: Use `self.cash` or cap balance at initial_capital for position sizing calculations
+- **Verify**: Ensure paper trading uses correct ₹1L capital base
+
+## Priority 2: Add Multiprocessing to Portfolio Backtest Engine
+- **File**: `backend/scripts/portfolio_backtest_engine.py`
+- **Issue**: Single-threaded simulation over 214 stocks for 5 years takes 30-60 minutes
+- **Current**: System already has multiprocessing with 4-8 workers for stock analysis
+- **Options**:
+  - Parallelize signal scanning across stocks (each worker processes subset of symbols per day)
+  - Parallelize backtest runs across different date ranges (split 5-year period into chunks)
+  - Use existing worker pool pattern from main_orchestrator.py
+- **Target**: Reduce backtest time from 30-60 min to 5-10 min
+- **Note**: Don't interrupt the running orchestrator process - implement after current run completes
+
+## Priority 3: Reduce Backtest Period for Faster Iterations
+- **File**: `backend/strategies/hybrid_trading.json`
+- **Current**: `backtest_period: "5y"` (1237 trading days)
+- **Suggestion**: Change to `"2y"` or `"1y"` for faster iteration cycles
+- **Trade-off**: Less historical data but 2-5x faster execution
+
+## Notes
+- Single source of truth for capital: `INITIAL_CAPITAL = 100000.0` in `backend/config.py`
+- Multiprocessing workers configured in orchestrator (currently 4 workers, was 8)
+- VOLATILITY_GATE enabled with `max_percentile: 30` (may need relaxation if filtering too many stocks)
+- VOLUME_GATE enabled with `min_volume_ratio: 0.8` + OBV trend check
