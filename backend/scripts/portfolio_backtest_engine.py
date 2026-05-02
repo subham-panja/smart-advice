@@ -126,11 +126,18 @@ class PortfolioBacktestSession:
     # Public API
     # ------------------------------------------------------------------
 
-    def run(self, symbols_data: Dict[str, pd.DataFrame]) -> Dict[str, Any]:
+    def run(
+        self,
+        symbols_data: Dict[str, pd.DataFrame],
+        sim_start_date: Optional[pd.Timestamp] = None,
+        sim_end_date: Optional[pd.Timestamp] = None,
+    ) -> Dict[str, Any]:
         """Run the portfolio backtest across all provided symbols.
 
         Args:
             symbols_data: Dict mapping symbol -> DataFrame (5yr OHLCV)
+            sim_start_date: Optional start date for simulation (uses full data if None)
+            sim_end_date: Optional end date for simulation
 
         Returns:
             Dict with session summary, trades, and per-stock metrics.
@@ -145,6 +152,15 @@ class PortfolioBacktestSession:
         common_dates = self._get_common_dates(symbols_data)
         if len(common_dates) < 100:
             raise ValueError(f"Insufficient common trading days: {len(common_dates)}")
+
+        # Filter to simulation date range if provided
+        if sim_start_date is not None:
+            common_dates = common_dates[common_dates >= sim_start_date]
+        if sim_end_date is not None:
+            common_dates = common_dates[common_dates <= sim_end_date]
+
+        if len(common_dates) < 100:
+            raise ValueError(f"Insufficient common trading days after date filter: {len(common_dates)}")
 
         self.start_date = common_dates[0]
         self.end_date = common_dates[-1]

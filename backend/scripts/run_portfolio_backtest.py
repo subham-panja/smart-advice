@@ -78,18 +78,18 @@ def _walk_forward_mc_worker(args):
     """Worker function for walk-forward Monte Carlo iteration.
 
     Args:
-        args: tuple of (strategy_config_dict, sampled_data_dict, window_idx, mc_iter)
+        args: tuple of (strategy_config_dict, sampled_data_dict, window_idx, mc_iter, sim_start_date, sim_end_date)
 
     Returns:
         dict with metrics or error info (pickle-serializable)
     """
-    strategy_config, sampled_data, window_idx, mc_iter = args
+    strategy_config, sampled_data, window_idx, mc_iter, sim_start_date, sim_end_date = args
 
     # Each worker creates its own engine (spawn-safe, no shared state)
     engine = PortfolioBacktestSession(strategy_config=strategy_config)
 
     try:
-        result = engine.run(sampled_data)
+        result = engine.run(sampled_data, sim_start_date=sim_start_date, sim_end_date=sim_end_date)
         return {
             "window": window_idx,
             "mc_iteration": mc_iter,
@@ -383,11 +383,12 @@ def run_walk_forward_backtest(
         logger.info(f"WINDOW {window_idx+1}/{len(windows)}: {window_start.date()} → {window_end.date()}")
         logger.info(f"{'='*50}")
 
-        # Slice data to window
+        # Slice data to window + 252-day warm-up (needed for SMA 200, ATR lookback, etc.)
+        warmup_days = 252
         window_data = {}
         for sym, df in symbols_data.items():
-            sliced = df[(df.index >= window_start) & (df.index <= window_end)]
-            if len(sliced) >= 50:  # Min data required
+            sliced = df[(df.index >= window_start - pd.Timedelta(days=warmup_days)) & (df.index <= window_end)]
+            if len(sliced) >= 250:  # Min data required (warmup + window)
                 window_data[sym] = sliced
 
         if len(window_data) < 20:
@@ -404,7 +405,7 @@ def run_walk_forward_backtest(
             sampled_symbols = random.sample(list(window_data.keys()), sample_size)
             sampled_data = {s: window_data[s] for s in sampled_symbols}
             sample_map[(window_idx + 1, mc_iter + 1)] = sampled_symbols
-            tasks.append((strategy, sampled_data, window_idx + 1, mc_iter + 1))
+            tasks.append((strategy, sampled_data, window_idx + 1, mc_iter + 1, window_start, window_end))
 
         # Run MC iterations in parallel
         num_workers = min(config.NUM_WORKER_PROCESSES, mc_iterations)
