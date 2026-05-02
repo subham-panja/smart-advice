@@ -98,7 +98,7 @@ class RiskManager:
         size_based_on_risk = int(risk_amt / risk_per_share)
 
         # 3. Position Sizing based on Capital Cap
-        max_pos_pct = risk_cfg["max_position_pct"]
+        max_pos_pct = risk_cfg["max_position_pct"] / 100.0  # Convert from percentage (10.0) to decimal (0.10)
         max_capital_allowed = self.balance * max_pos_pct
         size_based_on_capital = int(max_capital_allowed / entry)
 

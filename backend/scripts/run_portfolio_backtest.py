@@ -192,6 +192,17 @@ def run_portfolio_backtest(
         logger.info(f"🚀 Running portfolio backtest with {num_workers} parallel workers...")
         logger.info(f"   Split {len(symbols_data)} symbols into {len(chunks)} chunks")
 
+        # Create session before multiprocessing
+        if save_to_db and persistence:
+            capital_cfg = config.PORTFOLIO_BACKTEST_CONFIG
+            session_id = persistence.create_backtest_session(
+                strategy_name=strategy["name"],
+                strategy_config=strategy,
+                capital_config=capital_cfg,
+                symbols=list(symbols_data.keys()),
+            )
+            logger.info(f"DB Session created: {session_id}")
+
         with multiprocessing.Pool(processes=num_workers) as pool:
             partial_results = pool.starmap(
                 _run_partial_backtest,
