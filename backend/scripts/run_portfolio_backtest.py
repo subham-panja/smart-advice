@@ -184,7 +184,7 @@ def run_portfolio_backtest(
     # 4. Run Backtest (multiprocessing if enabled)
     start_time = datetime.now()
 
-    if config.PORTFOLIO_BACKTEST_CONFIG.get("use_multiprocessing", True) and len(symbols_data) >= 20:
+    if config.USE_MULTIPROCESSING_PIPELINE and len(symbols_data) >= 20:
         # Split symbols into chunks for parallel processing
         num_workers = min(config.NUM_WORKER_PROCESSES, len(symbols_data))
         symbols_list = list(symbols_data.items())

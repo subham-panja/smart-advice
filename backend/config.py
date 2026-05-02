@@ -109,6 +109,7 @@ RISK_MANAGEMENT = {
 }
 
 # PORTFOLIO BACKTEST CONFIGURATION
+# Uses global flags: HISTORICAL_DATA_PERIOD, NUM_WORKER_PROCESSES, USE_MULTIPROCESSING_PIPELINE
 PORTFOLIO_BACKTEST_CONFIG = {
     "enabled": True,
     "initial_capital": INITIAL_CAPITAL,
@@ -123,8 +124,6 @@ PORTFOLIO_BACKTEST_CONFIG = {
     "force_close_delisted": True,  # If True, close positions at last available price
     "auto_run_on_cycle": True,  # If True, portfolio backtest runs automatically per trading cycle
     "auto_run_max_stocks": 1000,  # Max stocks for auto-run (to keep cycle time reasonable)
-    "auto_run_period": "2y",  # Historical period for auto-run
-    "use_multiprocessing": True,  # If True, split backtest across multiple processes
 }
 
 # TRADING & EXECUTION OPTIONS

@@ -74,7 +74,7 @@ def run_trading_cycle():
                 results = run_portfolio_backtest(
                     strategy_name=strat_name,
                     max_stocks=pbt_cfg.get("auto_run_max_stocks", 20),
-                    period=pbt_cfg.get("auto_run_period", "5y"),
+                    period=config.HISTORICAL_DATA_PERIOD,
                     save_to_db=True,
                     verbose=False,
                 )
