@@ -74,6 +74,45 @@ def merge_signal_results(results_list):
     return merged
 
 
+def _walk_forward_mc_worker(args):
+    """Worker function for walk-forward Monte Carlo iteration.
+
+    Args:
+        args: tuple of (strategy_config_dict, sampled_data_dict, window_idx, mc_iter)
+
+    Returns:
+        dict with metrics or error info (pickle-serializable)
+    """
+    strategy_config, sampled_data, window_idx, mc_iter = args
+
+    # Each worker creates its own engine (spawn-safe, no shared state)
+    engine = PortfolioBacktestSession(strategy_config=strategy_config)
+
+    try:
+        result = engine.run(sampled_data)
+        return {
+            "window": window_idx,
+            "mc_iteration": mc_iter,
+            "symbols_count": len(sampled_data),
+            "status": "success",
+            "cagr": result["cagr"],
+            "total_return": result["total_return_pct"],
+            "max_drawdown": result["max_drawdown_pct"],
+            "sharpe": result["sharpe_ratio"],
+            "total_trades": result["total_trades"],
+            "win_rate": result["win_rate"],
+            "profit_factor": result["profit_factor"],
+        }
+    except Exception as e:
+        return {
+            "window": window_idx,
+            "mc_iteration": mc_iter,
+            "symbols_count": len(sampled_data),
+            "status": "failed",
+            "error": str(e),
+        }
+
+
 def fetch_symbols_data(symbols: Dict[str, str], period: str = "5y", verbose: bool = False) -> Dict[str, pd.DataFrame]:
     """Fetch historical data for all symbols in parallel."""
     data = {}
@@ -262,6 +301,7 @@ def run_walk_forward_backtest(
     max_stocks: int = 200,
     mc_iterations: int = 10,
     verbose: bool = False,
+    save_to_db: bool = True,
 ) -> Dict:
     """Run walk-forward backtesting with Monte Carlo sampling to validate strategy robustness.
 
@@ -317,6 +357,25 @@ def run_walk_forward_backtest(
         logger.info(f"  Window {i+1}: {ws.date()} → {we.date()}")
 
     all_results = []
+    start_time = datetime.now()
+    persistence = PersistenceHandler() if save_to_db else None
+    wf_session_id = None
+
+    # Create walk-forward session in DB
+    if save_to_db and persistence:
+        capital_cfg = config.PORTFOLIO_BACKTEST_CONFIG
+        wf_session_id = persistence.create_walk_forward_session(
+            strategy_name=strategy_name,
+            strategy_config=strategy,
+            capital_config=capital_cfg,
+            windows=windows,
+            mc_iterations=mc_iterations,
+        )
+        logger.info(f"Walk-forward DB session created: {wf_session_id}")
+
+    total_runs = len(windows) * mc_iterations
+    completed_count = 0
+    all_cagrs = []
 
     # Run each window
     for window_idx, (window_start, window_end) in enumerate(windows):
@@ -335,41 +394,69 @@ def run_walk_forward_backtest(
             logger.warning(f"Too few symbols in window {window_idx+1}, skipping")
             continue
 
-        # Monte Carlo: run multiple random subsamples
-        mc_results = []
-        for mc_iter in range(mc_iterations):
-            import random
+        # Pre-sample stocks for each MC iteration (build sample_map in main process)
+        import random
 
-            # Randomly sample 70% of available stocks
+        sample_map = {}
+        tasks = []
+        for mc_iter in range(mc_iterations):
             sample_size = max(int(len(window_data) * 0.7), 20)
             sampled_symbols = random.sample(list(window_data.keys()), sample_size)
             sampled_data = {s: window_data[s] for s in sampled_symbols}
+            sample_map[(window_idx + 1, mc_iter + 1)] = sampled_symbols
+            tasks.append((strategy, sampled_data, window_idx + 1, mc_iter + 1))
 
-            # Run single backtest on this sample
-            engine = PortfolioBacktestSession(strategy_config=strategy)
-            try:
-                result = engine.run(sampled_data)
-                mc_results.append(
-                    {
-                        "window": window_idx + 1,
-                        "mc_iteration": mc_iter + 1,
-                        "symbols_count": len(sampled_symbols),
-                        "cagr": result["cagr"],
-                        "total_return": result["total_return_pct"],
-                        "max_drawdown": result["max_drawdown_pct"],
-                        "sharpe": result["sharpe_ratio"],
-                        "total_trades": result["total_trades"],
-                        "win_rate": result["win_rate"],
-                        "profit_factor": result["profit_factor"],
-                    }
-                )
-            except Exception as e:
-                logger.warning(f"Window {window_idx+1}, MC {mc_iter+1} failed: {e}")
+        # Run MC iterations in parallel
+        num_workers = min(config.NUM_WORKER_PROCESSES, mc_iterations)
+        ctx = multiprocessing.get_context("spawn")
 
-        all_results.extend(mc_results)
-        if mc_results:
-            avg_cagr = sum(r["cagr"] for r in mc_results) / len(mc_results)
-            logger.info(f"  Window {window_idx+1} complete: {len(mc_results)} MC runs, avg CAGR {avg_cagr:.1f}%")
+        with ctx.Pool(processes=num_workers) as pool:
+            for result in pool.imap_unordered(_walk_forward_mc_worker, tasks):
+                completed_count += 1
+                elapsed = (datetime.now() - start_time).total_seconds()
+
+                # Track CAGR for running mean
+                if result["status"] == "success":
+                    all_cagrs.append(result["cagr"])
+                    all_results.append(result)
+
+                # Save to DB
+                if save_to_db and persistence and wf_session_id:
+                    syms = sample_map.get((result["window"], result["mc_iteration"]), [])
+                    persistence.save_walk_forward_run(
+                        session_id=wf_session_id,
+                        window=result["window"],
+                        mc_iteration=result["mc_iteration"],
+                        symbols_count=result["symbols_count"],
+                        sampled_symbols=syms,
+                        result=result,
+                    )
+
+                    # Update progress
+                    running_cagrs = [c for c in all_cagrs if c != 0]
+                    persistence.update_walk_forward_progress(
+                        session_id=wf_session_id,
+                        current_window=result["window"],
+                        completed_runs=completed_count,
+                        total_runs=total_runs,
+                        elapsed=elapsed,
+                        cagrs_so_far=running_cagrs,
+                    )
+
+                # Log progress every 10% or at completion
+                pct = completed_count / total_runs * 100
+                if completed_count % max(1, total_runs // 10) == 0 or completed_count == total_runs:
+                    remaining = total_runs - completed_count
+                    eta = (elapsed / completed_count * remaining) if completed_count > 0 else 0
+                    logger.info(
+                        f"Walk-forward progress: {pct:.0f}% ({completed_count}/{total_runs}) | " f"ETA: {eta:.0f}s"
+                    )
+
+        if all_results:
+            window_cagrs = [r["cagr"] for r in all_results if r.get("window") == window_idx + 1]
+            if window_cagrs:
+                avg_cagr = sum(window_cagrs) / len(window_cagrs)
+                logger.info(f"  Window {window_idx+1} complete: {len(window_cagrs)} MC runs, avg CAGR {avg_cagr:.1f}%")
 
     # Aggregate results
     if not all_results:
@@ -389,6 +476,8 @@ def run_walk_forward_backtest(
     std_cagr = (sum((c - mean_cagr) ** 2 for c in cagrs) / len(cagrs)) ** 0.5
     cv = abs(std_cagr / mean_cagr) if mean_cagr != 0 else 999
     robustness_score = max(0, 100 - cv * 100)  # 100 = perfectly consistent, 0 = highly variable
+
+    duration = (datetime.now() - start_time).total_seconds()
 
     aggregated = {
         "status": "completed",
@@ -429,6 +518,15 @@ def run_walk_forward_backtest(
         "per_run_results": all_results,
     }
 
+    # Complete session
+    if save_to_db and persistence and wf_session_id:
+        persistence.complete_walk_forward_session(
+            session_id=wf_session_id,
+            aggregated_metrics=aggregated,
+            duration=duration,
+        )
+        logger.info(f"Walk-forward session {wf_session_id} marked as completed")
+
     # Print summary
     print("\n" + "=" * 70)
     print("WALK-FORWARD + MONTE CARLO SUMMARY")
@@ -458,6 +556,10 @@ def run_walk_forward_backtest(
     )
     print("=" * 70)
 
+    if wf_session_id:
+        print(f"\n💾 Walk-forward session saved to MongoDB: {wf_session_id}")
+        print(f"   Duration: {duration:.1f}s")
+
     return aggregated
 
 
@@ -483,6 +585,7 @@ def main():
             max_stocks=args.max_stocks,
             mc_iterations=args.mc_iterations,
             verbose=args.verbose,
+            save_to_db=not args.no_db,
         )
     else:
         run_portfolio_backtest(
