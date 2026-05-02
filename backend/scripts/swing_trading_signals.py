@@ -1,6 +1,7 @@
 import logging
 from typing import Any, Dict
 
+import numpy as np
 import pandas as pd
 import talib as ta
 
@@ -57,19 +58,37 @@ class SwingTradingSignalAnalyzer:
         # Volume Gate
         v_mean = df["Volume"].tail(20).mean()
         v_latest = df["Volume"].iloc[-1]
-        vol_ok = v_latest > v_mean * (1 + vol_cfg["zscore_threshold"])
+        min_vol_ratio = vol_cfg.get("min_volume_ratio", 0.8)
+        vol_ok = v_latest >= v_mean * min_vol_ratio
+
+        # OBV trend check (accumulation detection)
+        if "obv_trend_lookback" in vol_cfg:
+            obv_lookback = vol_cfg["obv_trend_lookback"]
+            obv = pd.Series(0.0, index=df.index)
+            for i in range(1, len(df)):
+                if df["Close"].iloc[i] > df["Close"].iloc[i - 1]:
+                    obv.iloc[i] = obv.iloc[i - 1] + df["Volume"].iloc[i]
+                elif df["Close"].iloc[i] < df["Close"].iloc[i - 1]:
+                    obv.iloc[i] = obv.iloc[i - 1] - df["Volume"].iloc[i]
+                else:
+                    obv.iloc[i] = obv.iloc[i - 1]
+            obv_recent = obv.tail(obv_lookback).dropna()
+            if len(obv_recent) >= 5:
+                x = np.arange(len(obv_recent))
+                slope = np.polyfit(x, obv_recent.values, 1)[0]
+                vol_ok = vol_ok and (slope > 0)
 
         # Volatility Gate
         volatility_ok = True
         if gates_cfg["VOLATILITY_GATE"]["enabled"]:
             atr = ta.ATR(df["High"], df["Low"], df["Close"], 14)
             lb = v_cfg["lookback_days"]
-            p_min, p_max = v_cfg["min_percentile"], v_cfg["max_percentile"]
+            max_pctile = v_cfg["max_percentile"]  # e.g., 30
             atr_recent = atr.iloc[-lb:].dropna()
             if len(atr_recent) > 0:
                 current_atr = atr.iloc[-1]
                 pctile = (atr_recent < current_atr).sum() / len(atr_recent) * 100
-                volatility_ok = p_min <= pctile <= p_max
+                volatility_ok = pctile <= max_pctile  # ATR must be <= 30th percentile = contraction
 
         gates = {"trend": trend_ok, "volume": vol_ok, "volatility": volatility_ok}
         all_gates_passed = all(gates.values())
