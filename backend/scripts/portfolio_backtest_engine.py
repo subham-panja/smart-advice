@@ -43,6 +43,7 @@ class PortfolioPosition:
     current_target_idx: int = 0
     targets_hit: int = 0
     current_stop_loss: float = 0.0
+    initial_quantity: int = 0
     adds_count: int = 0
     last_add_price: float = 0.0
     bar_executed: int = 0
@@ -54,6 +55,8 @@ class PortfolioPosition:
             self.current_stop_loss = self.stop_loss
         if self.last_add_price == 0.0:
             self.last_add_price = self.entry_price
+        if self.initial_quantity == 0:
+            self.initial_quantity = self.quantity
 
 
 @dataclass
@@ -438,14 +441,8 @@ class PortfolioBacktestSession:
             if current_price < required_price:
                 continue
 
-            # Calculate pyramid quantity
-            base_qty = (
-                pos.quantity
-                if pos.adds_count == 0
-                else pos.initial_quantity
-                if hasattr(pos, "initial_quantity")
-                else pos.quantity
-            )
+            # Calculate pyramid quantity based on original position size
+            base_qty = pos.initial_quantity
             add_pct = step.get("add_size_pct", 0.5)
             add_qty = max(int(base_qty * add_pct), 1)
 

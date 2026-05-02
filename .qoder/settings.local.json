@@ -10,7 +10,23 @@
       "TodoWrite(*)",
       "Agent(*)",
       "NotebookEdit(*)",
-      "Bash(git add .qoder/settings.local.json && git commit -m \"$\\(cat <<'EOF'\nchore\\(qoder\\): add project-level auto-approve permissions\nEOF\n\\)\")"
+      "Bash(git add .qoder/settings.local.json && git commit -m \"$\\(cat <<'EOF'\nchore\\(qoder\\): add project-level auto-approve permissions\nEOF\n\\)\")",
+      "WebFetch(www.finermarketpoints.com)",
+      "WebFetch(blog.portfolio123.com)",
+      "WebFetch(backtestindia.com)",
+      "WebFetch(www.tradingsim.com)",
+      "WebFetch(www.quantifiedstrategies.com)",
+      "WebFetch(www.upsurge.club)",
+      "WebFetch(www.chartmill.com)",
+      "WebFetch(www.luxalgo.com)",
+      "WebFetch(therobusttrader.com)",
+      "WebFetch(pocketoption.com)",
+      "WebFetch(trendspider.com)",
+      "WebFetch(tradethatswing.com)",
+      "WebFetch(macro-ops.com)",
+      "WebFetch(tw.tradingview.com)",
+      "WebFetch(chartschool.stockcharts.com)",
+      "WebFetch(alvarezquanttrading.com)"
     ]
   }
 }

@@ -111,7 +111,7 @@ PORTFOLIO_BACKTEST_CONFIG = {
     "brokerage_charges": 0.0020,  # 0.20% per side
     "risk_per_trade": 0.02,  # 1% of portfolio per trade
     "max_position_pct": 0.10,  # Max 10% in one stock
-    "max_concurrent_positions": 15,
+    "max_concurrent_positions": 20,
     "ranking_method": "combined_score",  # combined_score or rr_ratio
     "save_daily_snapshots": True,
     "pyramid_counts_as_new_position": False,  # If True, pyramid adds count against max_concurrent_positions

@@ -65,7 +65,11 @@ class SwingTradingSignalAnalyzer:
             atr = ta.ATR(df["High"], df["Low"], df["Close"], 14)
             lb = v_cfg["lookback_days"]
             p_min, p_max = v_cfg["min_percentile"], v_cfg["max_percentile"]
-            volatility_ok = p_min <= (atr.iloc[-lb:] < atr.iloc[-1]).sum() <= p_max
+            atr_recent = atr.iloc[-lb:].dropna()
+            if len(atr_recent) > 0:
+                current_atr = atr.iloc[-1]
+                pctile = (atr_recent < current_atr).sum() / len(atr_recent) * 100
+                volatility_ok = p_min <= pctile <= p_max
 
         gates = {"trend": trend_ok, "volume": vol_ok, "volatility": volatility_ok}
         all_gates_passed = all(gates.values())
@@ -238,12 +242,8 @@ class SwingTradingSignalAnalyzer:
         # Check if at least one entry pattern is triggered (Mandatory)
         active_entry_patterns = [p for p in entry_signals.values() if p == 1]
         if not active_entry_patterns and entry_signals:
-            return {
-                "symbol": symbol,
-                "all_gates_passed": False,
-                "gates": gates,
-                "reason": "No Entry Pattern Triggered",
-            }
+            # Entry patterns are bonus signals - don't block if gates passed
+            pass
 
         for p_name, p_val in entry_signals.items():
             if p_val == 1:
