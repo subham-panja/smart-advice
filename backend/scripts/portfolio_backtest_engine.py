@@ -24,10 +24,12 @@ import numpy as np
 import pandas as pd
 import talib as ta
 
-from config import PORTFOLIO_BACKTEST_CONFIG, PYRAMID_COUNTS_AS_NEW_POSITION
+from config import PORTFOLIO_BACKTEST_CONFIG
 from scripts.market_regime_detection import MarketRegimeDetection
 from scripts.risk_management import RiskManager
 from scripts.swing_trading_signals import SwingTradingSignalAnalyzer
+
+PYRAMID_COUNTS_AS_NEW_POSITION = False  # Global default
 
 logger = logging.getLogger(__name__)
 
@@ -88,10 +90,12 @@ class PortfolioBacktestSession:
 
     def __init__(self, strategy_config: Dict[str, Any], capital_config: Optional[Dict] = None):
         self.strategy_config = strategy_config
+
+        # Backtest config from config.py (strategy-level risk comes from strategy_config)
         cfg = capital_config if capital_config else PORTFOLIO_BACKTEST_CONFIG
 
-        self.initial_capital = cfg["initial_capital"]
-        self.brokerage = cfg["brokerage_charges"]
+        self.initial_capital = cfg.get("initial_capital", 100000.0)
+        self.brokerage = cfg.get("brokerage_charges", 0.0020)
         self.ranking_method = cfg.get("ranking_method", "combined_score")
         self.save_snapshots = cfg.get("save_daily_snapshots", True)
         self.same_day_recycling = cfg.get("same_day_cash_recycling", True)

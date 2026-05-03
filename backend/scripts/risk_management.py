@@ -4,7 +4,7 @@ from typing import Any, Dict
 import pandas as pd
 import talib as ta
 
-from config import TRADING_OPTIONS
+# Config now comes from strategy JSON
 
 logger = logging.getLogger(__name__)
 
@@ -13,14 +13,14 @@ class RiskManager:
     """Handles stop-loss, position sizing, and risk-reward evaluation."""
 
     def __init__(self, account_balance: float = None):
-        self.balance = account_balance if account_balance is not None else TRADING_OPTIONS["initial_capital"]
+        # Default balance; actual value comes from strategy trading_config.initial_capital
+        self.balance = account_balance if account_balance is not None else 100000.0
 
     def _get_strategy_risk_config(self, app_config: Dict[str, Any]) -> Dict[str, Any]:
         """Extract risk config from strategy config, falling back to global defaults."""
-        from config import RISK_MANAGEMENT
-
+        # Global defaults (strategy config takes precedence)
+        global_sizing = {"risk_per_trade": 0.01, "max_position_pct": 0.10}
         strategy_risk = app_config.get("risk_management", {})
-        global_sizing = RISK_MANAGEMENT.get("position_sizing", {})
 
         return {
             "risk_per_trade": strategy_risk.get("risk_per_trade_pct", global_sizing.get("risk_per_trade", 0.01)),

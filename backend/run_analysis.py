@@ -32,7 +32,7 @@ class AutomatedStockAnalysis:
     def run(self, strategy_config: Dict[str, Any], use_all_symbols: bool = False):
         """Executes the analysis pipeline."""
         if config.TRADING_OPTIONS.get("circuit_breaker"):
-            logger.warning("🛑 CIRCUIT BREAKER ACTIVE: Analysis skipped.")
+            logger.warning("CIRCUIT BREAKER ACTIVE: Analysis skipped.")
             return []
 
         logger.info(f"🚀 Starting analysis for Strategy: {strategy_config['name']}")
@@ -47,7 +47,7 @@ class AutomatedStockAnalysis:
 
         # Phase 1: Fetch Data
         thresholds = strategy_config.get("recommendation_thresholds", {})
-        backtest_period = thresholds.get("backtest_period", config.HISTORICAL_DATA_PERIOD)
+        backtest_period = thresholds.get("backtest_period", config.DATA_CACHE_CONFIG["periods"].get("backtest", "2y"))
 
         symbols = StockScanner.get_symbols(strategy_config=strategy_config)
         symbols_list = list(symbols.keys())
@@ -78,7 +78,7 @@ class AutomatedStockAnalysis:
         # Phase 2: Parallel Analysis
         logger.info(f"Phase 2: Analyzing {len(fetched)} stocks...")
 
-        bench = get_benchmark_data(config.HISTORICAL_DATA_PERIOD)
+        bench = get_benchmark_data(backtest_period)
 
         # Build comprehensive config for worker
         worker_cfg = dict(strategy_config)

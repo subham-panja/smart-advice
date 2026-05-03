@@ -4,7 +4,7 @@ from typing import Any, Dict, List
 
 import pandas as pd
 
-from config import TRADING_OPTIONS
+# Defaults come from strategy config now
 from scripts.backtesting import BacktestingEngine
 from scripts.strategies.base_strategy import BacktraderStrategy
 
@@ -15,8 +15,8 @@ class BacktestingRunner:
     """Evaluates multiple strategies or the core dynamic strategy and calculates performance metrics."""
 
     def __init__(self, initial_cash: float = None, commission: float = None):
-        self.initial_cash = initial_cash if initial_cash is not None else TRADING_OPTIONS["initial_capital"]
-        self.commission = commission if commission is not None else TRADING_OPTIONS["brokerage_charges"]
+        self.initial_cash = initial_cash if initial_cash is not None else 100000.0
+        self.commission = commission if commission is not None else 0.0020
 
     def run(
         self, symbol: str, df: pd.DataFrame, strategy_classes: List[str], app_config: Dict[str, Any]

@@ -11,7 +11,6 @@ import logging
 from datetime import datetime, timezone
 
 import config
-from config import TRADING_OPTIONS
 from database import close_position, get_open_positions, insert_position, update_position
 
 logger = logging.getLogger(__name__)
@@ -22,20 +21,22 @@ class ExecutionEngine:
         """Initialize execution engine.
 
         Args:
-            strategy_config: Optional strategy config dict. If provided, pyramiding
-                           config is read from strategy instead of global config.py.
+            strategy_config: Strategy config dict from JSON. All trading params come from here.
         """
-        self.is_paper_trading = TRADING_OPTIONS["is_paper_trading"]
-        self.brokerage_pct = TRADING_OPTIONS["brokerage_charges"]
-        self.initial_capital = TRADING_OPTIONS["initial_capital"]
         self.strategy_config = strategy_config
 
+        # App-level defaults from config.py
+        trading_opts = config.TRADING_OPTIONS
+        self.is_paper_trading = trading_opts.get("is_paper_trading", True)
+        self.brokerage_pct = trading_opts.get("brokerage_charges", 0.0020)
+        self.initial_capital = trading_opts.get("initial_capital", 100000.0)
+        self.circuit_breaker = trading_opts.get("circuit_breaker", False)
+
     def _get_pyramid_config(self):
-        """Get pyramiding config from strategy config, falling back to global config.py."""
+        """Get pyramiding config from strategy config."""
         if self.strategy_config and "pyramiding" in self.strategy_config:
             return self.strategy_config["pyramiding"]
-        # Fallback to global config for backward compatibility
-        return config.RISK_MANAGEMENT.get("pyramiding", {"enabled": False, "steps": []})
+        return {"enabled": False, "steps": []}
 
     def _check_regime_for_pyramid(self):
         """Check if pyramiding should be allowed based on market regime."""
@@ -68,7 +69,7 @@ class ExecutionEngine:
 
     def execute_buy(self, symbol, quantity, price, stop_loss, target, recomm_id=None, strategy_name="UNKNOWN"):
         """Execute a buy order with detailed metadata and pyramiding support."""
-        if config.TRADING_OPTIONS.get("circuit_breaker"):
+        if self.circuit_breaker:
             logger.warning(f"🛑 CIRCUIT BREAKER: Buy order for {symbol} blocked.")
             return None
 
@@ -184,7 +185,7 @@ class ExecutionEngine:
 
     def execute_sell(self, symbol, price, reason, quantity=None):
         """Execute a sell order (Supports Partial or Full exits)."""
-        if config.TRADING_OPTIONS.get("circuit_breaker"):
+        if self.circuit_breaker:
             logger.warning(f"🛑 CIRCUIT BREAKER: Sell order for {symbol} blocked.")
             return None
 

@@ -188,7 +188,8 @@ class BacktraderStrategy(bt.Strategy, metaclass=BacktraderStrategyMeta):
                     add_qty = max(int(self.position.size * add_pct), 1)
 
                     # Check if pyramid counts as new position
-                    from config import PYRAMID_COUNTS_AS_NEW_POSITION
+                    # Pyramid counting now from strategy config
+                    PYRAMID_COUNTS_AS_NEW_POSITION = False  # Default
 
                     if PYRAMID_COUNTS_AS_NEW_POSITION:
                         # For single-stock backtest, skip this check (not applicable)

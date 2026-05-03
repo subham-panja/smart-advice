@@ -14,8 +14,6 @@ os.environ["NUMEXPR_NUM_THREADS"] = LIBRARY_MAX_THREADS
 SECRET_KEY = "your_super_secret_key_here"
 PERSIST_LOGGING = False
 VERBOSE_LOGGING = False
-EPISODIC_PIVOT_MODE = False
-VOLUME_SPIKE_THRESHOLD = 1.5
 
 # Data Purge
 DATA_PURGE_DAYS = 7  # Purge recommendations and backtest results older than N days
@@ -25,13 +23,6 @@ DATA_PURGE_DAYS = 7  # Purge recommendations and backtest results older than N d
 MONGODB_HOST = os.getenv("MONGODB_HOST", "127.0.0.1")
 MONGODB_PORT = int(os.getenv("MONGODB_PORT", "27017"))
 MONGODB_DATABASE = os.getenv("MONGODB_DATABASE", "super_advice")
-
-# Global Parameters
-HISTORICAL_DATA_PERIOD = "2y"  # Data lookback for backtesting
-
-# SINGLE SOURCE OF TRUTH FOR CAPITAL
-# All paper trading, live trading, and backtesting use this same capital value.
-INITIAL_CAPITAL = 100000.0  # ₹1,00,000 (1 Lakh)
 
 # Paths & Files
 BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -65,7 +56,7 @@ MONGODB_COLLECTIONS = {
     "positions": "positions",
     "backtest_sessions": "backtest_sessions",
     "portfolio_backtest_trades": "portfolio_backtest_trades",
-    "portfolio_backtest_daily_snapshots": "portfolio_backtest_daily_snapshots",
+    "portfolio_backtest_daily_snapshots": "portfolio_backtest_snapshots",
 }
 
 TELEGRAM_CONFIG = {
@@ -88,51 +79,51 @@ FIVEPAISA_CONFIG = {
     "access_token": os.getenv("FIVEPAISA_ACCESS_TOKEN"),
 }
 
-# Portfolio & Risk Limits
-RISK_MANAGEMENT = {
-    "position_sizing": {
-        "risk_per_trade": 0.01,
-        "max_position_pct": 0.10,
-    },
-    "portfolio_constraints": {
-        "max_concurrent_positions": 10,
-        "daily_loss_limit": 0.03,
-    },
-    "pyramiding": {
-        "enabled": True,
-        "max_adds": 2,
-        "steps": [
-            {"name": "Add 1", "trigger_step_atr": 1.5, "add_size_pct": 0.5},
-            {"name": "Add 2", "trigger_step_atr": 2.0, "add_size_pct": 0.25},
-        ],
+# TRADING & EXECUTION OPTIONS (app-level, not strategy-specific)
+TRADING_OPTIONS = {
+    "is_paper_trading": True,
+    "initial_capital": 100000.0,
+    "brokerage_charges": 0.0020,
+    "allow_multiple_positions_same_stock": False,
+    "time_stop_days": 15,
+    "time_stop_min_pnl_pct": 2.0,
+    "auto_execute": True,
+    "circuit_breaker": False,
+}
+
+# PORTFOLIO BACKTEST CONFIGURATION (app-level defaults)
+PORTFOLIO_BACKTEST_CONFIG = {
+    "enabled": True,
+    "initial_capital": 100000.0,
+    "brokerage_charges": 0.0020,
+    "ranking_method": "combined_score",
+    "save_daily_snapshots": True,
+    "same_day_cash_recycling": True,
+    "force_close_delisted": True,
+    "auto_run_on_cycle": True,
+    "auto_run_max_stocks": 1000,
+    "walk_forward": {
+        "enabled": False,
+        "window_days": 180,
+        "step_days": 90,
+        "mc_iterations": 10,
+        "sample_pct": 0.7,
     },
 }
 
-# PORTFOLIO BACKTEST CONFIGURATION
-# Uses global flags: HISTORICAL_DATA_PERIOD, NUM_WORKER_PROCESSES, USE_MULTIPROCESSING_PIPELINE
-# Risk params (risk_per_trade, max_position_pct, max_positions) come from strategy's risk_management section
-PORTFOLIO_BACKTEST_CONFIG = {
+# DATA CACHING CONFIGURATION
+DATA_CACHE_CONFIG = {
     "enabled": True,
-    "initial_capital": INITIAL_CAPITAL,
-    "brokerage_charges": 0.0020,  # 0.20% per side
-    "ranking_method": "combined_score",  # combined_score or rr_ratio
-    "save_daily_snapshots": True,
-    "same_day_cash_recycling": True,  # If True, cash from exits can be reused same day
-    "force_close_delisted": True,  # If True, close positions at last available price
-    "auto_run_on_cycle": True,  # If True, portfolio backtest runs automatically per trading cycle
-    "auto_run_max_stocks": 1000,  # Max stocks for auto-run (to keep cycle time reasonable)
+    "format": "parquet",
+    "cache_dir": os.path.join(BACKEND_DIR, "data", "historical"),
+    "staleness_hours": 24,
+    "periods": {
+        "analysis": "2y",
+        "backtest": "5y",
+        "portfolio_backtest": "5y",
+        "monitoring": "1mo",
+    },
 }
 
 # GLOBAL POSITION MANAGEMENT
-PYRAMID_COUNTS_AS_NEW_POSITION = False  # If True, pyramid adds count against max_positions
-
-# TRADING & EXECUTION OPTIONS
-TRADING_OPTIONS = {
-    "is_paper_trading": True,
-    "initial_capital": INITIAL_CAPITAL,
-    "brokerage_charges": 0.0020,  # 0.20% per side
-    "allow_multiple_positions_same_stock": False,
-    "time_stop_days": 15,  # Exit if sideways for 15 days
-    "auto_execute": True,
-    "circuit_breaker": False,  # Set to True to stop all trading activity immediately
-}
+PYRAMID_COUNTS_AS_NEW_POSITION = False

@@ -65,7 +65,14 @@ def run_analysis(m):
 def run_trading_cycle(m):
     if not check(m):
         return
-    is_paper = config.TRADING_OPTIONS.get("is_paper_trading", True)
+    # Load strategy to get paper trading mode
+    from utils.strategy_loader import StrategyLoader
+
+    strategies = StrategyLoader.load_all_strategies()
+    is_paper = True
+    if strategies:
+        trading_cfg = strategies[0].get("trading_config", {})
+        is_paper = trading_cfg.get("is_paper_trading", True)
     mode_text = "(Paper Trading)" if is_paper else "⚠️ (LIVE TRADING)"
     bot.reply_to(m, f"⚡ <b>Executing Trading Cycle {mode_text}...</b>", parse_mode="HTML")
     import os
@@ -100,7 +107,7 @@ def view_recs(m, today=False):
         quantity = r.get("suggested_quantity", 1)
 
         # Calculate sizing for the message
-        initial_cap = config.TRADING_OPTIONS.get("initial_capital", 1000000.0)
+        initial_cap = 100000.0  # Default, loaded from strategy in view_positions
         buy_price = r.get("buy_price", 0)
         sell_price = r.get("sell_price", 0)
         stop_loss = r.get("stop_loss", 0)
@@ -151,7 +158,14 @@ def view_positions(m):
     db = MongoClient(f"mongodb://{config.MONGODB_HOST}:{config.MONGODB_PORT}/")[config.MONGODB_DATABASE]
     positions = list(db.positions.find({"status": "OPEN"}))
 
-    is_paper = config.TRADING_OPTIONS.get("is_paper_trading", True)
+    # Load strategy to get paper trading mode
+    from utils.strategy_loader import StrategyLoader
+
+    strategies = StrategyLoader.load_all_strategies()
+    is_paper = True
+    if strategies:
+        trading_cfg = strategies[0].get("trading_config", {})
+        is_paper = trading_cfg.get("is_paper_trading", True)
     header = "📝 *Active Paper Positions*" if is_paper else "💼 *Active Live Positions*"
 
     if not positions:
@@ -160,7 +174,7 @@ def view_positions(m):
 
     total_mkt_val = 0
     total_pnl_val = 0
-    initial_cap = config.TRADING_OPTIONS.get("initial_capital", 100000.0)
+    initial_cap = 100000.0
 
     for p in positions:
         current_p = p.get("current_price", p["entry_price"])

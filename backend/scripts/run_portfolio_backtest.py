@@ -10,7 +10,7 @@ Usage:
     python scripts/run_portfolio_backtest.py --strategy Delayed_EP --max-stocks 50
     python scripts/run_portfolio_backtest.py --strategy Delayed_EP --symbols RELIANCE,INFY,TCS
 
-The backtest uses a shared capital pool (default 10 Lakhs from config.py)
+The backtest uses a shared capital pool and parquet-cached historical data
 and compounds returns across all stocks simultaneously.
 """
 
@@ -19,7 +19,6 @@ import logging
 import multiprocessing
 import os
 import sys
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from typing import Dict, List
 
@@ -28,8 +27,8 @@ import pandas as pd
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import config
-from scripts.data_fetcher import get_historical_data
 from scripts.portfolio_backtest_engine import PortfolioBacktestSession
+from utils.data_cache import fetch_multiple_symbols_cached
 from utils.logger import setup_logging
 from utils.persistence_handler import PersistenceHandler
 from utils.stock_scanner import StockScanner
@@ -126,29 +125,10 @@ def _walk_forward_mc_worker(args):
 
 
 def fetch_symbols_data(symbols: Dict[str, str], period: str = "5y", verbose: bool = False) -> Dict[str, pd.DataFrame]:
-    """Fetch historical data for all symbols in parallel."""
-    data = {}
-    total = len(symbols)
-    logger.info(f"Fetching data for {total} symbols in parallel...")
-
-    with ThreadPoolExecutor(max_workers=config.DATA_FETCH_THREADS) as executor:
-        future_to_sym = {executor.submit(get_historical_data, sym, period=period): sym for sym in symbols.keys()}
-
-        for i, future in enumerate(as_completed(future_to_sym)):
-            sym = future_to_sym[future]
-            try:
-                df = future.result()
-                if df is not None and not df.empty and len(df) > 100:
-                    data[sym] = df
-                    if verbose:
-                        print(f"  [{i+1}/{total}] {sym}: {len(df)} bars")
-                else:
-                    logger.warning(f"Insufficient data for {sym}: {len(df) if df is not None else 0} bars")
-            except Exception as e:
-                logger.error(f"Failed to fetch {sym}: {e}")
-
-    logger.info(f"Successfully fetched data for {len(data)}/{total} symbols")
-    return data
+    """Fetch historical data for all symbols using parquet cache."""
+    # Get staleness from strategy config if available, default 24h
+    staleness_hours = 24
+    return fetch_multiple_symbols_cached(symbols, period=period, staleness_hours=staleness_hours, verbose=verbose)
 
 
 def run_portfolio_backtest(

@@ -12,7 +12,6 @@ Responsible for:
 import logging
 from datetime import datetime, timezone
 
-from config import TRADING_OPTIONS
 from database import get_open_positions, update_position
 from scripts.data_fetcher import get_historical_data
 from utils.strategy_loader import StrategyLoader
@@ -22,7 +21,8 @@ logger = logging.getLogger(__name__)
 
 class PortfolioMonitor:
     def __init__(self):
-        self.time_stop_days = TRADING_OPTIONS["time_stop_days"]
+        # time_stop_days now comes from strategy trading_config per position
+        self.default_time_stop_days = 15
 
     def monitor_all_positions(self):
         """Monitor all open positions for exits or SL updates."""
@@ -39,7 +39,9 @@ class PortfolioMonitor:
         symbol = pos["symbol"]
         strat_name = pos["strategy_name"]
         strategy = StrategyLoader.get_strategy_by_name(strat_name)
-        exit_rules = strategy["exit_rules"]
+        exit_rules = strategy.get("exit_rules", {})
+        trading_cfg = strategy.get("trading_config", {})
+        time_stop_days = trading_cfg.get("time_stop_days", self.default_time_stop_days)
 
         try:
             # 1. Fetch latest data (Live Price Sync)
@@ -122,7 +124,7 @@ class PortfolioMonitor:
 
             # 8. Time Stop (Sideways)
             days_held = (datetime.now(timezone.utc).replace(tzinfo=None) - entry_date).days
-            if days_held >= self.time_stop_days:
+            if days_held >= time_stop_days:
                 pnl_pct = ((current_price - entry_price) / entry_price) * 100
                 if pnl_pct < 2.0:
                     logger.info(f"⏳ TIME STOP: {symbol} held for {days_held} days. Exit due to stagnation.")

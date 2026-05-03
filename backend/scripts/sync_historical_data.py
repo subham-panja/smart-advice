@@ -9,8 +9,10 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from config import DATA_FETCH_THREADS, HISTORICAL_DATA_PERIOD
+from config import DATA_FETCH_THREADS
 from scripts.data_fetcher import get_all_nse_symbols, get_historical_data
+
+DEFAULT_HISTORICAL_PERIOD = "5y"
 
 logger = logging.getLogger(__name__)
 
@@ -19,10 +21,10 @@ def sync_all_historical_data():
     """
     Syncs historical data for all NSE symbols.
     If data exists in cache, it will fetch only the delta.
-    If not, it will fetch the full HISTORICAL_DATA_PERIOD.
+    If not, it will fetch the full DEFAULT_HISTORICAL_PERIOD.
     """
     start_time = datetime.now()
-    logger.info(f"Starting historical data sync for all NSE symbols (Period: {HISTORICAL_DATA_PERIOD})")
+    logger.info(f"Starting historical data sync for all NSE symbols (Period: {DEFAULT_HISTORICAL_PERIOD})")
 
     # 1. Get all symbols
     symbols_dict = get_all_nse_symbols()
@@ -44,7 +46,7 @@ def sync_all_historical_data():
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_to_symbol = {
-            executor.submit(get_historical_data, symbol, period=HISTORICAL_DATA_PERIOD): symbol for symbol in symbols
+            executor.submit(get_historical_data, symbol, period=DEFAULT_HISTORICAL_PERIOD): symbol for symbol in symbols
         }
 
         for i, future in enumerate(as_completed(future_to_symbol)):
