@@ -198,11 +198,22 @@ def run_portfolio_backtest(
             logger.info(f"DB Session created: {session_id}")
 
         # Phase 1: Parallel signal generation
-        with multiprocessing.Pool(processes=num_workers) as pool:
+        pool = None
+        try:
+            pool = multiprocessing.Pool(processes=num_workers)
             partial_signals = pool.starmap(
                 _compute_signals_worker,
                 [(strategy, chunk) for chunk in chunks],
             )
+            pool.close()
+            pool.join()
+        except Exception as e:
+            logger.error(f"Multiprocessing error during signal generation: {e}")
+            if pool:
+                pool.terminate()
+                pool.join()
+                logger.info(f"Terminated {num_workers} worker processes")
+            raise e
 
         precomputed_signals = merge_signal_results(partial_signals)
         logger.info(f"   Pre-computed signals for {len(precomputed_signals)} symbols")
