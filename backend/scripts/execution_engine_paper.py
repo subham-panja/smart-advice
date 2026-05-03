@@ -3,6 +3,8 @@ Execution Engine
 File: scripts/execution_engine_paper.py
 
 Handles trade execution (Buying/Selling) with Paper Trading Mock support.
+Pyramiding config is now read from strategy config (not global config.py)
+to ensure consistency with portfolio backtesting.
 """
 
 import logging
@@ -16,10 +18,53 @@ logger = logging.getLogger(__name__)
 
 
 class ExecutionEngine:
-    def __init__(self):
+    def __init__(self, strategy_config=None):
+        """Initialize execution engine.
+
+        Args:
+            strategy_config: Optional strategy config dict. If provided, pyramiding
+                           config is read from strategy instead of global config.py.
+        """
         self.is_paper_trading = TRADING_OPTIONS["is_paper_trading"]
         self.brokerage_pct = TRADING_OPTIONS["brokerage_charges"]
         self.initial_capital = TRADING_OPTIONS["initial_capital"]
+        self.strategy_config = strategy_config
+
+    def _get_pyramid_config(self):
+        """Get pyramiding config from strategy config, falling back to global config.py."""
+        if self.strategy_config and "pyramiding" in self.strategy_config:
+            return self.strategy_config["pyramiding"]
+        # Fallback to global config for backward compatibility
+        return config.RISK_MANAGEMENT.get("pyramiding", {"enabled": False, "steps": []})
+
+    def _check_regime_for_pyramid(self):
+        """Check if pyramiding should be allowed based on market regime."""
+        if not self.strategy_config:
+            return True
+
+        pyramid_cfg = self._get_pyramid_config()
+        if not pyramid_cfg.get("regime_controlled", False):
+            return True
+
+        # Import regime detector
+        try:
+            from scripts.market_regime_detection import MarketRegimeDetection
+
+            detector = MarketRegimeDetection()
+            regime_config = self.strategy_config.get("market_regime_config", {})
+            result = detector.get_simple_regime_check(
+                index=regime_config.get("index", "^NSEI"),
+                rule=regime_config.get("bull_market_rule", "latest close > sma(200)"),
+            )
+            # In bear regime, check if pyramiding is allowed
+            regime_adaptive = self.strategy_config.get("exit_rules", {}).get("regime_adaptive_exits", {})
+            regime = result.get("status", "BULL").lower()
+            if regime in regime_adaptive:
+                return regime_adaptive[regime].get("pyramiding_allowed", True)
+            return True
+        except Exception as e:
+            logger.warning(f"Regime check for pyramiding failed: {e}")
+            return True  # Default to allowing pyramiding if regime check fails
 
     def execute_buy(self, symbol, quantity, price, stop_loss, target, recomm_id=None, strategy_name="UNKNOWN"):
         """Execute a buy order with detailed metadata and pyramiding support."""
@@ -34,23 +79,29 @@ class ExecutionEngine:
             open_positions = get_open_positions()
             existing_pos = next((p for p in open_positions if p["symbol"] == symbol), None)
 
-            pyramid_cfg = config.RISK_MANAGEMENT["pyramiding"]
-            can_pyramid = pyramid_cfg["enabled"]
+            # Read pyramiding config from strategy (not global config.py)
+            pyramid_cfg = self._get_pyramid_config()
+            can_pyramid = pyramid_cfg.get("enabled", False)
 
             if existing_pos:
                 if not can_pyramid:
                     logger.warning(f"Skipping {symbol}: Position already exists and pyramiding disabled.")
                     return None
 
+                # Check regime-controlled pyramiding
+                if not self._check_regime_for_pyramid():
+                    logger.info(f"Skipping {symbol}: Pyramiding disabled in current market regime")
+                    return None
+
                 adds = existing_pos.get("adds_count", 0)
-                pyramid_steps = pyramid_cfg["steps"]
+                pyramid_steps = pyramid_cfg.get("steps", [])
 
                 if adds >= len(pyramid_steps):
                     logger.warning(f"Skipping {symbol}: Max pyramid steps ({len(pyramid_steps)}) reached.")
                     return None
 
                 step_obj = pyramid_steps[adds]
-                trigger_atr_mult = step_obj["trigger_step_atr"]
+                trigger_atr_mult = step_obj.get("trigger_step_atr", 1.5)
 
                 # PRICE TRIGGER CHECK: Only add if price moved up by X * ATR
                 try:
@@ -74,7 +125,7 @@ class ExecutionEngine:
 
                 # Calculate Pyramid Quantity
                 base_qty = existing_pos.get("initial_quantity", existing_pos["quantity"])
-                add_pct = step_obj["add_size_pct"]
+                add_pct = step_obj.get("add_size_pct", 0.5)
                 pyramid_qty = max(int(base_qty * add_pct), 1)
 
                 # Update existing position (Pyramiding)
@@ -157,5 +208,5 @@ class ExecutionEngine:
                 logger.error(f"Error closing position for {symbol}: {e}")
                 raise e
         else:
-            logger.warning("Real trading execution not yet implemented.")
+            logger.warning("Real trading execution not supported in paper engine.")
             raise NotImplementedError("Live trading not supported in paper engine.")

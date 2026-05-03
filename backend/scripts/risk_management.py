@@ -79,7 +79,8 @@ class RiskManager:
         exit_rules = app_config["exit_rules"]
         rec_thresholds = app_config["recommendation_thresholds"]
 
-        atr = ta.ATR(df["High"], df["Low"], df["Close"], 14).iloc[-1]
+        atr_period = app_config.get("indicator_periods", {}).get("atr", 14)
+        atr = ta.ATR(df["High"], df["Low"], df["Close"], atr_period).iloc[-1]
 
         # 1. Stop Loss Calculation
         stop_type = app_config.get("risk_management", {}).get("stop_loss_type", "ATR")
@@ -122,18 +123,27 @@ class RiskManager:
         # Final Size: Smallest of Risk-Limit or Capital-Limit
         size = min(size_based_on_risk, size_based_on_capital)
 
-        # 4. Targets (Strictly from List)
-        target_list = exit_rules["targets"]
-        targets = {
-            "T1": entry + (atr * target_list[0]["atr_multiplier"]),
-            "T2": entry + (atr * target_list[1]["atr_multiplier"]),
-        }
+        # 4. Targets (Support 1-N targets)
+        target_list = exit_rules.get("targets", [])
+        targets = {}
+        first_target_price = None
+        for i, t in enumerate(target_list):
+            target_price = entry + (atr * t.get("atr_multiplier", 2.0))
+            targets[f"T{i+1}"] = round(target_price, 2)
+            if first_target_price is None:
+                first_target_price = target_price
 
-        # Validate Risk Reward
-        min_rr = rec_thresholds["min_risk_reward_ratio"]
-        reward = targets["T1"] - entry
-        rr_ratio = reward / risk_per_share
-        rr_ok = rr_ratio >= min_rr
+        # Validate Risk Reward (use first target)
+        min_rr = rec_thresholds.get("min_risk_reward_ratio", 1.5)
+        if first_target_price is not None:
+            reward = first_target_price - entry
+            rr_ratio = reward / risk_per_share
+            rr_ok = rr_ratio >= min_rr
+        else:
+            # No targets defined - use ATR-based default
+            reward = atr * 2.0
+            rr_ratio = reward / risk_per_share
+            rr_ok = rr_ratio >= min_rr
 
         return {
             "stop_loss": round(sl, 2),
@@ -148,9 +158,10 @@ class RiskManager:
         }
 
     def calculate_stop_loss(
-        self, df: pd.DataFrame, current_price: float, method="atr", atr_multiplier=1.5
+        self, df: pd.DataFrame, current_price: float, method="atr", atr_multiplier=1.5, app_config=None
     ) -> Dict[str, Any]:
         """Calculates a trailing stop loss based on ATR."""
-        atr = ta.ATR(df["High"], df["Low"], df["Close"], 14).iloc[-1]
+        atr_period = (app_config or {}).get("indicator_periods", {}).get("atr", 14)
+        atr = ta.ATR(df["High"], df["Low"], df["Close"], atr_period).iloc[-1]
         sl = current_price - (atr * atr_multiplier)
         return {"stop_loss": round(sl, 2)}
