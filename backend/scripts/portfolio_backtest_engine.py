@@ -388,105 +388,72 @@ class PortfolioBacktestSession:
             time_stop = regime_params.get("time_stop_bars", exit_cfg.get("time_stop_bars", 20))
             stop_loss_pct = regime_params.get("stop_loss_pct", None)  # O'Neil fixed % stop
 
-            # 0. O'Neil Fixed Stop Loss (7-8% in bull, 5-6% in bear)
+            # 0. O'Neil Percentage Stop Loss (7% in bull, 5% in bear)
             if stop_loss_pct:
                 oneil_stop = pos.entry_price * (1 - stop_loss_pct / 100.0)
                 if current_price <= oneil_stop:
-                    trade = self._close_position(symbol, date, current_price, f"ONEIL_STOP_{stop_loss_pct}%")
+                    trade = self._close_position(symbol, date, current_price, f"ONEIL_STOP_{stop_loss_pct:.0f}%")
                     if trade:
                         exits.append(trade)
                     continue
 
-            # 1. O'Neil Absolute Profit Target (20-25% in bull, 15% in bear)
-            oneil_target_pct = regime_params.get("oneil_target_pct", 25.0)
+            # 1. O'Neil Percentage Profit Targets
             gain_pct = (current_price - pos.entry_price) / pos.entry_price * 100
+            oneil_target_pct = regime_params.get("oneil_target_pct", 25.0)
+            t1_profit_pct = regime_params.get("t1_profit_pct", 20.0)
             leader_cfg = exit_cfg.get("leader_exception", {})
 
-            # Check 8-week leader exception
+            # Leader exception: 20%+ gain in <3 weeks = hold
             is_leader = False
             if leader_cfg.get("enabled", False) and gain_pct >= leader_cfg.get("min_gain_pct", 20.0):
-                if weeks_held <= leader_cfg.get("max_weeks", 8):
+                if weeks_held <= leader_cfg.get("max_weeks", 3):
                     is_leader = True
 
-            if gain_pct >= oneil_target_pct and not is_leader:
-                # Sell at O'Neil target
+            # T1: Sell 50% at 20% gain (unless leader)
+            if not is_leader and pos.current_target_idx == 0 and gain_pct >= t1_profit_pct:
+                sell_qty = int(pos.quantity * t1_pct)
+                if sell_qty > 0:
+                    trade = self._partial_sell(symbol, date, current_price, sell_qty, pos, f"T1_{t1_profit_pct:.0f}%")
+                    if trade:
+                        exits.append(trade)
+                    pos.quantity -= sell_qty
+                    pos.current_target_idx = 1
+                    pos.is_scaled_out = True
+                    if exit_cfg.get("breakeven_at_target_1"):
+                        pos.current_stop_loss = pos.entry_price
+                        logger.info(f"🛡️ {symbol}: SL moved to breakeven ₹{pos.entry_price:.2f}")
+
+            # T2: Sell remaining at 25% gain (or 15% in bear)
+            if pos.current_target_idx == 1 and gain_pct >= oneil_target_pct and not is_leader:
                 sell_qty = pos.quantity
                 trade = self._close_position(symbol, date, current_price, f"ONEIL_TARGET_{oneil_target_pct:.0f}%")
                 if trade:
                     exits.append(trade)
                 continue
 
-            # 8-week leader: hold and trail instead of selling
-            if is_leader and leader_cfg.get("action") == "hold_and_trail":
-                # Skip normal targets, just trail aggressively
-                pass
-            else:
-                # 2. Time Stop (regime-adaptive)
-                if bars_held >= time_stop:
-                    trade = self._close_position(symbol, date, current_price, "TIME_STOP")
-                    if trade:
-                        exits.append(trade)
-                    continue
+            # Time stop disabled for VCP (time_stop_bars = 0)
+            if time_stop > 0 and bars_held >= time_stop:
+                trade = self._close_position(symbol, date, current_price, "TIME_STOP")
+                if trade:
+                    exits.append(trade)
+                continue
 
-                # 3. ATR Stop Loss
-                if current_price <= pos.current_stop_loss:
-                    trade = self._close_position(symbol, date, current_price, "STOP_LOSS")
-                    if trade:
-                        exits.append(trade)
-                    continue
-
-                # 4. ATR Targets (with regime-adaptive T1 %)
-                targets = exit_cfg.get("targets", [])
-                if pos.current_target_idx < len(targets):
-                    target_cfg = targets[pos.current_target_idx].copy()
-                    # Override sell percentage with regime-adaptive value for T1
-                    if pos.current_target_idx == 0:
-                        target_cfg["sell_percentage"] = t1_pct
-
-                    target_price = pos.entry_price + (target_cfg["atr_multiplier"] * atr)
-
-                    if current_price >= target_price:
-                        sell_pct = target_cfg["sell_percentage"]
-                        sell_qty = int(pos.quantity * sell_pct)
-
-                        if sell_qty > 0 and sell_pct < 1.0:
-                            trade = self._partial_sell(symbol, date, current_price, sell_qty, pos, target_cfg["name"])
-                            if trade:
-                                exits.append(trade)
-
-                            pos.quantity -= sell_qty
-                            pos.current_target_idx += 1
-                            pos.is_scaled_out = True
-
-                            if pos.current_target_idx == 1 and exit_cfg.get("breakeven_at_target_1"):
-                                pos.current_stop_loss = pos.entry_price
-                                logger.info(f"🛡️ {symbol}: SL moved to breakeven ₹{pos.entry_price:.2f}")
-
-                            if pos.quantity <= 0:
-                                symbols_to_remove.append(symbol)
-                            continue
-                        elif sell_pct >= 1.0:
-                            trade = self._close_position(symbol, date, current_price, f"FINAL_{target_cfg['name']}")
-                            if trade:
-                                exits.append(trade)
-                            continue
-
-            # 5. Trailing Stop (regime-adaptive: ATR or MA-based)
-            trail_type = regime_params.get("trail_stop_type", "atr")
-            if trail_type == "ma" and len(df) >= regime_params.get("trail_stop_ma_period", 20):
-                # Use moving average as trailing stop (Minervini style)
+            # 5. Trailing Stop (regime-adaptive: MA or ATR-based)
+            trail_type = regime_params.get("trail_stop_type", exit_cfg.get("trail_stop_type", "atr"))
+            if trail_type == "ma":
                 ma_period = regime_params.get("trail_stop_ma_period", 20)
-                ma_value = df["Close"].rolling(ma_period).mean().iloc[-1]
-                if ma_value > pos.current_stop_loss:
-                    pos.current_stop_loss = ma_value
-                    logger.info(f"📉 {symbol}: MA{ma_period} trail SL updated to ₹{ma_value:.2f}")
+                if len(df) >= ma_period:
+                    ma_value = df["Close"].rolling(ma_period).mean().iloc[-1]
+                    if ma_value > pos.current_stop_loss:
+                        pos.current_stop_loss = ma_value
+                        logger.info(f"📉 {symbol}: MA{ma_period} trail SL updated to ₹{ma_value:.2f}")
             elif atr > 0:
-                # ATR-based trailing stop (regime-adaptive multiplier)
                 trail_mult = regime_params.get("trail_stop_atr_multiplier", exit_cfg.get("trail_stop_atr", 2.0))
-                new_sl = current_price - (atr * trail_mult)
-                if new_sl > pos.current_stop_loss:
-                    logger.info(f"📉 {symbol}: Trailing SL updated {pos.current_stop_loss:.2f} → {new_sl:.2f}")
-                    pos.current_stop_loss = new_sl
+                if trail_mult > 0:
+                    new_sl = current_price - (atr * trail_mult)
+                    if new_sl > pos.current_stop_loss:
+                        logger.info(f"📉 {symbol}: Trailing SL updated {pos.current_stop_loss:.2f} → {new_sl:.2f}")
+                        pos.current_stop_loss = new_sl
 
         # Cleanup closed positions
         for sym in symbols_to_remove:
@@ -637,15 +604,23 @@ class PortfolioBacktestSession:
 
             current_price = df.loc[date, "Close"]
 
-            # ATR trigger check
+            # Trigger check: profit percentage or ATR
             hist = df.loc[:date]
             atr = self._calculate_atr(hist, date)
             step = steps[pos.adds_count]
+            trigger_profit_pct = step.get("trigger_profit_pct", None)
             trigger_mult = step.get("trigger_step_atr", 1.5)
-            required_price = pos.last_add_price + (trigger_mult * atr)
 
-            if current_price < required_price:
-                continue
+            if trigger_profit_pct:
+                # Profit-based trigger (Minervini style)
+                gain_pct = (current_price - pos.entry_price) / pos.entry_price * 100
+                if gain_pct < trigger_profit_pct:
+                    continue
+            else:
+                # ATR-based trigger
+                required_price = pos.last_add_price + (trigger_mult * atr)
+                if current_price < required_price:
+                    continue
 
             # Calculate pyramid quantity based on original position size
             base_qty = pos.initial_quantity

@@ -81,10 +81,18 @@ class RiskManager:
 
         atr = ta.ATR(df["High"], df["Low"], df["Close"], 14).iloc[-1]
 
-        # 1. Stop Loss Calculation (Strict)
-        sl_multiplier = exit_rules["atr_stop_multiplier"]
-        sl = entry - (atr * sl_multiplier)
-        risk_per_share = entry - sl
+        # 1. Stop Loss Calculation
+        stop_type = app_config.get("risk_management", {}).get("stop_loss_type", "ATR")
+        if stop_type == "PERCENTAGE":
+            # O'Neil fixed percentage stop (7-8%)
+            stop_pct = exit_rules.get("oneil_stop_loss_pct", 7.0) / 100.0
+            sl = entry * (1 - stop_pct)
+            risk_per_share = entry - sl
+        else:
+            # ATR-based stop
+            sl_multiplier = exit_rules.get("atr_stop_multiplier", 1.5)
+            sl = entry - (atr * sl_multiplier)
+            risk_per_share = entry - sl
 
         if risk_per_share <= 0:
             return {"position_size": 0, "risk_reward_ok": False}
