@@ -1,35 +1,28 @@
 {
     "name": "Hybrid_Trading",
     "enabled": true,
-    "description": "Hybrid strategy combining swing trading entry frequency with momentum-style exits. Optimized with Minervini VCP + CAN SLIM principles: tighter entries, RS filtering, realistic ATR targets, aggressive time stops, and momentum pyramiding.",
-    "version": "2.0",
     "analysis_config": {
         "technical_analysis": true,
         "fundamental_analysis": true,
         "sentiment_analysis": false,
-        "sector_analysis": true,
+        "sector_analysis": false,
         "market_regime_detection": true,
-        "backtesting": true,
         "individual_stock_backtest": false,
-        "risk_management": true,
         "options_oi": true
     },
     "analysis_weights": {
         "technical": 0.7,
         "fundamental": 0.15,
-        "sentiment": 0.0,
-        "sector": 0.15
+        "sector": 0.15,
+        "sentiment": 0.0
     },
     "rs_config": {
-        "benchmark_index": "^NSEI",
         "period": 55,
-        "threshold": 1.0
+        "threshold": 0.5
     },
     "market_regime_config": {
         "index": "^NSEI",
-        "bull_market_rule": "latest close > sma(200)",
-        "pause_buying_if_bearish": false,
-        "adaptive_mode": true
+        "bull_market_rule": "latest close > sma(200)"
     },
     "options_oi_config": {
         "enabled": true,
@@ -60,7 +53,7 @@
             "type": "rsi",
             "op": ">",
             "period": 14,
-            "value": 58.0
+            "value": 60.0
         },
         {
             "type": "moving_average",
@@ -101,9 +94,8 @@
         "buy_combined": 0.55,
         "technical_minimum": 0.4,
         "fundamental_minimum": 0.1,
-        "require_all_gates": true,
         "min_risk_reward_ratio": 1.5,
-        "min_backtest_return": 0.0,
+        "min_backtest_return": -10.0,
         "backtest_period": "2y",
         "min_data_required_days": 400,
         "proximity_to_52_week_high_pct": 12.0
@@ -145,7 +137,6 @@
         },
         "Relative_Strength_Comparison": {
             "enabled": true,
-            "is_bonus": false,
             "period": 55,
             "threshold": 0.5
         },
@@ -177,14 +168,9 @@
             "enabled": true,
             "params": {
                 "adx_min": 20,
-                "adx_max": 50,
-                "macd_zero_buffer": 0.1,
                 "sma_period": 50,
                 "require_price_above_sma": true,
-                "require_sma_stack": true,
-                "adx_slope_check": true,
-                "require_di_plus_above_di_minus": true,
-                "min_di_diff": 5
+                "require_sma_stack": true
             }
         },
         "VOLATILITY_GATE": {
@@ -199,8 +185,7 @@
             "enabled": true,
             "params": {
                 "min_volume_ratio": 1.2,
-                "obv_trend_lookback": 10,
-                "logic_operator": "AND"
+                "obv_trend_lookback": 10
             }
         },
         "MTF_GATE": {
@@ -218,10 +203,7 @@
             "name": "pullback_to_ema",
             "enabled": true,
             "ema_period": 21,
-            "rsi_range": [
-                40,
-                65
-            ],
+            "rsi_range": [40, 65],
             "bullish_candle_required": true,
             "max_distance_pct": 3.0
         },
@@ -289,9 +271,7 @@
         "trail_stop_atr": 2.0,
         "time_stop_bars": 12,
         "breakeven_at_target_1": true,
-        "max_daily_loss_pct": 2.0,
-        "oneil_profit_target_pct": 25.0,
-        "oneil_stop_loss_pct": 8.0,
+        "max_daily_loss_pct": 5.0,
         "leader_exception": {
             "enabled": true,
             "min_gain_pct": 20.0,
@@ -348,7 +328,6 @@
     },
     "pyramiding": {
         "enabled": true,
-        "max_steps": 2,
         "steps": [
             {
                 "name": "First Add",
@@ -378,12 +357,7 @@
         "trend_lookback": 10,
         "divergence_lookback": 10
     },
-    "chartink_config": {
-        "enabled": true,
-        "cache_ttl_minutes": 60
-    },
     "rsi_momentum_filter": {
-        "enabled": true,
         "min_rsi": 60,
         "require_rising": false
     }

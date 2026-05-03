@@ -67,32 +67,40 @@ class StockAnalyzer:
 
             audit_entry["steps"].append({"step": "Data Loading", "status": "PASS"})
 
-            # Technical & Swing
-            if self.strategy_evaluator is None:
-                self.strategy_evaluator = StrategyEvaluator(app_config)
+            # Technical & Swing Analysis (gated by analysis_config)
+            ana_cfg = app_config["analysis_config"]
 
-            tech = self.strategy_evaluator.evaluate_strategies(
-                symbol, hist, app_config=app_config, index_data=index_data
-            )
-            res["technical_score"] = tech["technical_score"]
+            if ana_cfg.get("technical_analysis", True):
+                if self.strategy_evaluator is None:
+                    self.strategy_evaluator = StrategyEvaluator(app_config)
 
-            swing = self.swing_analyzer.analyze_swing_opportunity(symbol, hist, strategy_config=app_config)
-            res["swing_analysis"] = swing
-
-            # Audit Gates
-            for g_name, g_status in swing.get("gates", {}).items():
-                audit_entry["steps"].append(
-                    {"step": f"Gate: {g_name.capitalize()}", "status": "PASS" if g_status else "FAIL"}
+                tech = self.strategy_evaluator.evaluate_strategies(
+                    symbol, hist, app_config=app_config, index_data=index_data
                 )
+                res["technical_score"] = tech["technical_score"]
 
-            if not swing["all_gates_passed"]:
-                audit_entry["steps"].append(
-                    {"step": "Final Gates", "status": "FAIL", "reason": swing.get("reason", "Unknown")}
-                )
-                res["technical_score"] = min(res["technical_score"], 0.1)
-                res["reason"].append("Gate failure")
+                swing = self.swing_analyzer.analyze_swing_opportunity(symbol, hist, strategy_config=app_config)
+                res["swing_analysis"] = swing
+
+                # Audit Gates
+                for g_name, g_status in swing.get("gates", {}).items():
+                    audit_entry["steps"].append(
+                        {"step": f"Gate: {g_name.capitalize()}", "status": "PASS" if g_status else "FAIL"}
+                    )
+
+                if not swing["all_gates_passed"]:
+                    audit_entry["steps"].append(
+                        {"step": "Final Gates", "status": "FAIL", "reason": swing.get("reason", "Unknown")}
+                    )
+                    res["technical_score"] = min(res["technical_score"], 0.1)
+                    res["reason"].append("Gate failure")
+                else:
+                    audit_entry["steps"].append({"step": "Final Gates", "status": "PASS"})
             else:
-                audit_entry["steps"].append({"step": "Final Gates", "status": "PASS"})
+                audit_entry["steps"].append(
+                    {"step": "Technical Analysis", "status": "SKIP", "reason": "Disabled in config"}
+                )
+                res["technical_score"] = 0.0
 
             # Smart Money & Options
             from scripts.smart_money_tracker import SmartMoneyTracker
@@ -101,14 +109,35 @@ class StockAnalyzer:
             if dpct > 40:
                 res["technical_score"] += 0.05
 
-            ana_cfg = app_config["analysis_config"]
-            if ana_cfg["options_oi"]:
+            if ana_cfg.get("options_oi", False):
                 from scripts.options_analyzer import analyze_oi
 
                 oi_cfg = app_config["options_oi_config"]
                 oi = analyze_oi(symbol, config=oi_cfg)
                 if oi["passed"]:
                     res["technical_score"] += oi_cfg["weight"]
+
+            # Sentiment Analysis (gated by analysis_config)
+            if ana_cfg.get("sentiment_analysis", False):
+                audit_entry["steps"].append(
+                    {"step": "Sentiment Analysis", "status": "SKIP", "reason": "Not implemented yet"}
+                )
+                # Placeholder for future sentiment analysis implementation
+            else:
+                audit_entry["steps"].append(
+                    {"step": "Sentiment Analysis", "status": "SKIP", "reason": "Disabled in config"}
+                )
+
+            # Sector Analysis (gated by analysis_config)
+            if ana_cfg.get("sector_analysis", False):
+                audit_entry["steps"].append(
+                    {"step": "Sector Analysis", "status": "SKIP", "reason": "Not implemented yet"}
+                )
+                # Placeholder for future sector analysis implementation
+            else:
+                audit_entry["steps"].append(
+                    {"step": "Sector Analysis", "status": "SKIP", "reason": "Disabled in config"}
+                )
 
             # Fundamental
             if ana_cfg["fundamental_analysis"]:
@@ -143,15 +172,27 @@ class StockAnalyzer:
         weights = app_config["analysis_weights"]
         t_w = weights["technical"]
         f_w = weights["fundamental"]
-        s_w = weights["sector"]
+        s_w = weights.get("sector", 0.15)
+        sentiment_w = weights.get("sentiment", 0.0)
 
         # Calculate Sector Bonus (Strict)
         sector_score = 0.5
-        if res["swing_analysis"]["gates"]["trend"]:
+        if res.get("swing_analysis", {}).get("gates", {}).get("trend", False):
             sector_score = 0.8
 
+        # Calculate Sentiment Score (placeholder for future implementation)
+        sentiment_score = 0.5  # Default neutral
+        if app_config["analysis_config"].get("sentiment_analysis", False):
+            # TODO: Implement sentiment analysis when available
+            sentiment_score = 0.5
+
         # Weighted Score Calculation
-        score = (res["technical_score"] * t_w) + (res["fundamental_score"] * f_w) + (sector_score * s_w)
+        score = (
+            (res["technical_score"] * t_w)
+            + (res["fundamental_score"] * f_w)
+            + (sector_score * s_w)
+            + (sentiment_score * sentiment_w)
+        )
         res["combined_score"] = score
 
         # Floor Checks

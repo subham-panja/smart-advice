@@ -78,41 +78,86 @@ class RiskManager:
         """Calculates optimal stop loss, position size, and targets based on global and strategy config."""
         exit_rules = app_config["exit_rules"]
         rec_thresholds = app_config["recommendation_thresholds"]
+        risk_cfg = app_config.get("risk_management", {})
 
         atr = ta.ATR(df["High"], df["Low"], df["Close"], 14).iloc[-1]
 
-        # 1. Stop Loss Calculation (Strict)
-        sl_multiplier = exit_rules["atr_stop_multiplier"]
-        sl = entry - (atr * sl_multiplier)
+        # 1. Stop Loss Calculation - support different stop loss types
+        stop_loss_type = risk_cfg.get("stop_loss_type", "ATR")
+
+        if stop_loss_type == "ATR":
+            sl_multiplier = exit_rules["atr_stop_multiplier"]
+            sl = entry - (atr * sl_multiplier)
+        elif stop_loss_type == "PERCENTAGE":
+            # Use regime-adaptive percentage stop
+            regime_risk_cfg = risk_cfg.get("regime_adaptive_risk", {})
+            regime_key = regime_status.lower() if regime_status != "UNKNOWN" else "bull"
+            if regime_key in regime_risk_cfg:
+                stop_pct = regime_risk_cfg[regime_key].get("stop_loss_pct", 8.0) / 100.0
+            else:
+                stop_pct = exit_rules.get("oneil_stop_loss_pct", 8.0) / 100.0
+            sl = entry * (1 - stop_pct)
+        elif stop_loss_type == "SUPPORT":
+            # Use recent swing low as stop
+            swing_low = df["Low"].tail(20).min()
+            sl = swing_low * 0.98  # 2% buffer below swing low
+        else:
+            # Default to ATR
+            sl_multiplier = exit_rules["atr_stop_multiplier"]
+            sl = entry - (atr * sl_multiplier)
+
         risk_per_share = entry - sl
 
         if risk_per_share <= 0:
             return {"position_size": 0, "risk_reward_ok": False}
 
         # 2. Position Sizing based on Risk Amount
-        risk_cfg = self._get_strategy_risk_config(app_config)
-        vol_scale_cfg = risk_cfg["volatility_scaling"]
+        risk_cfg_extract = self._get_strategy_risk_config(app_config)
+        vol_scale_cfg = risk_cfg_extract["volatility_scaling"]
 
-        max_risk_pct = risk_cfg["max_risk_per_trade"]
-        effective_risk_pct = self._calculate_volatility_scaled_risk(df, atr, max_risk_pct, vol_scale_cfg)
+        # Support different position sizing methods
+        position_sizing_method = risk_cfg.get("position_sizing", "risk_based")
 
-        # Regime-adaptive risk (from strategy config)
-        regime_risk_cfg = app_config.get("risk_management", {}).get("regime_adaptive_risk", {})
-        regime_key = regime_status.lower() if regime_status != "UNKNOWN" else "bull"
-        if regime_key in regime_risk_cfg:
-            regime_risk = regime_risk_cfg[regime_key]
-            effective_risk_pct = regime_risk.get("risk_per_trade_pct", effective_risk_pct) / 100.0
+        if position_sizing_method == "risk_based":
+            max_risk_pct = risk_cfg_extract["max_risk_per_trade"]
+            effective_risk_pct = self._calculate_volatility_scaled_risk(df, atr, max_risk_pct, vol_scale_cfg)
 
-        risk_amt = self.balance * effective_risk_pct
-        size_based_on_risk = int(risk_amt / risk_per_share)
+            # Regime-adaptive risk (from strategy config)
+            regime_risk_cfg = app_config.get("risk_management", {}).get("regime_adaptive_risk", {})
+            regime_key = regime_status.lower() if regime_status != "UNKNOWN" else "bull"
+            if regime_key in regime_risk_cfg:
+                regime_risk = regime_risk_cfg[regime_key]
+                effective_risk_pct = regime_risk.get("risk_per_trade_pct", effective_risk_pct) / 100.0
+
+            risk_amt = self.balance * effective_risk_pct
+            size_based_on_risk = int(risk_amt / risk_per_share)
+            size = size_based_on_risk
+        elif position_sizing_method == "fixed_pct":
+            # Fixed percentage of capital per trade
+            fixed_pct = risk_cfg.get("risk_per_trade_pct", 2.0) / 100.0
+            allocation = self.balance * fixed_pct
+            size = int(allocation / entry)
+        elif position_sizing_method == "volatility_weighted":
+            # Weight position size by inverse of volatility
+            vol_scale_cfg = risk_cfg.get("volatility_scaling", {})
+            max_risk_pct = risk_cfg_extract["max_risk_per_trade"]
+            effective_risk_pct = self._calculate_volatility_scaled_risk(df, atr, max_risk_pct, vol_scale_cfg)
+            risk_amt = self.balance * effective_risk_pct
+            size = int(risk_amt / risk_per_share)
+        else:
+            # Default to risk_based
+            max_risk_pct = risk_cfg_extract["max_risk_per_trade"]
+            effective_risk_pct = self._calculate_volatility_scaled_risk(df, atr, max_risk_pct, vol_scale_cfg)
+            risk_amt = self.balance * effective_risk_pct
+            size = int(risk_amt / risk_per_share)
 
         # 3. Position Sizing based on Capital Cap
-        max_pos_pct = risk_cfg["max_position_pct"] / 100.0  # Convert from percentage (10.0) to decimal (0.10)
+        max_pos_pct = risk_cfg_extract["max_position_pct"] / 100.0  # Convert from percentage (10.0) to decimal (0.10)
         max_capital_allowed = self.balance * max_pos_pct
         size_based_on_capital = int(max_capital_allowed / entry)
 
         # Final Size: Smallest of Risk-Limit or Capital-Limit
-        size = min(size_based_on_risk, size_based_on_capital)
+        size = min(size, size_based_on_capital)
 
         # 4. Targets (Strictly from List)
         target_list = exit_rules["targets"]

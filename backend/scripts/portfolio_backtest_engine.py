@@ -297,6 +297,25 @@ class PortfolioBacktestSession:
 
     def _simulate_day(self, date: pd.Timestamp, symbols_data: Dict[str, pd.DataFrame]):
         """Process a single trading day: exits → entries → pyramiding → snapshot."""
+        # Check max daily loss circuit breaker
+        exit_cfg = self.strategy_config.get("exit_rules", {})
+        max_daily_loss_pct = exit_cfg.get("max_daily_loss_pct", None)
+        if max_daily_loss_pct and self.daily_snapshots:
+            prev_value = self.daily_snapshots[-1]["portfolio_value"]
+            curr_value = self._current_portfolio_value(symbols_data, date)
+            daily_loss_pct = ((curr_value - prev_value) / prev_value) * 100
+            if daily_loss_pct <= -max_daily_loss_pct:
+                logger.warning(
+                    f"🛑 MAX DAILY LOSS TRIGGERED on {date.date()}: Loss {daily_loss_pct:.2f}% >= {max_daily_loss_pct}% threshold. "
+                    f"Force closing all positions."
+                )
+                # Force close all positions
+                for symbol in list(self.positions.keys()):
+                    df = symbols_data.get(symbol)
+                    last_price = df["Close"].iloc[-1] if df is not None else self.positions[symbol].entry_price
+                    self._close_position(symbol, date, last_price, "MAX_DAILY_LOSS")
+                return  # Skip rest of the day
+
         # --- Phase 1: Process Exits (before entries to free cash) ---
         exits_today = self._process_exits(date, symbols_data)
         _ = sum(e.pnl for e in exits_today if e.pnl > 0)  # cash freed, may be used for recycling logic
@@ -323,6 +342,23 @@ class PortfolioBacktestSession:
         self, date: pd.Timestamp, symbols_data: Dict[str, pd.DataFrame], precomputed_signals: Dict[str, Dict]
     ):
         """Process a single trading day using pre-computed signals (from multiprocessing workers)."""
+        # Check max daily loss circuit breaker
+        exit_cfg = self.strategy_config.get("exit_rules", {})
+        max_daily_loss_pct = exit_cfg.get("max_daily_loss_pct", None)
+        if max_daily_loss_pct and self.daily_snapshots:
+            prev_value = self.daily_snapshots[-1]["portfolio_value"]
+            curr_value = self._current_portfolio_value(symbols_data, date)
+            daily_loss_pct = ((curr_value - prev_value) / prev_value) * 100
+            if daily_loss_pct <= -max_daily_loss_pct:
+                logger.warning(
+                    f"🛑 MAX DAILY LOSS TRIGGERED on {date.date()}: Loss {daily_loss_pct:.2f}% >= {max_daily_loss_pct}% threshold."
+                )
+                for symbol in list(self.positions.keys()):
+                    df = symbols_data.get(symbol)
+                    last_price = df["Close"].iloc[-1] if df is not None else self.positions[symbol].entry_price
+                    self._close_position(symbol, date, last_price, "MAX_DAILY_LOSS")
+                return
+
         # --- Phase 1: Process Exits ---
         exits_today = self._process_exits(date, symbols_data)
         _ = sum(e.pnl for e in exits_today if e.pnl > 0)

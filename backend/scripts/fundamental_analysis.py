@@ -53,6 +53,24 @@ class FundamentalAnalysis:
             score += (1.0 if g > min_eps_g else (0.5 if g > 0 else -0.5)) * 0.3
             weight += 0.3
 
+        # Revenue Growth (3-year and 5-year profit growth thresholds)
+        rev_g = data.get("rev_g")
+        min_profit_growth_3y = cfg.get("min_profit_growth_3y", None)
+        min_profit_growth_5y = cfg.get("min_profit_growth_5y", None)
+
+        if rev_g is not None:
+            # Score based on 3-year growth threshold if configured
+            if min_profit_growth_3y is not None:
+                growth_3y_ok = rev_g > (min_profit_growth_3y / 100.0)  # Convert from percentage
+                score += (0.5 if growth_3y_ok else 0.0) * 0.2
+                weight += 0.2
+
+            # Score based on 5-year growth threshold if configured
+            if min_profit_growth_5y is not None:
+                growth_5y_ok = rev_g > (min_profit_growth_5y / 100.0)  # Convert from percentage
+                score += (0.5 if growth_5y_ok else 0.0) * 0.15
+                weight += 0.15
+
         # ROCE (if available)
         roce = data.get("roce")
         min_roce = cfg.get("min_roce")

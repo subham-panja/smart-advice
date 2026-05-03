@@ -93,6 +93,47 @@ class SwingTradingSignalAnalyzer:
                 volatility_ok = min_pctile <= pctile <= max_pctile
 
         gates = {"trend": trend_ok, "volume": vol_ok, "volatility": volatility_ok}
+
+        # MTF_GATE - Multi-Timeframe Analysis (Weekly trend confirmation)
+        if gates_cfg.get("MTF_GATE", {}).get("enabled", False):
+            mtf_cfg = gates_cfg["MTF_GATE"]["params"]
+            mtf_ok = True
+
+            if mtf_cfg.get("weekly_trend_check", False):
+                try:
+                    # Fetch weekly data for trend confirmation
+                    weekly_data = (
+                        df.resample("W")
+                        .agg({"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"})
+                        .dropna()
+                    )
+
+                    if len(weekly_data) >= 30:
+                        # Weekly SMA crossover check
+                        sma_fast = ta.SMA(weekly_data["Close"], mtf_cfg.get("weekly_sma_fast", 10))
+                        sma_slow = ta.SMA(weekly_data["Close"], mtf_cfg.get("weekly_sma_slow", 30))
+
+                        # Fast SMA should be above slow SMA (weekly uptrend)
+                        if sma_fast.iloc[-1] <= sma_slow.iloc[-1]:
+                            mtf_ok = False
+
+                        # Weekly RSI alignment check
+                        rsi_alignment_min = mtf_cfg.get("rsi_alignment_min", 60)
+                        weekly_rsi = ta.RSI(weekly_data["Close"], 14)
+                        if weekly_rsi.iloc[-1] < rsi_alignment_min:
+                            mtf_ok = False
+                except Exception as e:
+                    logger.debug(f"MTF_GATE check failed for {symbol}: {e}")
+                    mtf_ok = False  # Fail safe - if MTF check fails, gate fails
+
+            if not mtf_ok:
+                return {
+                    "symbol": symbol,
+                    "all_gates_passed": False,
+                    "gates": {**gates, "mtf": False},
+                    "reason": "Multi-timeframe analysis failed - weekly trend not confirmed",
+                }
+
         all_gates_passed = all(gates.values())
 
         # 52-Week High Proximity Check (Minervini/Darvas/CANSLIM)
@@ -170,10 +211,17 @@ class SwingTradingSignalAnalyzer:
             if pat_name == "pullback_to_ema":
                 ema = ta.EMA(df["Close"], pat["ema_period"]).iloc[-1]
                 rsi = ta.RSI(df["Close"], 14).iloc[-1]
-                # Check if price is within 1% of EMA and RSI is in range
-                is_near_ema = abs(c - ema) / ema < 0.01
+                # Check if price is within configured distance of EMA and RSI is in range
+                max_distance = pat.get("max_distance_pct", 3.0) / 100.0
+                is_near_ema = abs(c - ema) / ema < max_distance
                 rsi_min, rsi_max = pat["rsi_range"]
-                if is_near_ema and rsi_min <= rsi <= rsi_max:
+
+                # Check bullish candle requirement
+                bullish_candle_ok = True
+                if pat.get("bullish_candle_required", False):
+                    bullish_candle_ok = df["Close"].iloc[-1] > df["Open"].iloc[-1]
+
+                if is_near_ema and rsi_min <= rsi <= rsi_max and bullish_candle_ok:
                     entry_signals[pat_name] = 1
 
             elif pat_name == "bollinger_squeeze_breakout":
@@ -183,28 +231,85 @@ class SwingTradingSignalAnalyzer:
                 is_squeeze = bandwidth.iloc[-2] < pat["squeeze_threshold"]
                 # Breakout if price crosses upper band today
                 is_breakout = c > upper.iloc[-1]
-                if is_squeeze and is_breakout:
+
+                # Check retest requirement - if enabled, price must retest the breakout level
+                retest_ok = True
+                if pat.get("retest_required", False):
+                    # Check if price pulled back to breakout level and bounced
+                    if len(df) >= 5:
+                        recent_lows = df["Low"].iloc[-5:].min()
+                        retest_ok = recent_lows >= upper.iloc[-5]
+
+                # Check squeeze duration - if too long, invalid setup
+                squeeze_duration_ok = True
+                max_duration = pat.get("max_squeeze_duration_days", 20)
+                if len(df) >= max_duration:
+                    # Count consecutive days of low volatility
+                    recent_bandwidth = bandwidth.iloc[-max_duration:]
+                    avg_bandwidth = recent_bandwidth.mean()
+                    squeeze_duration_ok = avg_bandwidth < pat["squeeze_threshold"] * 1.5
+
+                if is_squeeze and is_breakout and retest_ok and squeeze_duration_ok:
                     entry_signals[pat_name] = 1
 
             elif pat_name == "macd_zero_cross":
-                macd, _, _ = ta.MACD(df["Close"], pat["fast"], pat["slow"], pat["signal"])
+                macd, _, histogram = ta.MACD(df["Close"], pat["fast"], pat["slow"], pat["signal"])
                 # Cross from below zero to above zero
-                if macd.iloc[-2] < 0 and macd.iloc[-1] > 0:
+                cross_ok = macd.iloc[-2] < 0 and macd.iloc[-1] > 0
+
+                # Above zero only - if enabled, MACD must already be positive
+                if pat.get("above_zero_only", False):
+                    cross_ok = cross_ok and macd.iloc[-1] > 0
+
+                # Require histogram expansion - momentum must be increasing
+                histogram_ok = True
+                if pat.get("require_histogram_expansion", False):
+                    if len(histogram) >= 3:
+                        histogram_ok = histogram.iloc[-1] > histogram.iloc[-2] > histogram.iloc[-3]
+
+                if cross_ok and histogram_ok:
                     entry_signals[pat_name] = 1
 
             elif pat_name == "higher_low_structure":
-                # Simplified check for rising lows in the last X swings
+                # Check for higher lows structure (rising support)
                 lows = df["Low"].rolling(window=pat["pivot_lookback"]).min().dropna()
                 if len(lows) > 10:
                     recent_lows = lows.iloc[-10:].unique()
                     if len(recent_lows) >= pat["min_swings"]:
-                        if recent_lows[-1] > recent_lows[-2]:
+                        structure_ok = recent_lows[-1] > recent_lows[-2]
+
+                        # Volume confirmation - if enabled, volume should support the structure
+                        volume_ok = True
+                        if pat.get("require_volume_confirmation", False):
+                            vol_ma20 = df["Volume"].tail(20).mean()
+                            volume_ok = df["Volume"].iloc[-1] >= vol_ma20 * 0.8
+
+                        if structure_ok and volume_ok:
                             entry_signals[pat_name] = 1
 
             elif pat_name == "volatility_contraction":
                 atr = ta.ATR(df["High"], df["Low"], df["Close"], 14)
-                # Check if ATR is decreasing over the last 5 days
-                if atr.iloc[-1] < atr.iloc[-5]:
+
+                # Check min contractions - ATR should be decreasing over multiple periods
+                min_contractions = pat.get("min_contractions", 2)
+                contraction_count = 0
+                for i in range(1, min_contractions + 1):
+                    if atr.iloc[-i] < atr.iloc[-(i + 1)]:
+                        contraction_count += 1
+
+                contraction_ok = contraction_count >= min_contractions
+
+                # Volume dry-up - if enabled, volume should decrease with volatility
+                volume_dry_ok = True
+                if pat.get("volume_dry_up_required", False):
+                    vol_ma20 = df["Volume"].tail(20).mean()
+                    volume_dry_ok = df["Volume"].iloc[-1] < vol_ma20 * 0.8
+
+                # Max ATR % of price - filter out extremely volatile stocks
+                max_atr_pct = pat.get("max_atr_pct_of_price", 3.0) / 100.0
+                atr_pct_ok = (atr.iloc[-1] / c) < max_atr_pct
+
+                if contraction_ok and volume_dry_ok and atr_pct_ok:
                     entry_signals[pat_name] = 1
 
             elif pat_name == "twenty_day_high_breakout":

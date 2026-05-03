@@ -198,6 +198,32 @@ class ExecutionEngine:
         leader_cfg = exit_cfg.get("leader_exception", {})
         targets = exit_cfg.get("targets", [])
 
+        # Check max daily loss - circuit breaker for portfolio-level losses
+        max_daily_loss_pct = exit_cfg.get("max_daily_loss_pct", None)
+        if max_daily_loss_pct:
+            try:
+                from database import get_open_positions
+
+                open_positions = get_open_positions()
+                total_pnl_pct = 0.0
+                for pos in open_positions:
+                    entry_price = pos["entry_price"]
+                    current_price = pos.get("current_price", entry_price)
+                    pnl_pct = ((current_price - entry_price) / entry_price) * 100
+                    total_pnl_pct += pnl_pct
+
+                avg_daily_loss = total_pnl_pct / len(open_positions) if open_positions else 0
+                if avg_daily_loss <= -max_daily_loss_pct:
+                    logger.warning(
+                        f"🛑 MAX DAILY LOSS TRIGGERED: Avg loss {avg_daily_loss:.2f}% >= {max_daily_loss_pct}% threshold. "
+                        f"Exiting all positions."
+                    )
+                    for pos in open_positions:
+                        self.execute_sell(pos["symbol"], pos.get("current_price", pos["entry_price"]), "MAX_DAILY_LOSS")
+                    return
+            except Exception as e:
+                logger.error(f"Error checking max daily loss: {e}")
+
         if not targets:
             logger.warning("No exit targets configured — skipping exit management.")
             return
