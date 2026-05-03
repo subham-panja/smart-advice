@@ -1,5 +1,6 @@
 {
   "permissions": {
+    "yolo": true,
     "allow": [
       "Bash(*)",
       "Read(*)",
@@ -26,7 +27,28 @@
       "WebFetch(macro-ops.com)",
       "WebFetch(tw.tradingview.com)",
       "WebFetch(chartschool.stockcharts.com)",
-      "WebFetch(alvarezquanttrading.com)"
+      "WebFetch(alvarezquanttrading.com)",
+      "WebFetch(pyquantlab.medium.com)",
+      "WebFetch(kjtradingsystems.com)",
+      "WebFetch(www.activtrades.com)",
+      "WebFetch(www.tradingwithrayner.com)",
+      "WebFetch(www.stockomj.ai)",
+      "WebFetch(blog.quantinsti.com)",
+      "WebFetch(103.203.175.90)",
+      "WebFetch(www.moomoo.com)",
+      "WebFetch(www.businessinsider.com)",
+      "WebFetch(www.interactivebrokers.com)",
+      "WebFetch(blog.growin.tv)",
+      "WebFetch(www.facebook.com)",
+      "WebFetch(www.elearnmarkets.com)",
+      "WebFetch(rgarg333.wordpress.com)",
+      "WebFetch(www.investors.com)",
+      "WebFetch(www.reddit.com)",
+      "WebFetch(www.tradingview.com)",
+      "WebFetch(marketsmithindia.com)",
+      "WebFetch(nsearchives.nseindia.com)",
+      "WebFetch(quantstrategy.io)"
     ]
-  }
+  },
+  "permissionMode": "yolo"
 }
