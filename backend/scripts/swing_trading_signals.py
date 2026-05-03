@@ -234,14 +234,13 @@ class SwingTradingSignalAnalyzer:
         # Add entry patterns to signals
         signals.update(entry_signals)
 
-        # RSI Momentum Filter - require RSI > 55 for all entry patterns
+        # RSI Momentum Filter - require RSI > threshold for all entry patterns
         # This filters out dead stocks with no upward momentum
         if entry_signals and any(v == 1 for v in entry_signals.values()):
             rsi_14 = ta.RSI(df["Close"], 14)
             rsi_current = rsi_14.iloc[-1]
-            rsi_momentum_min = strategy_config.get("rsi_momentum_filter", {}).get("min_rsi", 55)
-            # Also check RSI is rising (momentum confirmation)
-            rsi_rising = strategy_config.get("rsi_momentum_filter", {}).get("require_rising", True)
+            rsi_momentum_min = strategy_config.get("rsi_momentum_filter", {}).get("min_rsi", 50)
+            rsi_rising = strategy_config.get("rsi_momentum_filter", {}).get("require_rising", False)
             rsi_ok = rsi_current >= rsi_momentum_min
             if rsi_rising and len(rsi_14) >= 6:
                 rsi_ok = rsi_ok and (rsi_current > rsi_14.iloc[-5])

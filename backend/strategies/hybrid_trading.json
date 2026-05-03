@@ -27,8 +27,9 @@
     },
     "market_regime_config": {
         "index": "^NSEI",
-        "bull_market_rule": "latest close > sma(50)",
-        "pause_buying_if_bearish": true
+        "bull_market_rule": "latest close > sma(200)",
+        "pause_buying_if_bearish": false,
+        "adaptive_mode": true
     },
     "options_oi_config": {
         "enabled": true,
@@ -189,15 +190,15 @@
         "VOLATILITY_GATE": {
             "enabled": true,
             "params": {
-                "min_percentile": 20,
-                "max_percentile": 60,
+                "min_percentile": 10,
+                "max_percentile": 70,
                 "lookback_days": 100
             }
         },
         "VOLUME_GATE": {
             "enabled": true,
             "params": {
-                "min_volume_ratio": 1.5,
+                "min_volume_ratio": 1.2,
                 "obv_trend_lookback": 10,
                 "logic_operator": "AND"
             }
@@ -274,7 +275,7 @@
             {
                 "name": "Target 1",
                 "atr_multiplier": 3.0,
-                "sell_percentage": 0.35
+                "sell_percentage": 0.25
             },
             {
                 "name": "Target 2",
@@ -286,7 +287,37 @@
         "trail_stop_atr": 2.0,
         "time_stop_bars": 12,
         "breakeven_at_target_1": true,
-        "max_daily_loss_pct": 2.0
+        "max_daily_loss_pct": 2.0,
+        "oneil_profit_target_pct": 25.0,
+        "oneil_stop_loss_pct": 8.0,
+        "leader_exception": {
+            "enabled": true,
+            "min_gain_pct": 20.0,
+            "max_weeks": 8,
+            "action": "hold_and_trail"
+        },
+        "regime_adaptive_exits": {
+            "bull": {
+                "t1_sell_percentage": 0.25,
+                "trail_stop_type": "atr",
+                "trail_stop_atr_multiplier": 2.5,
+                "trail_stop_ma_period": 20,
+                "time_stop_bars": 20,
+                "pyramiding_allowed": true,
+                "oneil_target_pct": 25.0,
+                "stop_loss_pct": 8.0
+            },
+            "bear": {
+                "t1_sell_percentage": 0.5,
+                "trail_stop_type": "ma",
+                "trail_stop_atr_multiplier": 1.5,
+                "trail_stop_ma_period": 10,
+                "time_stop_bars": 8,
+                "pyramiding_allowed": false,
+                "oneil_target_pct": 15.0,
+                "stop_loss_pct": 5.0
+            }
+        }
     },
     "risk_management": {
         "risk_per_trade_pct": 2.0,
@@ -300,8 +331,17 @@
             "atr_lookback_days": 100,
             "low_volatility_percentile": 25,
             "high_volatility_percentile": 75,
-            "min_risk_multiplier": 0.5,
-            "bear_market_risk_multiplier": 0.5
+            "min_risk_multiplier": 0.5
+        },
+        "regime_adaptive_risk": {
+            "bull": {
+                "risk_per_trade_pct": 2.0,
+                "max_positions": 15
+            },
+            "bear": {
+                "risk_per_trade_pct": 1.0,
+                "max_positions": 5
+            }
         }
     },
     "pyramiding": {
@@ -318,7 +358,8 @@
                 "trigger_step_atr": 3.0,
                 "add_size_pct": 0.25
             }
-        ]
+        ],
+        "regime_controlled": true
     },
     "fundamental_config": {
         "min_roce": 15.0,
@@ -341,7 +382,7 @@
     },
     "rsi_momentum_filter": {
         "enabled": true,
-        "min_rsi": 55,
-        "require_rising": true
+        "min_rsi": 50,
+        "require_rising": false
     }
 }

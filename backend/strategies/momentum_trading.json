@@ -26,8 +26,9 @@
     },
     "market_regime_config": {
         "index": "^NSEI",
-        "bull_market_rule": "latest close > sma(50)",
-        "pause_buying_if_bearish": true
+        "bull_market_rule": "latest close > sma(200)",
+        "pause_buying_if_bearish": false,
+        "adaptive_mode": true
     },
     "options_oi_config": {
         "enabled": true,
@@ -271,7 +272,37 @@
         "trail_stop_atr": 4.0,
         "time_stop_bars": 40,
         "breakeven_at_target_1": false,
-        "max_daily_loss_pct": 2.0
+        "max_daily_loss_pct": 2.0,
+        "regime_adaptive_exits": {
+            "bull": {
+                "t1_sell_percentage": 0.25,
+                "trail_stop_type": "atr",
+                "trail_stop_atr_multiplier": 2.5,
+                "trail_stop_ma_period": 20,
+                "time_stop_bars": 20,
+                "pyramiding_allowed": true,
+                "oneil_target_pct": 25.0,
+                "stop_loss_pct": 8.0
+            },
+            "bear": {
+                "t1_sell_percentage": 0.5,
+                "trail_stop_type": "ma",
+                "trail_stop_atr_multiplier": 1.5,
+                "trail_stop_ma_period": 10,
+                "time_stop_bars": 8,
+                "pyramiding_allowed": false,
+                "oneil_target_pct": 15.0,
+                "stop_loss_pct": 5.0
+            }
+        },
+        "oneil_profit_target_pct": 25.0,
+        "oneil_stop_loss_pct": 8.0,
+        "leader_exception": {
+            "enabled": true,
+            "min_gain_pct": 20.0,
+            "max_weeks": 8,
+            "action": "hold_and_trail"
+        }
     },
     "risk_management": {
         "risk_per_trade_pct": 2.0,
@@ -286,6 +317,16 @@
             "low_volatility_percentile": 25,
             "high_volatility_percentile": 75,
             "min_risk_multiplier": 0.6
+        },
+        "regime_adaptive_risk": {
+            "bull": {
+                "risk_per_trade_pct": 2.0,
+                "max_positions": 8
+            },
+            "bear": {
+                "risk_per_trade_pct": 1.0,
+                "max_positions": 4
+            }
         }
     },
     "pyramiding": {
@@ -302,7 +343,8 @@
                 "trigger_step_atr": 4.0,
                 "add_size_pct": 0.3
             }
-        ]
+        ],
+        "regime_controlled": true
     },
     "fundamental_config": {
         "min_roce": 18.0,
@@ -322,5 +364,10 @@
     "chartink_config": {
         "enabled": true,
         "cache_ttl_minutes": 60
+    },
+    "rsi_momentum_filter": {
+        "enabled": true,
+        "min_rsi": 50,
+        "require_rising": false
     }
 }

@@ -96,10 +96,12 @@ class RiskManager:
         max_risk_pct = risk_cfg["max_risk_per_trade"]
         effective_risk_pct = self._calculate_volatility_scaled_risk(df, atr, max_risk_pct, vol_scale_cfg)
 
-        # Market regime-based risk reduction
-        if regime_status == "BEAR":
-            bear_reduction = vol_scale_cfg.get("bear_market_risk_multiplier", 0.5)
-            effective_risk_pct *= bear_reduction
+        # Regime-adaptive risk (from strategy config)
+        regime_risk_cfg = app_config.get("risk_management", {}).get("regime_adaptive_risk", {})
+        regime_key = regime_status.lower() if regime_status != "UNKNOWN" else "bull"
+        if regime_key in regime_risk_cfg:
+            regime_risk = regime_risk_cfg[regime_key]
+            effective_risk_pct = regime_risk.get("risk_per_trade_pct", effective_risk_pct) / 100.0
 
         risk_amt = self.balance * effective_risk_pct
         size_based_on_risk = int(risk_amt / risk_per_share)

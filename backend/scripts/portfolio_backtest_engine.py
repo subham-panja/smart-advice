@@ -354,14 +354,22 @@ class PortfolioBacktestSession:
             self._record_snapshot(date, symbols_data)
 
     def _process_exits(self, date: pd.Timestamp, symbols_data: Dict[str, pd.DataFrame]) -> List[PortfolioTrade]:
-        """Check all open positions for SL, target, time-stop, or delisted."""
+        """Check all open positions for SL, target, time-stop, O'Neil rules, or delisted.
+
+        Regime-adaptive: exit parameters change based on market regime (bull/bear).
+        """
         exits = []
         symbols_to_remove = []
+        exit_cfg = self.strategy_config.get("exit_rules", {})
+        regime_adaptive = exit_cfg.get("regime_adaptive_exits", {})
+
+        # Get current regime
+        regime = self._regime_status.lower() if self._regime_status != "UNKNOWN" else "bull"
+        regime_params = regime_adaptive.get(regime, {})
 
         for symbol, pos in list(self.positions.items()):
             df = symbols_data.get(symbol)
             if df is None or date not in df.index:
-                # Delisted or no data — force close
                 if self.force_close_delisted:
                     last_price = df["Close"].iloc[-1] if df is not None else pos.entry_price
                     trade = self._close_position(symbol, date, last_price, "DELISTED")
@@ -370,65 +378,111 @@ class PortfolioBacktestSession:
                 continue
 
             current_price = df.loc[date, "Close"]
-            exit_cfg = self.strategy_config.get("exit_rules", {})
-            time_stop_bars = exit_cfg.get("time_stop_bars", 45)
-
-            # 1. Time Stop
+            atr = self._calculate_atr(df, date)
             bars_held = self.bar_count - pos.bar_executed
-            if bars_held >= time_stop_bars:
-                trade = self._close_position(symbol, date, current_price, "TIME_STOP")
+            days_held = (date - pos.entry_date).days if hasattr(date, "__sub__") else bars_held
+            weeks_held = days_held / 7.0
+
+            # Get regime-specific parameters (fall back to base config)
+            t1_pct = regime_params.get("t1_sell_percentage", exit_cfg["targets"][0]["sell_percentage"])
+            time_stop = regime_params.get("time_stop_bars", exit_cfg.get("time_stop_bars", 20))
+            stop_loss_pct = regime_params.get("stop_loss_pct", None)  # O'Neil fixed % stop
+
+            # 0. O'Neil Fixed Stop Loss (7-8% in bull, 5-6% in bear)
+            if stop_loss_pct:
+                oneil_stop = pos.entry_price * (1 - stop_loss_pct / 100.0)
+                if current_price <= oneil_stop:
+                    trade = self._close_position(symbol, date, current_price, f"ONEIL_STOP_{stop_loss_pct}%")
+                    if trade:
+                        exits.append(trade)
+                    continue
+
+            # 1. O'Neil Absolute Profit Target (20-25% in bull, 15% in bear)
+            oneil_target_pct = regime_params.get("oneil_target_pct", 25.0)
+            gain_pct = (current_price - pos.entry_price) / pos.entry_price * 100
+            leader_cfg = exit_cfg.get("leader_exception", {})
+
+            # Check 8-week leader exception
+            is_leader = False
+            if leader_cfg.get("enabled", False) and gain_pct >= leader_cfg.get("min_gain_pct", 20.0):
+                if weeks_held <= leader_cfg.get("max_weeks", 8):
+                    is_leader = True
+
+            if gain_pct >= oneil_target_pct and not is_leader:
+                # Sell at O'Neil target
+                sell_qty = pos.quantity
+                trade = self._close_position(symbol, date, current_price, f"ONEIL_TARGET_{oneil_target_pct:.0f}%")
                 if trade:
                     exits.append(trade)
                 continue
 
-            # 2. Stop Loss
-            if current_price <= pos.current_stop_loss:
-                trade = self._close_position(symbol, date, current_price, "STOP_LOSS")
-                if trade:
-                    exits.append(trade)
-                continue
+            # 8-week leader: hold and trail instead of selling
+            if is_leader and leader_cfg.get("action") == "hold_and_trail":
+                # Skip normal targets, just trail aggressively
+                pass
+            else:
+                # 2. Time Stop (regime-adaptive)
+                if bars_held >= time_stop:
+                    trade = self._close_position(symbol, date, current_price, "TIME_STOP")
+                    if trade:
+                        exits.append(trade)
+                    continue
 
-            # 3. Targets
-            targets = exit_cfg.get("targets", [])
-            if pos.current_target_idx < len(targets):
-                target_cfg = targets[pos.current_target_idx]
-                # Calculate ATR for target
-                atr = self._calculate_atr(df, date)
-                target_price = pos.entry_price + (target_cfg["atr_multiplier"] * atr)
+                # 3. ATR Stop Loss
+                if current_price <= pos.current_stop_loss:
+                    trade = self._close_position(symbol, date, current_price, "STOP_LOSS")
+                    if trade:
+                        exits.append(trade)
+                    continue
 
-                if current_price >= target_price:
-                    sell_pct = target_cfg["sell_percentage"]
-                    sell_qty = int(pos.quantity * sell_pct)
+                # 4. ATR Targets (with regime-adaptive T1 %)
+                targets = exit_cfg.get("targets", [])
+                if pos.current_target_idx < len(targets):
+                    target_cfg = targets[pos.current_target_idx].copy()
+                    # Override sell percentage with regime-adaptive value for T1
+                    if pos.current_target_idx == 0:
+                        target_cfg["sell_percentage"] = t1_pct
 
-                    if sell_qty > 0 and sell_pct < 1.0:
-                        # Partial sell
-                        trade = self._partial_sell(symbol, date, current_price, sell_qty, pos, target_cfg["name"])
-                        if trade:
-                            exits.append(trade)
+                    target_price = pos.entry_price + (target_cfg["atr_multiplier"] * atr)
 
-                        # Update position
-                        pos.quantity -= sell_qty
-                        pos.current_target_idx += 1
-                        pos.is_scaled_out = True
+                    if current_price >= target_price:
+                        sell_pct = target_cfg["sell_percentage"]
+                        sell_qty = int(pos.quantity * sell_pct)
 
-                        # Breakeven logic
-                        if pos.current_target_idx == 1 and exit_cfg.get("breakeven_at_target_1"):
-                            pos.current_stop_loss = pos.entry_price
-                            logger.info(f"🛡️ {symbol}: SL moved to breakeven ₹{pos.entry_price:.2f}")
+                        if sell_qty > 0 and sell_pct < 1.0:
+                            trade = self._partial_sell(symbol, date, current_price, sell_qty, pos, target_cfg["name"])
+                            if trade:
+                                exits.append(trade)
 
-                        if pos.quantity <= 0:
-                            symbols_to_remove.append(symbol)
-                        continue
-                    elif sell_pct >= 1.0:
-                        # Final target — full exit
-                        trade = self._close_position(symbol, date, current_price, f"FINAL_{target_cfg['name']}")
-                        if trade:
-                            exits.append(trade)
-                        continue
+                            pos.quantity -= sell_qty
+                            pos.current_target_idx += 1
+                            pos.is_scaled_out = True
 
-            # 4. Trailing Stop Loss Update
-            if atr > 0:
-                trail_mult = exit_cfg.get("trail_stop_atr", 2.5)
+                            if pos.current_target_idx == 1 and exit_cfg.get("breakeven_at_target_1"):
+                                pos.current_stop_loss = pos.entry_price
+                                logger.info(f"🛡️ {symbol}: SL moved to breakeven ₹{pos.entry_price:.2f}")
+
+                            if pos.quantity <= 0:
+                                symbols_to_remove.append(symbol)
+                            continue
+                        elif sell_pct >= 1.0:
+                            trade = self._close_position(symbol, date, current_price, f"FINAL_{target_cfg['name']}")
+                            if trade:
+                                exits.append(trade)
+                            continue
+
+            # 5. Trailing Stop (regime-adaptive: ATR or MA-based)
+            trail_type = regime_params.get("trail_stop_type", "atr")
+            if trail_type == "ma" and len(df) >= regime_params.get("trail_stop_ma_period", 20):
+                # Use moving average as trailing stop (Minervini style)
+                ma_period = regime_params.get("trail_stop_ma_period", 20)
+                ma_value = df["Close"].rolling(ma_period).mean().iloc[-1]
+                if ma_value > pos.current_stop_loss:
+                    pos.current_stop_loss = ma_value
+                    logger.info(f"📉 {symbol}: MA{ma_period} trail SL updated to ₹{ma_value:.2f}")
+            elif atr > 0:
+                # ATR-based trailing stop (regime-adaptive multiplier)
+                trail_mult = regime_params.get("trail_stop_atr_multiplier", exit_cfg.get("trail_stop_atr", 2.0))
                 new_sl = current_price - (atr * trail_mult)
                 if new_sl > pos.current_stop_loss:
                     logger.info(f"📉 {symbol}: Trailing SL updated {pos.current_stop_loss:.2f} → {new_sl:.2f}")
@@ -445,10 +499,8 @@ class PortfolioBacktestSession:
         """Scan stocks without open positions for BUY signals."""
         candidates = []
 
-        # Macro regime check - skip new entries in bear markets
-        regime = self._check_market_regime(date, symbols_data)
-        if regime == "BEAR":
-            return candidates  # No new buys in bear market
+        # Check regime for adaptive behavior (but don't block entries)
+        self._check_market_regime(date, symbols_data)
 
         for symbol, df in symbols_data.items():
             if symbol in self.positions:
@@ -557,10 +609,21 @@ class PortfolioBacktestSession:
         )
 
     def _process_pyramiding(self, date: pd.Timestamp, symbols_data: Dict[str, pd.DataFrame]):
-        """Check existing positions for pyramid add triggers."""
+        """Check existing positions for pyramid add triggers.
+
+        Regime-controlled: pyramiding disabled in bear markets.
+        """
         pyramid_cfg = self.strategy_config.get("pyramiding", {})
         if not pyramid_cfg.get("enabled", False):
             return
+
+        # Regime control: skip pyramiding in bear markets
+        if pyramid_cfg.get("regime_controlled", False):
+            regime = self._regime_status.lower() if self._regime_status != "UNKNOWN" else "bull"
+            regime_adaptive = self.strategy_config.get("exit_rules", {}).get("regime_adaptive_exits", {})
+            regime_params = regime_adaptive.get(regime, {})
+            if not regime_params.get("pyramiding_allowed", True):
+                return  # No pyramiding in bear regime
 
         steps = pyramid_cfg.get("steps", [])
 
@@ -745,7 +808,7 @@ class PortfolioBacktestSession:
                 index_hist = full_data.loc[:date]
 
             if len(index_hist) < 250:
-                return "BULL"  # Not enough data, assume BULL
+                return "BULL"  # Not enough data for SMA(200), assume BULL
 
             # Parse the bull_market_rule (e.g., "latest close > sma(50)")
             import re
@@ -804,12 +867,19 @@ class PortfolioBacktestSession:
             return 0.0
 
     def _can_open_new_position(self, symbol: str) -> bool:
-        """Check if we can open a new position."""
+        """Check if we can open a new position (regime-adaptive)."""
         if symbol in self.positions:
             return False
 
+        # Regime-adaptive max positions
+        regime = self._regime_status.lower() if self._regime_status != "UNKNOWN" else "bull"
+        regime_risk_cfg = self.strategy_config.get("risk_management", {}).get("regime_adaptive_risk", {})
+        max_pos = self.max_positions  # default
+        if regime in regime_risk_cfg:
+            max_pos = regime_risk_cfg[regime].get("max_positions", self.max_positions)
+
         current_slot_count = len(self.positions)
-        return current_slot_count < self.max_positions
+        return current_slot_count < max_pos
 
     def _record_snapshot(self, date: pd.Timestamp, symbols_data: Dict[str, pd.DataFrame]):
         """Save daily portfolio state."""
