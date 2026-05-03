@@ -790,9 +790,14 @@ class PortfolioBacktestSession:
         """Check market regime (BULL/BEAR) using NIFTY 50 index.
 
         Returns 'BULL' or 'BEAR'. Caches result per date to avoid redundant checks.
+        Raises RuntimeError if regime detection is disabled — this strategy requires it.
         """
         if not self.regime_enabled or not self.regime_config:
-            return "BULL"  # If regime detection disabled, assume BULL
+            raise RuntimeError(
+                "Market regime detection is DISABLED but required by this strategy. "
+                "Set 'market_regime_detection': true in analysis_config of your strategy JSON. "
+                "Regime detection controls exit behavior (stops, targets, pyramiding) — running without it is unsafe."
+            )
 
         # Cache by date
         if date == self._regime_check_date:
@@ -812,7 +817,10 @@ class PortfolioBacktestSession:
                 index_hist = full_data.loc[:date]
 
             if len(index_hist) < 250:
-                return "BULL"  # Not enough data for SMA(200), assume BULL
+                raise RuntimeError(
+                    f"Insufficient index data for regime detection: {len(index_hist)} days < 250 required. "
+                    f"Need at least 250 days of {index_symbol} data to calculate SMA for regime check."
+                )
 
             # Parse the bull_market_rule (e.g., "latest close > sma(50)")
             import re
@@ -820,7 +828,10 @@ class PortfolioBacktestSession:
             rule = self.regime_config.get("bull_market_rule", "latest close > sma(50)")
             sma_match = re.search(r"sma\((\d+)\)", rule)
             if not sma_match:
-                return "BULL"
+                raise RuntimeError(
+                    f"Invalid bull_market_rule in market_regime_config: '{rule}'. "
+                    "Expected format: 'latest close > sma(N)' where N is the SMA period."
+                )
 
             sma_period = int(sma_match.group(1))
             current_price = index_hist["Close"].iloc[-1]
@@ -835,9 +846,14 @@ class PortfolioBacktestSession:
 
             return self._regime_status
 
+        except RuntimeError:
+            raise
         except Exception as e:
-            logger.warning(f"Market regime check error on {date}: {e}")
-            return "BULL"  # Default to BULL on error
+            raise RuntimeError(
+                f"Market regime detection failed on {date}: {e}. "
+                "This strategy requires regime detection to function. "
+                "Check that market_regime_config.index is valid and data is accessible."
+            ) from e
 
     def _get_common_dates(self, symbols_data: Dict[str, pd.DataFrame]) -> pd.DatetimeIndex:
         """Build a union of all trading dates across symbols."""
