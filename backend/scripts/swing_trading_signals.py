@@ -78,17 +78,19 @@ class SwingTradingSignalAnalyzer:
                 slope = np.polyfit(x, obv_recent.values, 1)[0]
                 vol_ok = vol_ok and (slope > 0)
 
-        # Volatility Gate
+        # Volatility Gate - require ATR in range (not too low, not too high)
         volatility_ok = True
         if gates_cfg["VOLATILITY_GATE"]["enabled"]:
             atr = ta.ATR(df["High"], df["Low"], df["Close"], 14)
             lb = v_cfg["lookback_days"]
-            max_pctile = v_cfg["max_percentile"]  # e.g., 30
+            max_pctile = v_cfg.get("max_percentile", 60)  # Upper bound: e.g., 60
+            min_pctile = v_cfg.get("min_percentile", 20)  # Lower bound: e.g., 20
             atr_recent = atr.iloc[-lb:].dropna()
             if len(atr_recent) > 0:
                 current_atr = atr.iloc[-1]
                 pctile = (atr_recent < current_atr).sum() / len(atr_recent) * 100
-                volatility_ok = pctile <= max_pctile  # ATR must be <= 30th percentile = contraction
+                # ATR must be between min and max percentile (enough momentum, not crash-level)
+                volatility_ok = min_pctile <= pctile <= max_pctile
 
         gates = {"trend": trend_ok, "volume": vol_ok, "volatility": volatility_ok}
         all_gates_passed = all(gates.values())
@@ -231,6 +233,22 @@ class SwingTradingSignalAnalyzer:
 
         # Add entry patterns to signals
         signals.update(entry_signals)
+
+        # RSI Momentum Filter - require RSI > 55 for all entry patterns
+        # This filters out dead stocks with no upward momentum
+        if entry_signals and any(v == 1 for v in entry_signals.values()):
+            rsi_14 = ta.RSI(df["Close"], 14)
+            rsi_current = rsi_14.iloc[-1]
+            rsi_momentum_min = strategy_config.get("rsi_momentum_filter", {}).get("min_rsi", 55)
+            # Also check RSI is rising (momentum confirmation)
+            rsi_rising = strategy_config.get("rsi_momentum_filter", {}).get("require_rising", True)
+            rsi_ok = rsi_current >= rsi_momentum_min
+            if rsi_rising and len(rsi_14) >= 6:
+                rsi_ok = rsi_ok and (rsi_current > rsi_14.iloc[-5])
+            if not rsi_ok:
+                for pat_name in entry_signals:
+                    if entry_signals[pat_name] == 1:
+                        entry_signals[pat_name] = 0  # Clear all triggered patterns
 
         # 4. APPLY BONUS/HARD LOGIC
         # -------------------------

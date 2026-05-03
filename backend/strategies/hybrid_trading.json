@@ -189,14 +189,15 @@
         "VOLATILITY_GATE": {
             "enabled": true,
             "params": {
-                "max_percentile": 30,
+                "min_percentile": 20,
+                "max_percentile": 60,
                 "lookback_days": 100
             }
         },
         "VOLUME_GATE": {
             "enabled": true,
             "params": {
-                "min_volume_ratio": 0.8,
+                "min_volume_ratio": 1.5,
                 "obv_trend_lookback": 10,
                 "logic_operator": "AND"
             }
@@ -283,7 +284,7 @@
         ],
         "atr_stop_multiplier": 1.5,
         "trail_stop_atr": 2.0,
-        "time_stop_bars": 20,
+        "time_stop_bars": 12,
         "breakeven_at_target_1": true,
         "max_daily_loss_pct": 2.0
     },
@@ -299,7 +300,8 @@
             "atr_lookback_days": 100,
             "low_volatility_percentile": 25,
             "high_volatility_percentile": 75,
-            "min_risk_multiplier": 0.5
+            "min_risk_multiplier": 0.5,
+            "bear_market_risk_multiplier": 0.5
         }
     },
     "pyramiding": {
@@ -336,5 +338,10 @@
     "chartink_config": {
         "enabled": true,
         "cache_ttl_minutes": 60
+    },
+    "rsi_momentum_filter": {
+        "enabled": true,
+        "min_rsi": 55,
+        "require_rising": true
     }
 }

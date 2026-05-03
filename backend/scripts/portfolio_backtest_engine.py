@@ -25,6 +25,7 @@ import pandas as pd
 import talib as ta
 
 from config import PORTFOLIO_BACKTEST_CONFIG, PYRAMID_COUNTS_AS_NEW_POSITION
+from scripts.market_regime_detection import MarketRegimeDetection
 from scripts.risk_management import RiskManager
 from scripts.swing_trading_signals import SwingTradingSignalAnalyzer
 
@@ -116,6 +117,14 @@ class PortfolioBacktestSession:
         # Tools
         self.swing_analyzer = SwingTradingSignalAnalyzer()
         self.risk_manager = RiskManager(account_balance=self.initial_capital)
+
+        # Market regime detection (from strategy config)
+        self.regime_detector = MarketRegimeDetection()
+        self.regime_config = strategy_config.get("market_regime_config", {})
+        self.regime_enabled = strategy_config.get("analysis_config", {}).get("market_regime_detection", False)
+        self._regime_status = "UNKNOWN"  # BULL or BEAR
+        self._regime_check_date = None
+        self._regime_check_cache = {}  # cache regime check per date
 
         # Results
         self.session_id: Any = None
@@ -436,6 +445,11 @@ class PortfolioBacktestSession:
         """Scan stocks without open positions for BUY signals."""
         candidates = []
 
+        # Macro regime check - skip new entries in bear markets
+        regime = self._check_market_regime(date, symbols_data)
+        if regime == "BEAR":
+            return candidates  # No new buys in bear market
+
         for symbol, df in symbols_data.items():
             if symbol in self.positions:
                 continue
@@ -477,7 +491,7 @@ class PortfolioBacktestSession:
         self.risk_manager.balance = self.initial_capital
 
         hist = df.loc[:date]
-        risk = self.risk_manager.calculate_risk_params(hist, current_price, self.strategy_config)
+        risk = self.risk_manager.calculate_risk_params(hist, current_price, self.strategy_config, self._regime_status)
 
         if not risk.get("risk_reward_ok"):
             return
@@ -704,6 +718,59 @@ class PortfolioBacktestSession:
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    def _check_market_regime(self, date: pd.Timestamp, symbols_data: Dict[str, pd.DataFrame]) -> str:
+        """Check market regime (BULL/BEAR) using NIFTY 50 index.
+
+        Returns 'BULL' or 'BEAR'. Caches result per date to avoid redundant checks.
+        """
+        if not self.regime_enabled or not self.regime_config:
+            return "BULL"  # If regime detection disabled, assume BULL
+
+        # Cache by date
+        if date == self._regime_check_date:
+            return self._regime_status
+
+        try:
+            # Get NIFTY data from symbols_data if available, otherwise fetch
+            index_symbol = self.regime_config.get("index", "^NSEI")
+            if index_symbol in symbols_data:
+                index_df = symbols_data[index_symbol]
+                index_hist = index_df.loc[:date]
+            else:
+                # Fetch index data on-the-fly
+                from scripts.data_fetcher import get_historical_data
+
+                full_data = get_historical_data(index_symbol, period="5y")
+                index_hist = full_data.loc[:date]
+
+            if len(index_hist) < 250:
+                return "BULL"  # Not enough data, assume BULL
+
+            # Parse the bull_market_rule (e.g., "latest close > sma(50)")
+            import re
+
+            rule = self.regime_config.get("bull_market_rule", "latest close > sma(50)")
+            sma_match = re.search(r"sma\((\d+)\)", rule)
+            if not sma_match:
+                return "BULL"
+
+            sma_period = int(sma_match.group(1))
+            current_price = index_hist["Close"].iloc[-1]
+            sma_value = index_hist["Close"].rolling(sma_period).mean().iloc[-1]
+
+            is_bull = current_price > sma_value
+            self._regime_status = "BULL" if is_bull else "BEAR"
+            self._regime_check_date = date
+
+            if not is_bull:
+                logger.info(f"🔴 MACRO REGIME: BEARISH on {date.date()} - {index_symbol} below SMA({sma_period})")
+
+            return self._regime_status
+
+        except Exception as e:
+            logger.warning(f"Market regime check error on {date}: {e}")
+            return "BULL"  # Default to BULL on error
 
     def _get_common_dates(self, symbols_data: Dict[str, pd.DataFrame]) -> pd.DatetimeIndex:
         """Build a union of all trading dates across symbols."""

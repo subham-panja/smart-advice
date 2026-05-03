@@ -72,7 +72,9 @@ class RiskManager:
 
         return round(scaled_risk, 4)
 
-    def calculate_risk_params(self, df: pd.DataFrame, entry: float, app_config: Dict[str, Any]) -> Dict[str, Any]:
+    def calculate_risk_params(
+        self, df: pd.DataFrame, entry: float, app_config: Dict[str, Any], regime_status: str = "BULL"
+    ) -> Dict[str, Any]:
         """Calculates optimal stop loss, position size, and targets based on global and strategy config."""
         exit_rules = app_config["exit_rules"]
         rec_thresholds = app_config["recommendation_thresholds"]
@@ -93,6 +95,11 @@ class RiskManager:
 
         max_risk_pct = risk_cfg["max_risk_per_trade"]
         effective_risk_pct = self._calculate_volatility_scaled_risk(df, atr, max_risk_pct, vol_scale_cfg)
+
+        # Market regime-based risk reduction
+        if regime_status == "BEAR":
+            bear_reduction = vol_scale_cfg.get("bear_market_risk_multiplier", 0.5)
+            effective_risk_pct *= bear_reduction
 
         risk_amt = self.balance * effective_risk_pct
         size_based_on_risk = int(risk_amt / risk_per_share)
