@@ -105,7 +105,7 @@
         "min_risk_reward_ratio": 1.5,
         "min_backtest_return": 0.0,
         "backtest_period": "2y",
-        "min_data_required_days": 252,
+        "min_data_required_days": 400,
         "proximity_to_52_week_high_pct": 12.0
     },
     "strategy_config": {
@@ -271,6 +271,7 @@
         }
     ],
     "exit_rules": {
+        "_priority_note": "O'Neil stop_loss_pct (8%) checked FIRST, then ATR stop (1.5x). Whichever is tighter triggers. In volatile stocks where 1.5x ATR > 8%, the 8% O'Neil stop fires first.",
         "targets": [
             {
                 "name": "Target 1",
@@ -283,6 +284,7 @@
                 "sell_percentage": 1.0
             }
         ],
+        "_target_priority_note": "O'Neil profit_target_pct (25%) checked FIRST. If hit, entire position closes. ATR targets are only reached if price hits them before 25% gain. Leader exception (20%+ gain in 8 weeks) skips normal targets and trails instead.",
         "atr_stop_multiplier": 1.5,
         "trail_stop_atr": 2.0,
         "time_stop_bars": 12,
@@ -355,7 +357,7 @@
             },
             {
                 "name": "Second Add",
-                "trigger_step_atr": 3.0,
+                "trigger_step_atr": 2.0,
                 "add_size_pct": 0.25
             }
         ],
@@ -382,7 +384,7 @@
     },
     "rsi_momentum_filter": {
         "enabled": true,
-        "min_rsi": 50,
+        "min_rsi": 60,
         "require_rising": false
     }
 }

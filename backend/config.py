@@ -103,7 +103,7 @@ RISK_MANAGEMENT = {
         "max_adds": 2,
         "steps": [
             {"name": "Add 1", "trigger_step_atr": 1.5, "add_size_pct": 0.5},
-            {"name": "Add 2", "trigger_step_atr": 1.5, "add_size_pct": 0.25},
+            {"name": "Add 2", "trigger_step_atr": 2.0, "add_size_pct": 0.25},
         ],
     },
 }
