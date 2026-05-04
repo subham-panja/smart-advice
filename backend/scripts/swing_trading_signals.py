@@ -19,12 +19,13 @@ class SwingTradingSignalAnalyzer:
     ) -> Dict[str, Any]:
         # Basic Setup
         gates_cfg = strategy_config["swing_trading_gates"]
-        t_cfg = gates_cfg["TREND_GATE"]["params"]
-        v_cfg = gates_cfg["VOLATILITY_GATE"]["params"]
-        vol_cfg = gates_cfg["VOLUME_GATE"]["params"]
+        t_cfg = gates_cfg.get("TREND_GATE", {}).get("params", {})
+        v_cfg = gates_cfg.get("VOLATILITY_GATE", {}).get("params", {})
+        vol_cfg = gates_cfg.get("VOLUME_GATE", {}).get("params", {})
 
-        sma_p = t_cfg["sma_period"]
-        if len(df) < max(sma_p, 100):
+        sma_p = t_cfg.get("sma_period", 50)
+        min_data = max(sma_p, 100)
+        if len(df) < min_data:
             return {
                 "symbol": symbol,
                 "all_gates_passed": False,
@@ -35,7 +36,7 @@ class SwingTradingSignalAnalyzer:
 
         # 1. GATE CHECKS (Hard Constraints)
         # -------------------------------
-        # Trend Gate
+        # Trend Gate (always required if present)
         adx_series = ta.ADX(df["High"], df["Low"], df["Close"], 14)
         adx = adx_series.iloc[-1]
         pdi, mdi = (
@@ -44,8 +45,11 @@ class SwingTradingSignalAnalyzer:
         )
         sma = ta.SMA(df["Close"], sma_p).iloc[-1]
 
-        trend_ok = adx > t_cfg["adx_min"] and pdi > mdi
-        if t_cfg.get("require_price_above_sma"):
+        trend_ok = adx > t_cfg["adx_min"]
+        # DI alignment check (optional - some strategies like HMA retracement may not need it)
+        if t_cfg.get("require_di_alignment", True):
+            trend_ok = trend_ok and pdi > mdi
+        if t_cfg.get("require_price_above_sma", True):
             trend_ok = trend_ok and c > sma
 
         # SMA Stack Check: 50 > 150 > 200 (Minervini/Weinstein requirement)
@@ -55,28 +59,31 @@ class SwingTradingSignalAnalyzer:
             sma200 = ta.SMA(df["Close"], 200).iloc[-1]
             trend_ok = trend_ok and (sma50 > sma150 > sma200)
 
-        # Volume Gate
-        v_mean = df["Volume"].tail(20).mean()
-        v_latest = df["Volume"].iloc[-1]
-        min_vol_ratio = vol_cfg.get("min_volume_ratio", 0.8)
-        vol_ok = v_latest >= v_mean * min_vol_ratio
+        # Volume Gate (respect enabled flag)
+        vol_ok = True  # Default pass if disabled
+        if gates_cfg.get("VOLUME_GATE", {}).get("enabled", False):
+            vol_cfg = gates_cfg["VOLUME_GATE"]["params"]
+            v_mean = df["Volume"].tail(20).mean()
+            v_latest = df["Volume"].iloc[-1]
+            min_vol_ratio = vol_cfg.get("min_volume_ratio", 0.8)
+            vol_ok = v_latest >= v_mean * min_vol_ratio
 
-        # OBV trend check (accumulation detection)
-        if "obv_trend_lookback" in vol_cfg:
-            obv_lookback = vol_cfg["obv_trend_lookback"]
-            obv = pd.Series(0.0, index=df.index)
-            for i in range(1, len(df)):
-                if df["Close"].iloc[i] > df["Close"].iloc[i - 1]:
-                    obv.iloc[i] = obv.iloc[i - 1] + df["Volume"].iloc[i]
-                elif df["Close"].iloc[i] < df["Close"].iloc[i - 1]:
-                    obv.iloc[i] = obv.iloc[i - 1] - df["Volume"].iloc[i]
-                else:
-                    obv.iloc[i] = obv.iloc[i - 1]
-            obv_recent = obv.tail(obv_lookback).dropna()
-            if len(obv_recent) >= 5:
-                x = np.arange(len(obv_recent))
-                slope = np.polyfit(x, obv_recent.values, 1)[0]
-                vol_ok = vol_ok and (slope > 0)
+            # OBV trend check (accumulation detection)
+            if "obv_trend_lookback" in vol_cfg:
+                obv_lookback = vol_cfg["obv_trend_lookback"]
+                obv = pd.Series(0.0, index=df.index)
+                for i in range(1, len(df)):
+                    if df["Close"].iloc[i] > df["Close"].iloc[i - 1]:
+                        obv.iloc[i] = obv.iloc[i - 1] + df["Volume"].iloc[i]
+                    elif df["Close"].iloc[i] < df["Close"].iloc[i - 1]:
+                        obv.iloc[i] = obv.iloc[i - 1] - df["Volume"].iloc[i]
+                    else:
+                        obv.iloc[i] = obv.iloc[i - 1]
+                obv_recent = obv.tail(obv_lookback).dropna()
+                if len(obv_recent) >= 5:
+                    x = np.arange(len(obv_recent))
+                    slope = np.polyfit(x, obv_recent.values, 1)[0]
+                    vol_ok = vol_ok and (slope > 0)
 
         # Volatility Gate - require ATR in range (not too low, not too high)
         volatility_ok = True
@@ -166,7 +173,7 @@ class SwingTradingSignalAnalyzer:
         strat_cfg = strategy_config["strategy_config"]
 
         # MACD
-        if strat_cfg["MACD_Signal_Crossover"]["enabled"]:
+        if strat_cfg.get("MACD_Signal_Crossover", {}).get("enabled", False):
             macd_cfg = strat_cfg["MACD_Signal_Crossover"]
             macd, macdsignal, histogram = ta.MACD(
                 df["Close"],
@@ -174,27 +181,12 @@ class SwingTradingSignalAnalyzer:
                 macd_cfg.get("slow_period", 26),
                 macd_cfg.get("signal_period", 9),
             )
-            macd_ok = macd.iloc[-1] > macdsignal.iloc[-1]
-
-            # Additional check: min histogram bars below zero (Nitin strategy)
-            min_bars_below = macd_cfg.get("min_histogram_bars_below_zero", 0)
-            if min_bars_below > 0:
-                bars_below = 0
-                for i in range(1, min(min_bars_below + 5, len(histogram))):
-                    if histogram.iloc[-i] < 0:
-                        bars_below += 1
-                    else:
-                        break
-                macd_ok = macd_ok and bars_below >= min_bars_below
-
-            # First green histogram requirement
-            if macd_cfg.get("require_first_green_histogram", False):
-                macd_ok = macd_ok and histogram.iloc[-1] > 0 and (len(histogram) < 2 or histogram.iloc[-2] <= 0)
-
-            signals["MACD"] = 1 if macd_ok else 0
+            # For signal scanning, just check MACD > Signal line
+            # Strict histogram checks (bars below zero, first green) are handled in entry patterns
+            signals["MACD"] = 1 if macd.iloc[-1] > macdsignal.iloc[-1] else 0
 
         # RSI
-        if strat_cfg["RSI_Overbought_Oversold"]["enabled"]:
+        if strat_cfg.get("RSI_Overbought_Oversold", {}).get("enabled", False):
             rsi = ta.RSI(df["Close"], 14).iloc[-1]
             signals["RSI"] = 1 if rsi > 50 else 0
 
@@ -209,17 +201,17 @@ class SwingTradingSignalAnalyzer:
             signals["RSI_Strength"] = 1 if rsi_short.iloc[-1] > rsi_wma.iloc[-1] else 0
 
         # Bollinger Bands
-        if strat_cfg["Bollinger_Band_Squeeze"]["enabled"]:
+        if strat_cfg.get("Bollinger_Band_Squeeze", {}).get("enabled", False):
             upper, middle, lower = ta.BBANDS(df["Close"], 20, 2, 2)
             signals["BBANDS"] = 1 if c > middle.iloc[-1] else 0
 
         # ADX Strength
-        if strat_cfg["ADX_Trend_Strength"]["enabled"]:
+        if strat_cfg.get("ADX_Trend_Strength", {}).get("enabled", False):
             signals["ADX_Strength"] = 1 if adx > strat_cfg["ADX_Trend_Strength"]["threshold"] else 0
 
         # Candlestick Patterns
         candle_pats = []
-        if strat_cfg["Candlestick_Patterns"]["enabled"]:
+        if strat_cfg.get("Candlestick_Patterns", {}).get("enabled", False):
             pat_cfg = strat_cfg["Candlestick_Patterns"]["patterns"]
             signals["Candlesticks"] = 0
 
@@ -473,7 +465,7 @@ class SwingTradingSignalAnalyzer:
             if name not in signals:
                 continue
 
-            is_bonus = strat_cfg[config_key].get("is_bonus", False)
+            is_bonus = strat_cfg.get(config_key, {}).get("is_bonus", False)
             if signals[name] == 0 and not is_bonus:
                 return {
                     "symbol": symbol,
