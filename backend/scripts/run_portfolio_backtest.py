@@ -47,13 +47,15 @@ def _compute_signals_worker(strategy_config, symbols_chunk):
     for symbol, df in symbols_chunk.items():
         symbol_signals = {}
         for date in df.index:
+            # Normalize date to tz-naive for consistent dict lookup in simulation
+            date_key = date.tz_localize(None) if date.tzinfo is not None else date
             hist = df.loc[:date]
             if len(hist) < 50:
                 continue
             try:
                 swing = analyzer.analyze_swing_opportunity(symbol, hist, strategy_config=strategy_config)
                 if swing.get("all_gates_passed") and swing.get("recommendation") == "BUY":
-                    symbol_signals[date] = {
+                    symbol_signals[date_key] = {
                         "score": swing.get("technical_score", 0.0),
                         "swing_result": swing,
                     }

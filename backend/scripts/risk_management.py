@@ -161,15 +161,30 @@ class RiskManager:
 
         # 4. Targets (Strictly from List)
         target_list = exit_rules["targets"]
-        targets = {
-            "T1": entry + (atr * target_list[0]["atr_multiplier"]),
-            "T2": entry + (atr * target_list[1]["atr_multiplier"]),
-        }
+        # Handle swing_structure targets - these are computed in the backtest engine,
+        # so we use ATR-based estimates here for RR validation but the actual exits
+        # use the swing high/low from price structure
+        is_swing_target = target_list[0].get("type") == "swing_structure"
+
+        if is_swing_target:
+            # For swing structure targets, use the previous swing high as target estimate
+            # Find recent swing high (highest high in last 20 bars)
+            swing_high = df["High"].tail(20).max()
+            t1_target = swing_high
+            t2_target = entry + (t1_target - entry) * 1.5  # T2 is 1.5x the T1 distance
+            targets = {"T1": t1_target, "T2": t2_target}
+        else:
+            t1_mult = target_list[0].get("atr_multiplier", 2.0)
+            t2_mult = target_list[1].get("atr_multiplier", 4.0) if len(target_list) > 1 else t1_mult * 2
+            targets = {
+                "T1": entry + (atr * t1_mult),
+                "T2": entry + (atr * t2_mult),
+            }
 
         # Validate Risk Reward
         min_rr = rec_thresholds["min_risk_reward_ratio"]
         reward = targets["T1"] - entry
-        rr_ratio = reward / risk_per_share
+        rr_ratio = reward / risk_per_share if risk_per_share > 0 else 0
         rr_ok = rr_ratio >= min_rr
 
         return {

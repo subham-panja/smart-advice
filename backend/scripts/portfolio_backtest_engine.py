@@ -320,6 +320,11 @@ class PortfolioBacktestSession:
         exits_today = self._process_exits(date, symbols_data)
         _ = sum(e.pnl for e in exits_today if e.pnl > 0)  # cash freed, may be used for recycling logic
 
+        # --- Phase 1b: Daily Active Rebalancing (if enabled) ---
+        rebal_cfg = self.strategy_config.get("exit_rules", {}).get("daily_active_rebalancing", {})
+        if rebal_cfg.get("enabled", False) and self.positions:
+            self._daily_active_rebalance(date, symbols_data, rebal_cfg)
+
         # --- Phase 2: Scan for New Signals ---
         candidates = self._scan_for_signals(date, symbols_data)
 
@@ -365,11 +370,13 @@ class PortfolioBacktestSession:
 
         # --- Phase 2: Use pre-computed signals for this date ---
         candidates = []
+        # Normalize date to tz-naive for dict lookup (worker stores tz-naive keys)
+        date_key = date.tz_localize(None) if date.tzinfo is not None else date
         for symbol, date_signals in precomputed_signals.items():
             if symbol in self.positions:
                 continue
-            if date in date_signals:
-                sig_data = date_signals[date]
+            if date_key in date_signals:
+                sig_data = date_signals[date_key]
                 candidates.append(
                     {
                         "symbol": symbol,
@@ -468,16 +475,55 @@ class PortfolioBacktestSession:
                         exits.append(trade)
                     continue
 
-                # 3. ATR Stop Loss
-                if current_price <= pos.current_stop_loss:
+                # 3. Stop Loss (ATR-based or swing_low)
+                stop_loss_type = exit_cfg.get("stop_loss_type", "ATR")
+                if stop_loss_type == "swing_low":
+                    # Calculate swing low from recent lows (last 20 bars)
+                    lookback = max(10, min(20, bars_held))
+                    recent_lows = df.loc[:date, "Low"].tail(lookback)
+                    swing_low = recent_lows.min()
+                    # Stop is placed slightly below swing low (2% buffer)
+                    swing_stop = swing_low * 0.98
+                    if current_price <= swing_stop:
+                        trade = self._close_position(symbol, date, current_price, f"SWING_LOW_STOP@{swing_low:.2f}")
+                        if trade:
+                            exits.append(trade)
+                        continue
+                    # Update trailing stop to swing low if it's higher
+                    if swing_stop > pos.current_stop_loss:
+                        pos.current_stop_loss = swing_stop
+                elif current_price <= pos.current_stop_loss:
                     trade = self._close_position(symbol, date, current_price, "STOP_LOSS")
                     if trade:
                         exits.append(trade)
                     continue
 
-                # 4. ATR Targets (with regime-adaptive T1 %)
+                # 4. ATR Targets or Swing High Target
                 targets = exit_cfg.get("targets", [])
-                if pos.current_target_idx < len(targets):
+                # Check if first target uses swing_structure type
+                if targets and targets[0].get("type") == "swing_structure" and pos.current_target_idx == 0:
+                    # Swing high target - use recent high as exit target
+                    lookback = max(10, min(20, bars_held + 10))
+                    recent_highs = df.loc[:date, "High"].tail(lookback)
+                    swing_high = recent_highs.max()
+                    if current_price >= swing_high:
+                        sell_pct = targets[0].get("sell_percentage", 1.0)
+                        sell_qty = int(pos.quantity * sell_pct)
+                        if sell_qty > 0 and sell_pct < 1.0:
+                            trade = self._partial_sell(symbol, date, current_price, sell_qty, pos, "SWING_HIGH")
+                            if trade:
+                                exits.append(trade)
+                            pos.quantity -= sell_qty
+                            pos.current_target_idx += 1
+                            if pos.quantity <= 0:
+                                symbols_to_remove.append(symbol)
+                            continue
+                        elif sell_pct >= 1.0:
+                            trade = self._close_position(symbol, date, current_price, "SWING_HIGH_TARGET")
+                            if trade:
+                                exits.append(trade)
+                            continue
+                elif pos.current_target_idx < len(targets):
                     target_cfg = targets[pos.current_target_idx].copy()
                     # Override sell percentage with regime-adaptive value for T1
                     if pos.current_target_idx == 0:
@@ -534,6 +580,67 @@ class PortfolioBacktestSession:
                 del self.positions[sym]
 
         return exits
+
+    def _daily_active_rebalance(self, date: pd.Timestamp, symbols_data: Dict[str, pd.DataFrame], rebal_cfg: dict):
+        """Daily active rebalancing: sell top gainers, buy bottom losers.
+
+        Sells partial positions that gained > threshold and uses freed capital
+        to add to positions that dropped > threshold (buy the dip).
+        """
+        top_gainer_pct = rebal_cfg.get("top_gainer_threshold_pct", 3.0)
+        sell_pct = rebal_cfg.get("sell_amount_of_remaining_position_pct", 10.0) / 100.0
+        bottom_loser_pct = rebal_cfg.get("bottom_loser_threshold_pct", -3.0)
+        buy_pct = rebal_cfg.get("buy_amount_with_freed_capital_pct", 10.0) / 100.0
+
+        # Calculate PnL for each position
+        position_pnl = []
+        for symbol, pos in self.positions.items():
+            df = symbols_data.get(symbol)
+            if df is None or date not in df.index:
+                continue
+            current_price = df.loc[date, "Close"]
+            pnl_pct = (current_price - pos.entry_price) / pos.entry_price * 100
+            position_pnl.append((symbol, pos, current_price, pnl_pct))
+
+        # Sort by PnL
+        position_pnl.sort(key=lambda x: x[3], reverse=True)
+
+        freed_capital = 0.0
+
+        # Sell partial from top gainers
+        for symbol, pos, current_price, pnl_pct in position_pnl:
+            if pnl_pct >= top_gainer_pct:
+                sell_qty = max(1, int(pos.quantity * sell_pct))
+                if sell_qty < pos.quantity:
+                    trade = self._partial_sell(symbol, date, current_price, sell_qty, pos, "REBALANCE_SELL")
+                    if trade:
+                        freed_capital += trade.filled_price * sell_qty
+                        logger.info(
+                            f"🔄 REBALANCE: Sold {sell_qty} of {symbol} (+{pnl_pct:.1f}%) | Freed ₹{freed_capital:.0f}"
+                        )
+                    pos.quantity -= sell_qty
+
+        # Buy more of bottom losers with freed capital
+        position_pnl.sort(key=lambda x: x[3])  # Sort by lowest PnL first
+        for symbol, pos, current_price, pnl_pct in position_pnl:
+            if pnl_pct <= bottom_loser_pct and freed_capital > 0:
+                buy_amount = freed_capital * buy_pct
+                if buy_amount > 0 and current_price > 0:
+                    buy_qty = int(buy_amount / current_price)
+                    if buy_qty > 0:
+                        cost = buy_qty * current_price
+                        brokerage = cost * self.brokerage
+                        total_cost = cost + brokerage
+                        if total_cost <= freed_capital:
+                            # Add to existing position
+                            pos.quantity += buy_qty
+                            # Update average entry price
+                            total_investment = pos.entry_price * (pos.quantity - buy_qty) + cost
+                            pos.entry_price = total_investment / pos.quantity
+                            freed_capital -= total_cost
+                            logger.info(
+                                f"🔄 REBALANCE: Added {buy_qty} to {symbol} ({pnl_pct:.1f}%) | Avg entry: ₹{pos.entry_price:.2f}"
+                            )
 
     def _scan_for_signals(self, date: pd.Timestamp, symbols_data: Dict[str, pd.DataFrame]) -> List[dict]:
         """Scan stocks without open positions for BUY signals."""

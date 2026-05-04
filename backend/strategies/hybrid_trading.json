@@ -6,7 +6,7 @@
         "fundamental_analysis": true,
         "sentiment_analysis": false,
         "sector_analysis": true,
-        "market_regime_detection": true,
+        "market_regime_detection": false,
         "individual_stock_backtest": false,
         "options_oi": true
     },
@@ -91,8 +91,8 @@
         }
     ],
     "recommendation_thresholds": {
-        "buy_combined": 0.30,
-        "technical_minimum": 0.2,
+        "buy_combined": 0.40,
+        "technical_minimum": 0.3,
         "fundamental_minimum": 0.1,
         "min_risk_reward_ratio": 1.2,
         "min_backtest_return": -10.0,
@@ -151,7 +151,7 @@
             "sma_slow": 50
         },
         "Volume_Breakout": {
-            "enabled": true,
+            "enabled": false,
             "is_bonus": false,
             "period": 20,
             "threshold": 1.5,
@@ -212,7 +212,7 @@
             "name": "pullback_to_ema",
             "enabled": true,
             "ema_period": 21,
-            "rsi_range": [40, 70],
+            "rsi_range": [50, 70],
             "bullish_candle_required": true,
             "max_distance_pct": 3.0
         },
@@ -266,21 +266,21 @@
         "targets": [
             {
                 "name": "Target 1",
-                "atr_multiplier": 2.0,
+                "atr_multiplier": 3.0,
                 "sell_percentage": 0.25
             },
             {
                 "name": "Target 2",
-                "atr_multiplier": 4.0,
+                "atr_multiplier": 5.0,
                 "sell_percentage": 1.0
             }
         ],
         "_target_priority_note": "O'Neil profit_target_pct (25%) checked FIRST. If hit, entire position closes. ATR targets are only reached if price hits them before 25% gain. Leader exception (20%+ gain in 8 weeks) skips normal targets and trails instead.",
         "atr_stop_multiplier": 1.5,
-        "trail_stop_atr": 1.5,
-        "time_stop_bars": 15,
+        "trail_stop_atr": 2.0,
+        "time_stop_bars": 20,
         "breakeven_at_target_1": true,
-        "max_daily_loss_pct": 5.0,
+        "max_daily_loss_pct": 10.0,
         "leader_exception": {
             "enabled": true,
             "min_gain_pct": 20.0,
@@ -303,7 +303,7 @@
                 "trail_stop_type": "ma",
                 "trail_stop_atr_multiplier": 1.5,
                 "trail_stop_ma_period": 10,
-                "time_stop_bars": 12,
+                "time_stop_bars": 15,
                 "pyramiding_allowed": false,
                 "oneil_target_pct": 15.0,
                 "stop_loss_pct": 5.0
@@ -317,8 +317,8 @@
         }
     },
     "risk_management": {
-        "risk_per_trade_pct": 2.0,
-        "max_risk_per_trade_pct": 2.5,
+        "risk_per_trade_pct": 1.0,
+        "max_risk_per_trade_pct": 2.0,
         "max_position_pct": 10.0,
         "max_positions": 10,
         "stop_loss_type": "ATR",
