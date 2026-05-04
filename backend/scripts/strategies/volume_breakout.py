@@ -35,6 +35,8 @@ class Volume_Breakout(BaseStrategy):
         super().__init__(params)
         self.name = "Volume_Breakout"
         self.description = "Volume-confirmed breakout above resistance or below support"
+        self.threshold = self.get_parameter("threshold", 2.0)
+        self.regime_override = self.get_parameter("regime_override", None)
 
     def calculate_signals(self, data: pd.DataFrame) -> pd.DataFrame:
         """
@@ -71,9 +73,16 @@ class Volume_Breakout(BaseStrategy):
             data["atr"] = data[["high_low", "high_close", "low_close"]].max(axis=1)
             data["atr_14"] = data["atr"].rolling(window=14, min_periods=7).mean()
 
-            # Vectorized operations replace the slow iterative loop
-            # Volume condition: at least 2x average volume
-            volume_spike = data["Volume"] >= (data["volume_ma_20"] * 2.0)
+            # Determine volume threshold based on regime
+            current_threshold = self.threshold
+            if self.regime_override:
+                # Regime is determined by the caller and passed via params
+                regime = self.get_parameter("current_regime", "bull")
+                if regime in self.regime_override:
+                    current_threshold = self.regime_override[regime]
+
+            # Volume condition: at least threshold x average volume
+            volume_spike = data["Volume"] >= (data["volume_ma_20"] * current_threshold)
 
             # Daily range positioning
             daily_range = data["High"] - data["Low"]

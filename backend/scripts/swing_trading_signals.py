@@ -122,6 +122,15 @@ class SwingTradingSignalAnalyzer:
                         weekly_rsi = ta.RSI(weekly_data["Close"], 14)
                         if weekly_rsi.iloc[-1] < rsi_alignment_min:
                             mtf_ok = False
+
+                        # VWAP confirmation - stock should be above VWAP (institutional accumulation)
+                        if mtf_cfg.get("vwap_confirmation", False):
+                            typical_price = (df["High"] + df["Low"] + df["Close"]) / 3
+                            cumulative_vp = (typical_price * df["Volume"]).rolling(20, min_periods=10).sum()
+                            cumulative_vol = df["Volume"].rolling(20, min_periods=10).sum()
+                            vwap = cumulative_vp / cumulative_vol
+                            if not vwap.empty and df["Close"].iloc[-1] < vwap.iloc[-1]:
+                                mtf_ok = False
                 except Exception as e:
                     logger.debug(f"MTF_GATE check failed for {symbol}: {e}")
                     mtf_ok = False  # Fail safe - if MTF check fails, gate fails

@@ -337,6 +337,29 @@ class BacktraderStrategy(bt.Strategy, metaclass=BacktraderStrategyMeta):
                     logger.info(f"📉 {self.symbol}: Trailing SL updated {self.current_stop_loss:.2f} → {new_sl:.2f}")
                     self.current_stop_loss = new_sl
 
+            # 5b. RSI Divergence Exit (bearish divergence: price HH but RSI LH)
+            rsi_div_cfg = exit_cfg.get("rsi_divergence_exit", {})
+            if rsi_div_cfg.get("enabled", False) and not hasattr(self, "_rsi_div_exit_triggered"):
+                lookback = rsi_div_cfg.get("lookback_bars", 10)
+                if len(close) >= lookback:
+                    rsi_values = ta.RSI(pd.Series(close), 14)
+                    recent_rsi = rsi_values.iloc[-lookback:]
+                    recent_prices = pd.Series(close).iloc[-lookback:]
+
+                    price_high_idx = recent_prices.idxmax()
+                    rsi_at_high = recent_rsi.iloc[price_high_idx - recent_prices.index[0]]
+                    recent_rsi_high = recent_rsi.iloc[-5:].max()
+
+                    if recent_prices.iloc[-1] >= recent_prices.max() * 0.99 and recent_rsi_high < rsi_at_high:
+                        partial_pct = rsi_div_cfg.get("partial_exit_pct", 0.5)
+                        qty_to_sell = int(self.position.size * partial_pct)
+                        if qty_to_sell > 0:
+                            self.sell(size=qty_to_sell)
+                            self._rsi_div_exit_triggered = True
+                            logger.info(
+                                f"⚠️ {self.symbol}: RSI bearish divergence exit | Sold {qty_to_sell} ({partial_pct*100:.0f}%)"
+                            )
+
             # 6. Pyramiding (regime-controlled)
             self._check_pyramid(current_price, atr)
 

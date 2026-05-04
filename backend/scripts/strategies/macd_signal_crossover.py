@@ -25,6 +25,9 @@ class MACD_Signal_Crossover(BaseStrategy):
         self.fast_period = self.get_parameter("fast_period", 12)
         self.slow_period = self.get_parameter("slow_period", 26)
         self.signal_period = self.get_parameter("signal_period", 9)
+        self.check_divergence = self.get_parameter("check_divergence", False)
+        self.divergence_bars = self.get_parameter("divergence_bars", 10)
+        self.block_on_bearish_divergence = self.get_parameter("block_on_bearish_divergence", False)
 
     def _execute_strategy_logic(self, data: pd.DataFrame, symbol: str = "UNKNOWN") -> int:
         """
@@ -58,6 +61,27 @@ class MACD_Signal_Crossover(BaseStrategy):
             previous_macd = macd_line[-2]
             previous_signal = signal_line[-2]
             current_histogram = histogram[-1]
+
+            # Check for bearish divergence (price makes higher high but MACD makes lower high)
+            if self.check_divergence:
+                lookback = min(self.divergence_bars, len(close_prices))
+                if lookback >= 5:
+                    recent_closes = close_prices[-lookback:]
+
+                    # Find price high and corresponding MACD high
+                    price_high_idx = recent_closes.argmax()
+                    macd_at_high = macd_line[-lookback + price_high_idx]
+
+                    # Check if there's a more recent lower MACD high
+                    if price_high_idx < lookback - 1:
+                        later_macd_highs = macd_line[-lookback + price_high_idx + 1 : -1]
+                        if len(later_macd_highs) > 0 and later_macd_highs.max() < macd_at_high:
+                            if self.block_on_bearish_divergence:
+                                reason = "BLOCKED: Bearish MACD divergence detected (price HH but MACD LH)"
+                                self.log_signal(-1, reason, data, symbol=symbol)
+                                return -1
+                            else:
+                                self.logger.debug(f"[{symbol}] Bearish MACD divergence warning (not blocking)")
 
             # Buy signal: MACD crosses above signal line
             if previous_macd <= previous_signal and current_macd > current_signal:
