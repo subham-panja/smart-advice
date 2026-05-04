@@ -134,40 +134,90 @@
         }
     ],
     "rsi_momentum_filter": {
-        "min_rsi": 35,
-        "require_rising": false
+        "min_rsi": 45,
+        "require_rising": true
     },
     "exit_rules": {
         "_priority_note": "Target is the previous major swing high. Stop loss is the previous swing low. Strategy heavily relies on active daily rebalancing.",
         "targets": [
             {
-                "name": "Previous Swing High",
+                "name": "Swing High (Partial)",
                 "type": "swing_structure",
+                "sell_percentage": 0.5
+            },
+            {
+                "name": "ATR Runner",
+                "atr_multiplier": 5.0,
                 "sell_percentage": 1.0
             }
         ],
         "stop_loss_type": "swing_low",
         "atr_stop_multiplier": 2.0,
         "trail_stop_atr": 2.0,
-        "time_stop_bars": 60,
-        "breakeven_at_target_1": false,
+        "time_stop_bars": 40,
+        "breakeven_at_target_1": true,
+        "max_daily_loss_pct": 5.0,
         "daily_active_rebalancing": {
             "enabled": true,
-            "top_gainer_threshold_pct": 3.0,
-            "sell_amount_of_remaining_position_pct": 10.0,
-            "bottom_loser_threshold_pct": -3.0,
-            "buy_amount_with_freed_capital_pct": 10.0
+            "top_gainer_threshold_pct": 5.0,
+            "sell_amount_of_remaining_position_pct": 20.0,
+            "bottom_loser_threshold_pct": -5.0,
+            "buy_amount_with_freed_capital_pct": 0.0
+        },
+        "regime_adaptive_exits": {
+            "bull": {
+                "t1_sell_percentage": 0.5,
+                "trail_stop_type": "atr",
+                "trail_stop_atr_multiplier": 2.5,
+                "trail_stop_ma_period": 20,
+                "time_stop_bars": 40,
+                "pyramiding_allowed": true,
+                "oneil_target_pct": 30.0,
+                "stop_loss_pct": 8.0
+            },
+            "bear": {
+                "t1_sell_percentage": 1.0,
+                "trail_stop_type": "ma",
+                "trail_stop_atr_multiplier": 1.0,
+                "trail_stop_ma_period": 10,
+                "time_stop_bars": 10,
+                "pyramiding_allowed": false,
+                "oneil_target_pct": 12.0,
+                "stop_loss_pct": 5.0
+            }
+        },
+        "leader_exception": {
+            "enabled": true,
+            "min_gain_pct": 20.0,
+            "max_weeks": 8,
+            "action": "hold_and_trail"
         }
     },
     "risk_management": {
-        "risk_per_trade_pct": 2.0,
-        "max_risk_per_trade_pct": 2.5,
-        "max_position_pct": 10.0,
-        "max_positions": 20,
+        "risk_per_trade_pct": 1.0,
+        "max_risk_per_trade_pct": 1.5,
+        "max_position_pct": 8.0,
+        "max_positions": 8,
         "stop_loss_type": "swing_low",
         "position_sizing": "risk_based",
         "volatility_scaling": {
-            "enabled": false
+            "enabled": true,
+            "atr_lookback_days": 100,
+            "low_volatility_percentile": 25,
+            "high_volatility_percentile": 75,
+            "min_risk_multiplier": 0.5
+        },
+        "regime_adaptive_risk": {
+            "bull": {
+                "risk_per_trade_pct": 1.0,
+                "max_positions": 8,
+                "stop_loss_pct": 8.0
+            },
+            "bear": {
+                "risk_per_trade_pct": 0.5,
+                "max_positions": 3,
+                "stop_loss_pct": 5.0
+            }
         }
     },
     "pyramiding": {
@@ -179,7 +229,7 @@
                 "add_size_from_cash_pool_pct": 10.0
             }
         ],
-        "regime_controlled": false
+        "regime_controlled": true
     },
     "fundamental_config": {
         "min_roce": 15.0,
