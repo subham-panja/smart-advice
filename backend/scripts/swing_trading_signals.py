@@ -167,13 +167,46 @@ class SwingTradingSignalAnalyzer:
 
         # MACD
         if strat_cfg["MACD_Signal_Crossover"]["enabled"]:
-            macd, macdsignal, _ = ta.MACD(df["Close"], 12, 26, 9)
-            signals["MACD"] = 1 if macd.iloc[-1] > macdsignal.iloc[-1] else 0
+            macd_cfg = strat_cfg["MACD_Signal_Crossover"]
+            macd, macdsignal, histogram = ta.MACD(
+                df["Close"],
+                macd_cfg.get("fast_period", 12),
+                macd_cfg.get("slow_period", 26),
+                macd_cfg.get("signal_period", 9),
+            )
+            macd_ok = macd.iloc[-1] > macdsignal.iloc[-1]
+
+            # Additional check: min histogram bars below zero (Nitin strategy)
+            min_bars_below = macd_cfg.get("min_histogram_bars_below_zero", 0)
+            if min_bars_below > 0:
+                bars_below = 0
+                for i in range(1, min(min_bars_below + 5, len(histogram))):
+                    if histogram.iloc[-i] < 0:
+                        bars_below += 1
+                    else:
+                        break
+                macd_ok = macd_ok and bars_below >= min_bars_below
+
+            # First green histogram requirement
+            if macd_cfg.get("require_first_green_histogram", False):
+                macd_ok = macd_ok and histogram.iloc[-1] > 0 and (len(histogram) < 2 or histogram.iloc[-2] <= 0)
+
+            signals["MACD"] = 1 if macd_ok else 0
 
         # RSI
         if strat_cfg["RSI_Overbought_Oversold"]["enabled"]:
             rsi = ta.RSI(df["Close"], 14).iloc[-1]
             signals["RSI"] = 1 if rsi > 50 else 0
+
+        # RSI Strength Cross (Nitin strategy)
+        if strat_cfg.get("RSI_Strength_Cross", {}).get("enabled", False):
+            rsi_cfg = strat_cfg["RSI_Strength_Cross"]
+            rsi_period = rsi_cfg.get("rsi_period", 9)
+            wma_period = rsi_cfg.get("slow_wma_period", 21)
+            rsi_short = ta.RSI(df["Close"], rsi_period)
+            rsi_wma = ta.WMA(rsi_short, wma_period)
+            # RSI should be above its WMA (bullish momentum)
+            signals["RSI_Strength"] = 1 if rsi_short.iloc[-1] > rsi_wma.iloc[-1] else 0
 
         # Bollinger Bands
         if strat_cfg["Bollinger_Band_Squeeze"]["enabled"]:
@@ -344,6 +377,69 @@ class SwingTradingSignalAnalyzer:
                                 entry_signals[pat_name] = 1
                         else:
                             entry_signals[pat_name] = 1
+
+            elif pat_name == "triple_confirm_hma_retracement":
+                # Triple Confirm HMA Retracement Entry
+                # 1. HMA(30) > HMA(44) - uptrend
+                # 2. Price between or above HMA(30) and HMA(44) - retracement zone
+                # 3. MACD histogram turning positive (momentum shift)
+                # 4. RSI WMA cross above threshold (momentum confirmation)
+                hma_fast_period = pat.get("hma_fast", 30)
+                hma_slow_period = pat.get("hma_slow", 44)
+                price_zone = pat.get("price_zone_requirement", "between_or_above_hma")
+
+                if len(df) >= hma_slow_period + 10:
+                    # Calculate HMA (Hull Moving Average)
+                    def calc_hma(series, period):
+                        half_period = period // 2
+                        sqrt_period = int(period**0.5)
+                        ema_half = ta.EMA(series, half_period)
+                        ema_full = ta.EMA(series, period)
+                        diff = 2 * ema_half - ema_full
+                        return ta.EMA(diff, sqrt_period)
+
+                    hma_fast = calc_hma(df["Close"], hma_fast_period)
+                    hma_slow = calc_hma(df["Close"], hma_slow_period)
+
+                    hma_f = hma_fast.iloc[-1]
+                    hma_s = hma_slow.iloc[-1]
+
+                    # 1. HMA alignment - fast above slow (uptrend)
+                    if hma_f <= hma_s:
+                        entry_signals[pat_name] = 0
+                    else:
+                        # 2. Price zone check
+                        price_zone_ok = False
+                        if price_zone == "between_or_above_hma":
+                            price_zone_ok = hma_s <= c <= hma_f * 1.02 or c > hma_f
+                        elif price_zone == "near_hma_fast":
+                            price_zone_ok = abs(c - hma_f) / hma_f < 0.02
+
+                        if not price_zone_ok:
+                            entry_signals[pat_name] = 0
+                        else:
+                            # 3. MACD confirmation (if required)
+                            macd_confirmed = True
+                            if pat.get("macd_confirmed", False):
+                                macd_line, signal_line, histogram = ta.MACD(df["Close"], 21, 39, 9)
+                                # Histogram should be turning positive or already positive
+                                macd_confirmed = histogram.iloc[-1] > 0 or (
+                                    histogram.iloc[-1] > histogram.iloc[-2] and histogram.iloc[-2] < 0
+                                )
+
+                            if not macd_confirmed:
+                                entry_signals[pat_name] = 0
+                            else:
+                                # 4. RSI WMA confirmation (if required)
+                                rsi_wma_confirmed = True
+                                if pat.get("rsi_wma_confirmed", False):
+                                    rsi_9 = ta.RSI(df["Close"], 9)
+                                    rsi_wma = ta.WMA(rsi_9, 21)
+                                    # RSI should be above its WMA (momentum positive)
+                                    rsi_wma_confirmed = rsi_9.iloc[-1] > rsi_wma.iloc[-1]
+
+                                if rsi_wma_confirmed:
+                                    entry_signals[pat_name] = 1
 
         # Add entry patterns to signals
         signals.update(entry_signals)

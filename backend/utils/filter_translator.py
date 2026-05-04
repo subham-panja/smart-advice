@@ -40,6 +40,18 @@ class FilterTranslator:
                 period = f["period"]
                 target = f["target"].lower()
                 op = f["op"]
+
+                # Skip HMA (Hull Moving Average) - Chartink doesn't support it
+                # These are local evaluation filters only
+                if kind == "hma":
+                    logger.debug(f"Skipping HMA filter (op={op}) - not supported by Chartink, evaluated locally")
+                    continue
+
+                # Skip 'monitor' op - this is a local monitoring filter, not a Chartink scan filter
+                if op == "monitor":
+                    logger.debug("Skipping moving_average monitor filter - evaluated locally in swing signals")
+                    continue
+
                 clauses.append(f"latest {target} {op} latest {kind}( close,{period} )")
 
             elif f_type == "volume_spike_lookup":
@@ -55,6 +67,9 @@ class FilterTranslator:
                 clauses.append(f"( {' or '.join(spike_clauses)} )")
 
         if not clauses:
-            raise ValueError("No valid filters provided for Chartink translation.")
+            # All filters were local-only (HMA, monitor, etc.)
+            # Return a minimal valid query that passes all cash stocks
+            logger.warning("No Chartink-compatible filters found. Using minimal scan clause.")
+            return "( {cash} ( latest close > 0 ) )"
 
         return f"( {{cash}} ( {' and '.join(clauses)} ) )"
