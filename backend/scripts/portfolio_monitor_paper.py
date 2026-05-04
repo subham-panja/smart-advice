@@ -54,6 +54,24 @@ class PortfolioMonitor:
             entry_date = pos["entry_date"]
             current_sl = pos.get("current_stop_loss", pos["stop_loss"])
 
+            # Correct entry price to opening price if position is from a previous day
+            entry_date_obj = entry_date.date() if hasattr(entry_date, "date") else entry_date
+            today_date = datetime.now().date()
+            if entry_date_obj < today_date:
+                entry_row = data[data.index.date == entry_date_obj]
+                if not entry_row.empty:
+                    open_price = round(entry_row["Open"].iloc[0], 2)
+                    if abs(open_price - entry_price) > 0.01:
+                        logger.info(
+                            f"📊 ENTRY PRICE CORRECTION: {symbol} | "
+                            f"Old: ₹{entry_price:.2f} → New (Open): ₹{open_price:.2f}"
+                        )
+                        update_position(
+                            symbol,
+                            {"entry_price": open_price, "total_investment": round(open_price * pos["quantity"], 2)},
+                        )
+                        entry_price = open_price
+
             # Update Live Price in DB for Telegram PnL
             update_position(symbol, {"current_price": current_price})
 

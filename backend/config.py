@@ -100,7 +100,7 @@ PORTFOLIO_BACKTEST_CONFIG = {
     "save_daily_snapshots": True,
     "same_day_cash_recycling": True,
     "force_close_delisted": True,
-    "auto_run_on_cycle": True,
+    "auto_run_on_cycle": False,
     "auto_run_max_stocks": 1000,
     "walk_forward": {
         "enabled": False,
@@ -127,3 +127,7 @@ DATA_CACHE_CONFIG = {
 
 # GLOBAL POSITION MANAGEMENT
 PYRAMID_COUNTS_AS_NEW_POSITION = False
+
+# VOLUME & EPISODIC CONFIGURATION
+EPISODIC_PIVOT_MODE = False  # When True, allows dry volume entries without volume spike confirmation
+VOLUME_SPIKE_THRESHOLD = 1.5  # Minimum volume factor required for signal confirmation (multiplier of average)

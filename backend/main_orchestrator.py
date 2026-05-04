@@ -132,11 +132,31 @@ def run_trading_cycle():
         slots_left = max_pos - len(open_positions)
         executed_count = 0
 
+        # Calculate remaining capital to enforce hard cap
+        total_invested = sum(p.get("total_investment", 0) for p in open_positions)
+        initial_capital = trading_opts.get("initial_capital", 100000.0)
+        remaining_capital = initial_capital - total_invested
+        logger.info(
+            "Capital Check: ₹{:.2f} invested / ₹{:.2f} total | ₹{:.2f} remaining".format(
+                total_invested, initial_capital, remaining_capital
+            )
+        )
+
         for r in recs:
             if executed_count >= slots_left:
                 break
 
             symbol = r["symbol"]
+            trade_cost = r["buy_price"] * r["suggested_quantity"]
+
+            # Hard cap check: skip if trade would exceed remaining capital
+            if trade_cost > remaining_capital:
+                logger.warning(
+                    "Insufficient capital for {}: need ₹{:.2f}, have ₹{:.2f} remaining".format(
+                        symbol, trade_cost, remaining_capital
+                    )
+                )
+                continue
 
             if trading_opts.get("auto_execute", True) or is_paper:
                 success = engine.execute_buy(
@@ -150,7 +170,12 @@ def run_trading_cycle():
                 )
                 if success:
                     executed_count += 1
-                    logger.info("Successfully executed BUY for %s (%s)" % (symbol, strat_name))
+                    remaining_capital -= trade_cost
+                    logger.info(
+                        "Successfully executed BUY for {} ({}) | Remaining capital: ₹{:.2f}".format(
+                            symbol, strat_name, remaining_capital
+                        )
+                    )
 
         print("   Executed %d trades for %s" % (executed_count, strat_name))
 

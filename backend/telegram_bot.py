@@ -107,7 +107,7 @@ def view_recs(m, today=False):
         quantity = r.get("suggested_quantity", 1)
 
         # Calculate sizing for the message
-        initial_cap = 100000.0  # Default, loaded from strategy in view_positions
+        initial_cap = config.TRADING_OPTIONS.get("initial_capital", 100000.0)
         buy_price = r.get("buy_price", 0)
         sell_price = r.get("sell_price", 0)
         stop_loss = r.get("stop_loss", 0)
@@ -174,7 +174,7 @@ def view_positions(m):
 
     total_mkt_val = 0
     total_pnl_val = 0
-    initial_cap = 100000.0
+    initial_cap = config.TRADING_OPTIONS.get("initial_capital", 100000.0)
 
     for p in positions:
         current_p = p.get("current_price", p["entry_price"])
