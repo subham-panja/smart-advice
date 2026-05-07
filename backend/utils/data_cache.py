@@ -52,6 +52,7 @@ def _period_to_start_date(period: str, reference_date: pd.Timestamp = None) -> p
         "1y": pd.DateOffset(years=1),
         "2y": pd.DateOffset(years=2),
         "3y": pd.DateOffset(years=3),
+        "4y": pd.DateOffset(years=4),
         "5y": pd.DateOffset(years=5),
         "10y": pd.DateOffset(years=10),
         "20y": pd.DateOffset(years=20),
