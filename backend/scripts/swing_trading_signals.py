@@ -83,7 +83,8 @@ class SwingTradingSignalAnalyzer:
                 if len(obv_recent) >= 5:
                     x = np.arange(len(obv_recent))
                     slope = np.polyfit(x, obv_recent.values, 1)[0]
-                    vol_ok = vol_ok and (slope > 0)
+                    if vol_cfg.get("obv_required", True):
+                        vol_ok = vol_ok and (slope > 0)
 
         # Volatility Gate - require ATR in range (not too low, not too high)
         volatility_ok = True

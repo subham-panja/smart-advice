@@ -614,7 +614,7 @@ class PortfolioBacktestSession:
                 if sell_qty < pos.quantity:
                     trade = self._partial_sell(symbol, date, current_price, sell_qty, pos, "REBALANCE_SELL")
                     if trade:
-                        freed_capital += trade.filled_price * sell_qty
+                        freed_capital += trade.exit_price * sell_qty
                         logger.info(
                             f"🔄 REBALANCE: Sold {sell_qty} of {symbol} (+{pnl_pct:.1f}%) | Freed ₹{freed_capital:.0f}"
                         )
