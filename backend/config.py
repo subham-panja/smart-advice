@@ -116,7 +116,6 @@ DATA_CACHE_CONFIG = {
     "enabled": True,
     "format": "parquet",
     "cache_dir": os.path.join(BACKEND_DIR, "data", "historical"),
-    "staleness_hours": 24,
     "periods": {
         "analysis": "2y",
         "backtest": "5y",

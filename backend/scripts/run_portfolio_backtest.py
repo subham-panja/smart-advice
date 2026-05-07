@@ -127,10 +127,8 @@ def _walk_forward_mc_worker(args):
 
 
 def fetch_symbols_data(symbols: Dict[str, str], period: str = "5y", verbose: bool = False) -> Dict[str, pd.DataFrame]:
-    """Fetch historical data for all symbols using parquet cache."""
-    # Get staleness from strategy config if available, default 24h
-    staleness_hours = 24
-    return fetch_multiple_symbols_cached(symbols, period=period, staleness_hours=staleness_hours, verbose=verbose)
+    """Fetch historical data for all symbols using incremental parquet cache."""
+    return fetch_multiple_symbols_cached(symbols, period=period, verbose=verbose)
 
 
 def run_portfolio_backtest(
