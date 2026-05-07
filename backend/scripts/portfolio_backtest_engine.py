@@ -300,7 +300,7 @@ class PortfolioBacktestSession:
         # Check max daily loss circuit breaker
         exit_cfg = self.strategy_config.get("exit_rules", {})
         max_daily_loss_pct = exit_cfg.get("max_daily_loss_pct", None)
-        if max_daily_loss_pct and self.daily_snapshots:
+        if max_daily_loss_pct and self.daily_snapshots and self.positions:
             prev_value = self.daily_snapshots[-1]["portfolio_value"]
             curr_value = self._current_portfolio_value(symbols_data, date)
             daily_loss_pct = ((curr_value - prev_value) / prev_value) * 100
@@ -350,7 +350,7 @@ class PortfolioBacktestSession:
         # Check max daily loss circuit breaker
         exit_cfg = self.strategy_config.get("exit_rules", {})
         max_daily_loss_pct = exit_cfg.get("max_daily_loss_pct", None)
-        if max_daily_loss_pct and self.daily_snapshots:
+        if max_daily_loss_pct and self.daily_snapshots and self.positions:
             prev_value = self.daily_snapshots[-1]["portfolio_value"]
             curr_value = self._current_portfolio_value(symbols_data, date)
             daily_loss_pct = ((curr_value - prev_value) / prev_value) * 100
