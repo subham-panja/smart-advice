@@ -1073,10 +1073,18 @@ class PortfolioBacktestSession:
         final_value = self.daily_snapshots[-1]["portfolio_value"] if self.daily_snapshots else self.cash
         total_return_pct = ((final_value - self.initial_capital) / self.initial_capital) * 100
 
-        # CAGR
+        # CAGR — only meaningful for periods >= 1 year.
+        # For shorter windows, report a linear annualized return instead of
+        # compounding (which inflates short-term returns unrealistically).
         days = (common_dates[-1] - common_dates[0]).days
         years = days / 365.25
-        cagr = ((final_value / self.initial_capital) ** (1 / years) - 1) * 100 if years > 0.1 else 0.0
+        if years >= 1.0:
+            cagr = ((final_value / self.initial_capital) ** (1 / years) - 1) * 100
+            annualized_return = cagr
+        else:
+            # Linear annualization: return * (1 / years)
+            annualized_return = total_return_pct / years if years > 0.01 else 0.0
+            cagr = annualized_return  # keep cagr field for compatibility
 
         # Max Drawdown
         max_dd_pct = min((s["drawdown_from_peak_pct"] for s in self.daily_snapshots), default=0)
