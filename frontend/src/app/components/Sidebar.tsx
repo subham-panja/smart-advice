@@ -151,7 +151,7 @@ const Sidebar = () => {
                 </div>
                 {isExpanded && !isCollapsed && (
                   <ul className="pl-8 mt-1 space-y-1">
-                    {item.submenu.map((subItem) => {
+                    {item.submenu?.map((subItem) => {
                       const SubIcon = subItem.icon;
                       const isSubActive = pathname === subItem.href;
                       return (
@@ -179,7 +179,7 @@ const Sidebar = () => {
             return (
               <Link
                 key={item.name}
-                href={item.href}
+                href={item.href!}
                 className={`flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors group ${
                   isCollapsed ? 'justify-center' : ''
                 } ${

@@ -6,7 +6,6 @@ import {
   ShieldCheckIcon,
   ClockIcon,
   CogIcon,
-  TrendingUpIcon,
   DocumentTextIcon,
   CpuChipIcon
 } from '@heroicons/react/24/outline';
