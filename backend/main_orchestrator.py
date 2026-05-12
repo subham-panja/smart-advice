@@ -133,6 +133,12 @@ def run_trading_cycle():
             print("   No new recommendations for " + strat_name)
             continue
 
+        # Market Breadth Filter — block new buys during broad market sell-offs
+        if not engine._check_market_breadth_paper(strategy):
+            logger.warning("MARKET BREADTH WEAK: Skipping new buys for %s" % strat_name)
+            print("   Market Breadth Weak: Skipping new buys for " + strat_name)
+            continue
+
         slots_left = max_pos - len(open_positions)
         executed_count = 0
 

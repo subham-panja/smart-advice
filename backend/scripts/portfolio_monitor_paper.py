@@ -41,7 +41,12 @@ class PortfolioMonitor:
         strategy = StrategyLoader.get_strategy_by_name(strat_name)
         exit_rules = strategy.get("exit_rules", {})
         trading_cfg = strategy.get("trading_config", {})
-        time_stop_days = trading_cfg.get("time_stop_days", self.default_time_stop_days)
+        # Canonical source: exit_rules.time_stop_bars (matches backtest).
+        # Fallback: trading_config.time_stop_days (legacy). Then default 15.
+        time_stop_days = exit_rules.get(
+            "time_stop_bars",
+            trading_cfg.get("time_stop_days", self.default_time_stop_days),
+        )
 
         try:
             # 1. Fetch latest data (Live Price Sync)

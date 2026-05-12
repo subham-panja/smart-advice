@@ -191,6 +191,7 @@ def _run_with_filter_tracking(
 
     def patched_scan(date, sd):
         candidates = original_scan(date, sd)
+        market_breadth_ok = engine._check_market_breadth(date, sd)
         for symbol, df in sd.items():
             if symbol in engine.positions:
                 continue
@@ -205,6 +206,7 @@ def _run_with_filter_tracking(
                     hist,
                     strategy_config=strategy,
                     indicator_store=engine._indicator_store,
+                    market_breadth_ok=market_breadth_ok,
                 )
                 tracker.record_scan(symbol, swing)
             except Exception:

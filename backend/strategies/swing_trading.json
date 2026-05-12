@@ -138,8 +138,6 @@
       "is_bonus": false,
       "period": 20,
       "std": 2,
-      "volatility_limit": 2.5,
-      "atr_multiplier": 1.5,
       "squeeze_threshold": 0.95
     },
     "Relative_Strength_Comparison": {
@@ -158,8 +156,7 @@
     "Volume_Breakout": {
       "enabled": true,
       "is_bonus": false,
-      "period": 20,
-      "threshold": 2.0
+      "period": 20
     },
     "Candlestick_Patterns": {
       "enabled": false,
@@ -176,14 +173,9 @@
       "enabled": true,
       "params": {
         "adx_min": 15,
-        "adx_max": 50,
-        "macd_zero_buffer": 0.1,
         "sma_period": 50,
         "require_price_above_sma": true,
         "require_sma_stack": false,
-        "adx_slope_check": true,
-        "require_di_plus_above_di_minus": true,
-        "min_di_diff": 0,
         "require_di_alignment": false
       }
     },
@@ -200,7 +192,6 @@
       "params": {
         "min_volume_ratio": 0.6,
         "obv_trend_lookback": 10,
-        "logic_operator": "AND",
         "obv_required": false
       }
     },
@@ -369,14 +360,6 @@
     "min_profit_growth_5y": 10.0,
     "min_quarterly_eps_growth": 0.1
   },
-  "volume_analysis_config": {
-    "volume_breakout_multiplier": 2.0,
-    "volume_strong_multiplier": 2.0,
-    "volume_weak_threshold": 0.5,
-    "volume_lookback": 20,
-    "trend_lookback": 10,
-    "divergence_lookback": 10
-  },
   "chartink_config": {
     "enabled": true,
     "cache_ttl_minutes": 60
@@ -385,5 +368,11 @@
     "enabled": true,
     "min_rsi": 50,
     "require_rising": false
+  },
+  "market_breadth_filter": {
+    "enabled": true,
+    "sma_period": 20,
+    "min_advance_pct": 35,
+    "description": "Block new buys when <35% of stocks are above 20-SMA (broad market weakness)"
   }
 }

@@ -680,6 +680,9 @@ class PortfolioBacktestSession:
         # Check regime for adaptive behavior (but don't block entries)
         self._check_market_regime(date, symbols_data)
 
+        # Market breadth filter: advance/decline ratio across the universe
+        market_breadth_ok = self._check_market_breadth(date, symbols_data)
+
         for symbol, df in symbols_data.items():
             if symbol in self.positions:
                 continue
@@ -697,6 +700,7 @@ class PortfolioBacktestSession:
                     hist,
                     strategy_config=self.strategy_config,
                     indicator_store=self._indicator_store,
+                    market_breadth_ok=market_breadth_ok,
                 )
 
                 if swing.get("all_gates_passed") and swing.get("recommendation") == "BUY":
@@ -962,6 +966,39 @@ class PortfolioBacktestSession:
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    def _check_market_breadth(self, date: pd.Timestamp, symbols_data: Dict[str, pd.DataFrame]) -> bool:
+        """Calculate market breadth across the stock universe.
+
+        Returns True if market breadth is healthy (enough stocks in uptrend).
+        Returns False if broad market weakness is detected (>65% of stocks below 20-SMA).
+        This blocks new buys during market-wide sell-offs even if individual signals look good.
+        """
+        bread_cfg = self.strategy_config.get("market_breadth_filter", {})
+        if not bread_cfg.get("enabled", True):
+            return True
+
+        sma_period = bread_cfg.get("sma_period", 20)
+        min_advance_pct = bread_cfg.get("min_advance_pct", 35)  # minimum % stocks above SMA
+
+        above_count = 0
+        total = 0
+        for symbol, df in symbols_data.items():
+            if date not in df.index:
+                continue
+            hist = df.loc[:date]
+            if len(hist) < sma_period:
+                continue
+            total += 1
+            sma = hist["Close"].tail(sma_period).mean()
+            if hist["Close"].iloc[-1] > sma:
+                above_count += 1
+
+        if total < 5:
+            return True  # Too few stocks to judge, allow by default
+
+        advance_pct = (above_count / total) * 100
+        return advance_pct >= min_advance_pct
 
     def _check_market_regime(self, date: pd.Timestamp, symbols_data: Dict[str, pd.DataFrame]) -> str:
         """Check market regime (BULL/BEAR) using NIFTY 50 index.

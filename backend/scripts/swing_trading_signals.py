@@ -33,6 +33,7 @@ class SwingTradingSignalAnalyzer:
         df: pd.DataFrame,
         strategy_config: Dict[str, Any],
         indicator_store: Optional[Any] = None,
+        market_breadth_ok: bool = True,
     ) -> Dict[str, Any]:
         # Basic Setup
         gates_cfg = strategy_config["swing_trading_gates"]
@@ -226,6 +227,15 @@ class SwingTradingSignalAnalyzer:
 
         if not all_gates_passed:
             return {"symbol": symbol, "all_gates_passed": False, "gates": gates, "reason": "Gates failed"}
+
+        # Market Breadth Filter - block buys during broad market sell-offs
+        if not market_breadth_ok:
+            return {
+                "symbol": symbol,
+                "all_gates_passed": False,
+                "gates": gates,
+                "reason": "Market breadth weak - broad market sell-off detected",
+            }
 
         # 2. INDICATOR SIGNALS (Hard & Bonus)
         # ----------------------------------

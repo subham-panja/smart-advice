@@ -10,6 +10,8 @@ to ensure consistency with portfolio backtesting.
 import logging
 from datetime import datetime, timezone
 
+import pandas as pd
+
 import config
 from database import close_position, get_open_positions, insert_position, update_position
 
@@ -379,6 +381,67 @@ class ExecutionEngine:
                 f"Market regime detection failed: {e}. "
                 "Check your market_regime_config in hybrid_trading.json or verify index data availability."
             ) from e
+
+    def _check_market_breadth_paper(self, strategy_config: dict) -> bool:
+        """Market breadth filter for paper trading — mirrors backtest behavior.
+
+        Checks what percentage of stocks in the scanner universe are above their
+        20-day SMA. If fewer than min_advance_pct% are above, block new buys.
+        """
+        bread_cfg = strategy_config.get("market_breadth_filter", {})
+        if not bread_cfg.get("enabled", True):
+            return True
+
+        sma_period = bread_cfg.get("sma_period", 20)
+        min_advance_pct = bread_cfg.get("min_advance_pct", 35)
+
+        try:
+            from database import get_mongodb
+
+            db = get_mongodb()
+            today_start = (
+                datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).replace(tzinfo=None)
+            )
+
+            # Get all stocks that were recently analyzed (last 7 days)
+            week_ago = today_start - pd.Timedelta(days=7)
+            recent_analyses = list(
+                db.stock_analysis_results.find(
+                    {"analysis_date": {"$gte": week_ago}},
+                    {"symbol": 1, "analysis_date": 1, "_id": 0},
+                )
+            )
+
+            if len(recent_analyses) < 5:
+                return True  # Too few data points
+
+            symbols = list(set(r["symbol"] for r in recent_analyses))
+
+            from scripts.data_fetcher import get_historical_data
+
+            above_count = 0
+            total = 0
+            for symbol in symbols:
+                try:
+                    hist = get_historical_data(symbol, period="60d")
+                    if hist is None or hist.empty or len(hist) < sma_period:
+                        continue
+                    total += 1
+                    sma = hist["Close"].tail(sma_period).mean()
+                    if hist["Close"].iloc[-1] > sma:
+                        above_count += 1
+                except Exception:
+                    continue
+
+            if total < 5:
+                return True
+
+            advance_pct = (above_count / total) * 100
+            return advance_pct >= min_advance_pct
+
+        except Exception as e:
+            logger.debug(f"Market breadth check failed: {e}")
+            return True
 
     def execute_sell(self, symbol, price, reason, quantity=None):
         """Execute a sell order (Supports Partial or Full exits)."""
