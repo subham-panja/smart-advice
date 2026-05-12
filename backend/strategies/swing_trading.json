@@ -101,7 +101,7 @@
     "technical_minimum": 0.35,
     "fundamental_minimum": 0.1,
     "require_all_gates": true,
-    "min_risk_reward_ratio": 1.0,
+    "min_risk_reward_ratio": 1.5,
     "min_backtest_return": 0.0,
     "backtest_period": "5y",
     "min_data_required_days": 252,
@@ -286,16 +286,16 @@
     ],
     "atr_stop_multiplier": 3.0,
     "trail_stop_atr": 4.0,
-    "time_stop_bars": 15,
+    "time_stop_bars": 12,
     "breakeven_at_target_1": true,
-    "max_daily_loss_pct": 2.0,
+    "max_daily_loss_pct": 1.5,
     "regime_adaptive_exits": {
       "bull": {
         "t1_sell_percentage": 0.25,
         "trail_stop_type": "atr",
         "trail_stop_atr_multiplier": 2.5,
         "trail_stop_ma_period": 20,
-        "time_stop_bars": 20,
+        "time_stop_bars": 15,
         "pyramiding_allowed": true,
         "oneil_target_pct": 25.0,
         "stop_loss_pct": 8.0
