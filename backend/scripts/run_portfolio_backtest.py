@@ -7,8 +7,10 @@ CLI script to run a portfolio-level backtest across multiple stocks.
 
 Usage:
     cd backend
-    python scripts/run_portfolio_backtest.py --strategy Delayed_EP --max-stocks 50
-    python scripts/run_portfolio_backtest.py --strategy Delayed_EP --symbols RELIANCE,INFY,TCS
+    python scripts/run_portfolio_backtest.py --strategy Swing_Trading --max-stocks 50
+    python scripts/run_portfolio_backtest.py --strategy Swing_Trading --symbols RELIANCE,INFY,TCS
+    python scripts/run_portfolio_backtest.py --strategy Swing_Trading --walk-forward --mc-iterations 10
+    python scripts/run_portfolio_backtest.py --strategy Swing_Trading --period 10y --track-filters
 
 The backtest uses a shared capital pool and parquet-cached historical data
 and compounds returns across all stocks simultaneously.
@@ -18,9 +20,12 @@ import argparse
 import logging
 import multiprocessing
 import os
+import random
+import re
 import sys
+from collections import defaultdict
 from datetime import datetime
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import pandas as pd
 
@@ -37,61 +42,261 @@ from utils.strategy_loader import StrategyLoader
 logger = logging.getLogger(__name__)
 
 
-def _compute_signals_worker(strategy_config, symbols_chunk):
-    """Worker function for multiprocessing - pre-computes daily signals for a chunk of symbols."""
-    from scripts.swing_trading_signals import SwingTradingSignalAnalyzer
+# ---------------------------------------------------------------------------
+# Filter Tracker — tracks gate-level pass/fail per symbol per day
+# ---------------------------------------------------------------------------
 
-    analyzer = SwingTradingSignalAnalyzer()
-    all_signals = {}
 
-    for symbol, df in symbols_chunk.items():
-        symbol_signals = {}
-        for date in df.index:
-            # Normalize date to tz-naive for consistent dict lookup in simulation
-            date_key = date.tz_localize(None) if date.tzinfo is not None else date
+class FilterTracker:
+    """Tracks how many stocks pass/fail each filter stage."""
+
+    def __init__(self):
+        self.scanner_total = 0
+        self.data_valid = 0
+        self.data_rejected = 0
+        self.gate_results = defaultdict(lambda: {"pass": set(), "fail": set()})
+        self.entry_patterns_triggered = defaultdict(set)
+        self.symbol_summary = defaultdict(lambda: {"buy_signals": 0, "days_scanned": 0})
+        self.traded_symbols = set()
+        self.trade_count = 0
+
+    def record_scan(self, symbol: str, swing_result: dict):
+        summary = self.symbol_summary[symbol]
+        summary["days_scanned"] += 1
+
+        gates = swing_result.get("gates", {})
+        for gate_name, gate_ok in gates.items():
+            if gate_ok:
+                self.gate_results[gate_name]["pass"].add(symbol)
+            else:
+                self.gate_results[gate_name]["fail"].add(symbol)
+
+        if swing_result.get("all_gates_passed"):
+            reason = swing_result.get("reason", "")
+            patterns = re.findall(r"Pattern\((\w+)\)", reason)
+            for p in patterns:
+                self.entry_patterns_triggered[p].add(symbol)
+
+        if swing_result.get("all_gates_passed") and swing_result.get("recommendation") == "BUY":
+            summary["buy_signals"] += 1
+
+    def record_trade(self, symbol: str):
+        self.traded_symbols.add(symbol)
+        self.trade_count += 1
+
+    def print_report(self):
+        print("\n" + "=" * 70)
+        print("STRATEGY FILTER TRACKING REPORT")
+        print("=" * 70)
+
+        print("\n  Scanner Stage:")
+        print(f"    Stocks from scanner:       {self.scanner_total}")
+        print(f"    With valid data:           {self.data_valid}")
+        print(f"    Rejected (insufficient):   {self.data_rejected}")
+
+        print("\n  Gate-Level Filtering (unique symbols that ever passed/failed):")
+        for gate in ["trend", "volume", "volatility", "mtf"]:
+            passed = self.gate_results[gate]["pass"]
+            failed = self.gate_results[gate]["fail"]
+            total = len(passed | failed)
+            if total == 0:
+                continue
+            pass_pct = len(passed) / total * 100
+            fail_pct = len(failed) / total * 100
+            print(
+                f"    {gate:20s}: PASS {len(passed):4d} ({pass_pct:5.1f}%)  FAIL {len(failed):4d} ({fail_pct:5.1f}%)  [{total} scanned]"
+            )
+
+        print("\n  Entry Patterns Triggered (unique symbols):")
+        for pattern, symbols in sorted(self.entry_patterns_triggered.items(), key=lambda x: -len(x[1])):
+            print(f"    {pattern:35s}: {len(symbols):4d} symbols")
+
+        active_gates = [g for g in self.gate_results if len(self.gate_results[g]["pass"]) > 0]
+        if active_gates:
+            all_pass = set.intersection(*[self.gate_results[g]["pass"] for g in active_gates])
+        else:
+            all_pass = set()
+        print(f"\n  All Gates Passed (intersection): {len(all_pass)} unique symbols")
+        if all_pass:
+            for s in sorted(all_pass)[:20]:
+                print(f"    - {s}")
+            if len(all_pass) > 20:
+                print(f"    ... and {len(all_pass) - 20} more")
+
+        print("\n  Top 20 Symbols by Buy Signal Count:")
+        sorted_symbols = sorted(self.symbol_summary.items(), key=lambda x: -x[1]["buy_signals"])
+        count = 0
+        for sym, data in sorted_symbols:
+            if data["buy_signals"] > 0:
+                traded = "TRADED" if sym in self.traded_symbols else "not filled"
+                print(
+                    f"    {sym:15s}: {data['buy_signals']:4d} buy signals from {data['days_scanned']:4d} scans  [{traded}]"
+                )
+                count += 1
+                if count >= 20:
+                    break
+
+        print("\n  Execution Stage:")
+        print(f"    Unique symbols traded:     {len(self.traded_symbols)}")
+        print(f"    Total trades executed:     {self.trade_count}")
+        if self.traded_symbols:
+            for s in sorted(self.traded_symbols):
+                print(f"      - {s}")
+
+        print("\n" + "=" * 70)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _prepare_index_data(strategy: dict, symbols_data: dict, period: str) -> Optional[pd.DataFrame]:
+    """Pre-fetch index data for regime detection and remove from symbols_data.
+
+    Returns the index DataFrame, and removes it from symbols_data so it
+    doesn't inflate the common-date union.
+    """
+    regime_enabled = strategy.get("analysis_config", {}).get("market_regime_detection", False)
+    if not regime_enabled:
+        return None
+
+    index_symbol = strategy.get("market_regime_config", {}).get("index", "^NSEI")
+    if index_symbol in symbols_data:
+        # Pop it from symbols_data (caller will set engine._index_data_override)
+        return symbols_data.pop(index_symbol, None)
+
+    # Fetch it separately
+    try:
+        index_data = fetch_multiple_symbols_cached({index_symbol: index_symbol}, period=period, verbose=False)
+        return index_data.get(index_symbol)
+    except Exception as e:
+        logger.warning(f"Failed to pre-fetch index data for {index_symbol}: {e}")
+        return None
+
+
+def _run_with_filter_tracking(
+    engine: PortfolioBacktestSession,
+    symbols_data: dict,
+    strategy: dict,
+    tracker: FilterTracker,
+    index_data: Optional[pd.DataFrame],
+    sim_start_date: Optional[pd.Timestamp] = None,
+) -> dict:
+    """Run the engine with filter tracking patches applied."""
+    if index_data is not None:
+        engine._index_data_override = index_data
+
+    original_scan = engine._scan_for_signals
+
+    def patched_scan(date, sd):
+        candidates = original_scan(date, sd)
+        for symbol, df in sd.items():
+            if symbol in engine.positions:
+                continue
+            if date not in df.index:
+                continue
             hist = df.loc[:date]
             if len(hist) < 50:
                 continue
             try:
-                swing = analyzer.analyze_swing_opportunity(symbol, hist, strategy_config=strategy_config)
+                swing = engine.swing_analyzer.analyze_swing_opportunity(
+                    symbol,
+                    hist,
+                    strategy_config=strategy,
+                    indicator_store=engine._indicator_store,
+                )
+                tracker.record_scan(symbol, swing)
+            except Exception:
+                pass
+        return candidates
+
+    engine._scan_for_signals = patched_scan
+    return engine.run(symbols_data, sim_start_date=sim_start_date)
+
+
+def fetch_symbols_data(symbols: Dict[str, str], period: str = "5y", verbose: bool = False) -> Dict[str, pd.DataFrame]:
+    """Fetch historical data for all symbols using incremental parquet cache."""
+    return fetch_multiple_symbols_cached(symbols, period=period, verbose=verbose)
+
+
+# ---------------------------------------------------------------------------
+# Pre-compute signals for a window (avoids redundant scanning in each MC worker)
+# ---------------------------------------------------------------------------
+
+
+def _precompute_window_signals(window_data, indicator_store, strategy_config):
+    """Pre-compute BUY/HOLD signals for all (symbol, date) pairs in a window.
+
+    Uses the same analyze_swing_opportunity as the live/slow path so results
+    are identical, but computes them once instead of once per MC iteration.
+
+    Returns:
+        Dict[symbol, Dict[date, {"score": float, "swing_result": dict}]]
+    """
+    from scripts.swing_trading_signals import SwingTradingSignalAnalyzer
+
+    analyzer = SwingTradingSignalAnalyzer()
+    signals = {}
+
+    for symbol, df in window_data.items():
+        symbol_signals = {}
+        for date in df.index:
+            hist = df.loc[:date]
+            if len(hist) < 50:
+                continue
+            try:
+                swing = analyzer.analyze_swing_opportunity(
+                    symbol,
+                    hist,
+                    strategy_config=strategy_config,
+                    indicator_store=indicator_store,
+                )
                 if swing.get("all_gates_passed") and swing.get("recommendation") == "BUY":
+                    score = swing.get("technical_score", 0.0)
+                    # Normalize date to tz-naive for dict key compatibility
+                    date_key = date.tz_localize(None) if date.tzinfo else date
                     symbol_signals[date_key] = {
-                        "score": swing.get("technical_score", 0.0),
+                        "score": score,
                         "swing_result": swing,
                     }
             except Exception:
                 pass
         if symbol_signals:
-            all_signals[symbol] = symbol_signals
+            signals[symbol] = symbol_signals
 
-    return all_signals
+    return signals
 
 
-def merge_signal_results(results_list):
-    """Merge multiple partial signal results into a single signal dictionary."""
-    merged = {}
-    for result in results_list:
-        merged.update(result)
-    return merged
+# ---------------------------------------------------------------------------
+# Walk-Forward MC Worker (multiprocessing)
+# ---------------------------------------------------------------------------
 
 
 def _walk_forward_mc_worker(args):
-    """Worker function for walk-forward Monte Carlo iteration.
+    """Worker function for walk-forward Monte Carlo iteration."""
+    strategy_config, sampled_data, window_idx, mc_iter, sim_start_date, sim_end_date = args[:6]
+    precomputed_signals = args[6] if len(args) > 6 else None
+    indicator_store_data = args[7] if len(args) > 7 else None
 
-    Args:
-        args: tuple of (strategy_config_dict, sampled_data_dict, window_idx, mc_iter, sim_start_date, sim_end_date)
-              sampled_data_dict is {symbol: DataFrame} -- pre-sliced, no disk I/O needed.
-
-    Returns:
-        dict with metrics or error info (pickle-serializable)
-    """
-    strategy_config, sampled_data, window_idx, mc_iter, sim_start_date, sim_end_date = args
-
-    # Each worker creates its own engine (spawn-safe, no shared state)
     engine = PortfolioBacktestSession(strategy_config=strategy_config)
 
+    if indicator_store_data is not None:
+        try:
+            from scripts.vectorbt_indicator_batch import IndicatorStore
+
+            store = IndicatorStore(indicator_store_data)
+            engine.set_indicator_store(store)
+        except Exception:
+            pass
+
     try:
-        result = engine.run(sampled_data, sim_start_date=sim_start_date, sim_end_date=sim_end_date)
+        if precomputed_signals is not None:
+            # Filter pre-computed signals to only sampled symbols
+            filtered_signals = {sym: precomputed_signals[sym] for sym in sampled_data if sym in precomputed_signals}
+            result = engine.run_with_signals(sampled_data, filtered_signals)
+        else:
+            result = engine.run(sampled_data, sim_start_date=sim_start_date, sim_end_date=sim_end_date)
         return {
             "window": window_idx,
             "mc_iteration": mc_iter,
@@ -115,9 +320,9 @@ def _walk_forward_mc_worker(args):
         }
 
 
-def fetch_symbols_data(symbols: Dict[str, str], period: str = "5y", verbose: bool = False) -> Dict[str, pd.DataFrame]:
-    """Fetch historical data for all symbols using incremental parquet cache."""
-    return fetch_multiple_symbols_cached(symbols, period=period, verbose=verbose)
+# ---------------------------------------------------------------------------
+# Simple Portfolio Backtest
+# ---------------------------------------------------------------------------
 
 
 def run_portfolio_backtest(
@@ -127,6 +332,7 @@ def run_portfolio_backtest(
     period: str = "5y",
     save_to_db: bool = True,
     verbose: bool = False,
+    track_filters: bool = True,
 ):
     """Run a complete portfolio backtest session."""
     if verbose:
@@ -160,87 +366,90 @@ def run_portfolio_backtest(
     if len(symbols_data) < 5:
         raise RuntimeError(f"Too few symbols with valid data: {len(symbols_data)}")
 
-    # 4. Run Backtest (multiprocessing if enabled)
+    # 4. Prepare index data for regime detection
+    index_data = _prepare_index_data(strategy, symbols_data, period)
+
+    # 5. Pre-compute indicators using vectorbt
     start_time = datetime.now()
     session_id = None
     persistence = PersistenceHandler() if save_to_db else None
 
-    if config.USE_MULTIPROCESSING_PIPELINE and len(symbols_data) >= 20:
-        # Split symbols into chunks for parallel processing
-        num_workers = min(config.NUM_WORKER_PROCESSES, len(symbols_data))
-        symbols_list = list(symbols_data.items())
-        chunk_size = len(symbols_list) // num_workers
-        chunks = [dict(symbols_list[i : i + chunk_size]) for i in range(0, len(symbols_list), chunk_size)]
+    logger.info(f"Pre-computing indicators for {len(symbols_data)} symbols using vectorbt...")
+    try:
+        from scripts.vectorbt_indicator_batch import IndicatorStore, compute_all_indicators
 
-        logger.info(f"🚀 Running portfolio backtest with {num_workers} parallel workers...")
-        logger.info(f"   Split {len(symbols_data)} symbols into {len(chunks)} chunks for signal generation")
+        indicators = compute_all_indicators(symbols_data, strategy)
+        store = IndicatorStore(indicators)
+        logger.info("  Indicators computed in one vectorized pass")
+    except Exception as e:
+        logger.warning(f"  Indicator pre-computation failed ({e}), falling back to TA-Lib")
+        store = None
 
-        # Create session before multiprocessing
-        if save_to_db and persistence:
-            capital_cfg = config.PORTFOLIO_BACKTEST_CONFIG
-            session_id = persistence.create_backtest_session(
-                strategy_name=strategy["name"],
-                strategy_config=strategy,
-                capital_config=capital_cfg,
-                symbols=list(symbols_data.keys()),
-            )
-            logger.info(f"DB Session created: {session_id}")
+    if save_to_db and persistence:
+        capital_cfg = config.PORTFOLIO_BACKTEST_CONFIG
+        symbols_to_save = list(symbols_data.keys())
+        session_id = persistence.create_backtest_session(
+            strategy_name=strategy["name"],
+            strategy_config=strategy,
+            capital_config=capital_cfg,
+            symbols=symbols_to_save,
+        )
+        logger.info(f"DB Session created: {session_id}")
 
-        # Phase 1: Parallel signal generation
-        pool = None
-        try:
-            pool = multiprocessing.Pool(processes=num_workers)
-            partial_signals = pool.starmap(
-                _compute_signals_worker,
-                [(strategy, chunk) for chunk in chunks],
-            )
-            pool.close()
-            pool.join()
-        except Exception as e:
-            logger.error(f"Multiprocessing error during signal generation: {e}")
-            if pool:
-                pool.terminate()
-                pool.join()
-                logger.info(f"Terminated {num_workers} worker processes")
-            raise e
+    # 6. Run backtest
+    engine = PortfolioBacktestSession(strategy_config=strategy)
+    engine.session_id = session_id
+    if store is not None:
+        engine.set_indicator_store(store)
 
-        precomputed_signals = merge_signal_results(partial_signals)
-        logger.info(f"   Pre-computed signals for {len(precomputed_signals)} symbols")
-
-        # Phase 2: Single-threaded simulation with pre-computed signals
-        engine = PortfolioBacktestSession(strategy_config=strategy)
-        engine.session_id = session_id
-        results = engine.run_with_signals(symbols_data, precomputed_signals)
+    if track_filters:
+        tracker = FilterTracker()
+        tracker.scanner_total = len(symbols) if not symbol_list else len(symbol_list)
+        tracker.data_valid = len(symbols_data)
+        tracker.data_rejected = tracker.scanner_total - tracker.data_valid
+        sim_start = None
+        if index_data is not None:
+            index_symbol = strategy.get("market_regime_config", {}).get("index", "^NSEI")
+            stock_only = {k: v for k, v in symbols_data.items() if k != index_symbol}
+            all_sets = [set(df.index) for df in stock_only.values()]
+            union_dates = sorted(set.union(*all_sets))
+            for d in union_dates:
+                if len(index_data.loc[:d]) >= 250:
+                    sim_start = d
+                    break
+        results = _run_with_filter_tracking(engine, symbols_data, strategy, tracker, index_data, sim_start)
     else:
-        # Single-threaded backtest (signal generation + simulation)
-        logger.info(f"🚀 Starting portfolio backtest for strategy: {strategy['name']}")
-        if save_to_db:
-            capital_cfg = config.PORTFOLIO_BACKTEST_CONFIG
-            session_id = persistence.create_backtest_session(
-                strategy_name=strategy["name"],
-                strategy_config=strategy,
-                capital_config=capital_cfg,
-                symbols=list(symbols_data.keys()),
-            )
-            logger.info(f"DB Session created: {session_id}")
+        sim_start = None
+        if index_data is not None:
+            engine._index_data_override = index_data
+            # Skip early dates where index has < 250 rows (regime detection needs warmup)
+            stock_only = {
+                k: v
+                for k, v in symbols_data.items()
+                if k != (strategy.get("market_regime_config", {}).get("index", "^NSEI"))
+            }
+            all_sets = [set(df.index) for df in stock_only.values()]
+            union_dates = sorted(set.union(*all_sets))
+            # Find the first date where index_data has 250+ rows
+            for d in union_dates:
+                if len(index_data.loc[:d]) >= 250:
+                    sim_start = d
+                    break
 
-        engine = PortfolioBacktestSession(strategy_config=strategy)
-        engine.session_id = session_id
-        results = engine.run(symbols_data)
+        results = engine.run(symbols_data, sim_start_date=sim_start)
+
     duration = (datetime.now() - start_time).total_seconds()
 
-    # 6. Save Results to DB
+    # 7. Save Results to DB
     if save_to_db and session_id:
-        # Save daily snapshots
         if results.get("daily_snapshots"):
             persistence.save_portfolio_backtest_snapshots(session_id, results["daily_snapshots"])
             logger.info(f"Saved {len(results['daily_snapshots'])} daily snapshots")
 
-        # Save trades (convert numpy types to native Python types for MongoDB)
         if results.get("trades"):
 
             def _to_native(obj):
-                if hasattr(obj, "item"):  # numpy scalar
+                if hasattr(obj, "item"):
                     return obj.item()
                 if isinstance(obj, dict):
                     return {k: _to_native(v) for k, v in obj.items()}
@@ -252,7 +461,6 @@ def run_portfolio_backtest(
             persistence.save_portfolio_backtest_trades(session_id, trade_dicts)
             logger.info(f"Saved {len(trade_dicts)} trades")
 
-        # Complete session (pass metrics only, not raw trade objects)
         summary_metrics = {k: v for k, v in results.items() if k not in ("trades", "daily_snapshots")}
         persistence.complete_backtest_session(
             session_id=session_id,
@@ -261,7 +469,12 @@ def run_portfolio_backtest(
         )
         logger.info(f"Session {session_id} marked as completed")
 
-    # 7. Print Summary
+    # 8. Record trades for tracker
+    if track_filters:
+        for trade in results.get("trades", []):
+            tracker.record_trade(trade.symbol)
+
+    # 9. Print Summary
     print("\n" + "=" * 60)
     print("PORTFOLIO BACKTEST RESULTS")
     print("=" * 60)
@@ -282,9 +495,17 @@ def run_portfolio_backtest(
     print("=" * 60)
 
     if session_id:
-        print(f"\n💾 Session saved to MongoDB: {session_id}")
+        print(f"\nSession saved to MongoDB: {session_id}")
+
+    if track_filters:
+        tracker.print_report()
 
     return results
+
+
+# ---------------------------------------------------------------------------
+# Walk-Forward + Monte Carlo
+# ---------------------------------------------------------------------------
 
 
 def run_walk_forward_backtest(
@@ -295,16 +516,7 @@ def run_walk_forward_backtest(
     verbose: bool = False,
     save_to_db: bool = True,
 ) -> Dict:
-    """Run walk-forward backtesting with Monte Carlo sampling to validate strategy robustness.
-
-    Approach:
-    1. Split the historical period into rolling windows (6-month test, roll forward 3 months)
-    2. For each window: run backtest on stocks that existed at window start
-    3. Monte Carlo: randomly subsample stocks to test universe independence
-    4. Aggregate results: mean CAGR, std dev, min/max, consistency score
-
-    Returns dict with aggregated metrics and per-run breakdown.
-    """
+    """Run walk-forward backtesting with Monte Carlo sampling."""
 
     logger.info("=" * 70)
     logger.info("WALK-FORWARD + MONTE CARLO PORTFOLIO BACKTEST")
@@ -314,17 +526,14 @@ def run_walk_forward_backtest(
     if not strategy:
         raise RuntimeError(f"Strategy {strategy_name} not found")
 
-    # Fetch all symbols from Chartink scanner
     scanner = StockScanner()
     symbols = scanner.get_symbols(strategy_config=strategy)
     symbols_list = list(symbols.keys())[:max_stocks]
     logger.info(f"Scanner returned {len(symbols_list)} symbols for universe")
 
-    # Fetch full historical data for all symbols
     logger.info(f"Fetching {period} historical data for {len(symbols_list)} symbols...")
     symbols_data = fetch_symbols_data(symbols, period=period, verbose=verbose)
 
-    # Determine date range
     all_dates = set()
     for df in symbols_data.values():
         all_dates.update(df.index)
@@ -334,9 +543,8 @@ def run_walk_forward_backtest(
     total_days = (end_date - start_date).days
     logger.info(f"Full date range: {start_date.date()} → {end_date.date()} ({total_days} days)")
 
-    # Define walk-forward windows (6-month test, 3-month step)
-    window_days = 180  # ~6 months
-    step_days = 90  # ~3 months
+    window_days = 180
+    step_days = 90
     windows = []
     current_start = start_date
     while current_start + pd.Timedelta(days=window_days) <= end_date:
@@ -353,7 +561,6 @@ def run_walk_forward_backtest(
     persistence = PersistenceHandler() if save_to_db else None
     wf_session_id = None
 
-    # Create walk-forward session in DB
     if save_to_db and persistence:
         capital_cfg = config.PORTFOLIO_BACKTEST_CONFIG
         wf_session_id = persistence.create_walk_forward_session(
@@ -369,26 +576,40 @@ def run_walk_forward_backtest(
     completed_count = 0
     all_cagrs = []
 
-    # Run each window
     for window_idx, (window_start, window_end) in enumerate(windows):
         logger.info(f"\n{'='*50}")
         logger.info(f"WINDOW {window_idx+1}/{len(windows)}: {window_start.date()} → {window_end.date()}")
         logger.info(f"{'='*50}")
 
-        # Slice data to window + 200-day warm-up (needed for SMA 200, ATR lookback, etc.)
         warmup_days = 200
         window_data = {}
         for sym, df in symbols_data.items():
             sliced = df[(df.index >= window_start - pd.Timedelta(days=warmup_days)) & (df.index <= window_end)]
-            if len(sliced) >= 200:  # Min data required (warmup + partial window)
+            if len(sliced) >= 200:
                 window_data[sym] = sliced
 
         if len(window_data) < 20:
             logger.warning(f"Too few symbols in window {window_idx+1}, skipping")
             continue
 
-        # Pre-sample stocks for each MC iteration
-        import random
+        window_indicator_store = None
+        window_indicator_data = None
+        window_signals = None
+        try:
+            from scripts.vectorbt_indicator_batch import IndicatorStore, compute_all_indicators
+
+            logger.info(f"  Computing indicators for {len(window_data)} symbols...")
+            window_indicators = compute_all_indicators(window_data, strategy)
+            window_indicator_store = IndicatorStore(window_indicators)
+            window_indicator_data = window_indicators
+            logger.info("  Indicators computed in one vectorized pass")
+
+            # Pre-compute signals once for this window (avoids redundant scanning in each MC worker)
+            logger.info(f"  Pre-computing signals for {len(window_data)} symbols across all dates...")
+            window_signals = _precompute_window_signals(window_data, window_indicator_store, strategy)
+            logger.info(f"  Signals pre-computed for {len(window_signals)} symbols")
+        except Exception as e:
+            logger.warning(f"  Indicator pre-computation failed: {e}, falling back to TA-Lib")
 
         sample_map = {}
         task_args = []
@@ -397,12 +618,20 @@ def run_walk_forward_backtest(
             sampled_symbols = random.sample(list(window_data.keys()), sample_size)
             sample_map[(window_idx + 1, mc_iter + 1)] = sampled_symbols
 
-            # Build sampled data dict directly (no disk I/O - spawn pickles it automatically)
             sampled_data = {sym: window_data[sym] for sym in sampled_symbols}
+            task_args.append(
+                (
+                    strategy,
+                    sampled_data,
+                    window_idx + 1,
+                    mc_iter + 1,
+                    window_start,
+                    window_end,
+                    window_signals,
+                    window_indicator_data,
+                )
+            )
 
-            task_args.append((strategy, sampled_data, window_idx + 1, mc_iter + 1, window_start, window_end))
-
-        # Run MC iterations in parallel
         num_workers = min(config.NUM_WORKER_PROCESSES, mc_iterations)
         ctx = multiprocessing.get_context("spawn")
 
@@ -411,12 +640,10 @@ def run_walk_forward_backtest(
                 completed_count += 1
                 elapsed = (datetime.now() - start_time).total_seconds()
 
-                # Track CAGR for running mean
                 if result["status"] == "success":
                     all_cagrs.append(result["cagr"])
                     all_results.append(result)
 
-                # Save to DB
                 if save_to_db and persistence and wf_session_id:
                     syms = sample_map.get((result["window"], result["mc_iteration"]), [])
                     persistence.save_walk_forward_run(
@@ -428,7 +655,6 @@ def run_walk_forward_backtest(
                         result=result,
                     )
 
-                    # Update progress
                     running_cagrs = [c for c in all_cagrs if c != 0]
                     persistence.update_walk_forward_progress(
                         session_id=wf_session_id,
@@ -439,7 +665,6 @@ def run_walk_forward_backtest(
                         cagrs_so_far=running_cagrs,
                     )
 
-                # Log progress every 10% or at completion
                 pct = completed_count / total_runs * 100
                 if completed_count % max(1, total_runs // 10) == 0 or completed_count == total_runs:
                     remaining = total_runs - completed_count
@@ -454,7 +679,6 @@ def run_walk_forward_backtest(
                 avg_cagr = sum(window_cagrs) / len(window_cagrs)
                 logger.info(f"  Window {window_idx+1} complete: {len(window_cagrs)} MC runs, avg CAGR {avg_cagr:.1f}%")
 
-    # Aggregate results
     if not all_results:
         return {"status": "failed", "reason": "No successful runs"}
 
@@ -464,14 +688,12 @@ def run_walk_forward_backtest(
     max_drawdowns = [r["max_drawdown"] for r in all_results]
     profit_factors = [r["profit_factor"] for r in all_results]
 
-    # Consistency score: % of runs with positive CAGR
     positive_cagr_pct = sum(1 for c in cagrs if c > 0) / len(cagrs) * 100
 
-    # Robustness score: inverse of coefficient of variation (lower variance = more robust)
     mean_cagr = sum(cagrs) / len(cagrs)
     std_cagr = (sum((c - mean_cagr) ** 2 for c in cagrs) / len(cagrs)) ** 0.5
     cv = abs(std_cagr / mean_cagr) if mean_cagr != 0 else 999
-    robustness_score = max(0, 100 - cv * 100)  # 100 = perfectly consistent, 0 = highly variable
+    robustness_score = max(0, 100 - cv * 100)
 
     duration = (datetime.now() - start_time).total_seconds()
 
@@ -514,7 +736,6 @@ def run_walk_forward_backtest(
         "per_run_results": all_results,
     }
 
-    # Complete session
     if save_to_db and persistence and wf_session_id:
         persistence.complete_walk_forward_session(
             session_id=wf_session_id,
@@ -523,7 +744,6 @@ def run_walk_forward_backtest(
         )
         logger.info(f"Walk-forward session {wf_session_id} marked as completed")
 
-    # Print summary
     print("\n" + "=" * 70)
     print("WALK-FORWARD + MONTE CARLO SUMMARY")
     print("=" * 70)
@@ -548,23 +768,30 @@ def run_walk_forward_backtest(
     print(f"  Positive CAGR in: {positive_cagr_pct:.0f}% of runs")
     print(f"  Robustness Score: {robustness_score:.0f}/100")
     print(
-        f"  {'✅ STRATEGY IS ROBUST' if robustness_score > 60 and positive_cagr_pct > 70 else '⚠️ STRATEGY NEEDS IMPROVEMENT'}"
+        f"  {'STRATEGY IS ROBUST' if robustness_score > 60 and positive_cagr_pct > 70 else 'STRATEGY NEEDS IMPROVEMENT'}"
     )
     print("=" * 70)
 
     if wf_session_id:
-        print(f"\n💾 Walk-forward session saved to MongoDB: {wf_session_id}")
+        print(f"\nWalk-forward session saved to MongoDB: {wf_session_id}")
         print(f"   Duration: {duration:.1f}s")
 
     return aggregated
 
 
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+
+
 def main():
-    parser = argparse.ArgumentParser(description="Run a portfolio-level backtest")
-    parser.add_argument("--strategy", type=str, required=True, help="Strategy name (e.g., Delayed_EP)")
+    parser = argparse.ArgumentParser(
+        description="Portfolio Backtest CLI — run any strategy with optional walk-forward MC"
+    )
+    parser.add_argument("--strategy", type=str, required=True, help="Strategy name (from strategies/*.json)")
     parser.add_argument("--max-stocks", type=int, default=50, help="Max stocks to include")
     parser.add_argument("--symbols", type=str, default=None, help="Comma-separated symbols (overrides scanner)")
-    parser.add_argument("--period", type=str, default="5y", help="Historical data period")
+    parser.add_argument("--period", type=str, default="5y", help="Historical data period (e.g., 5y, 10y)")
     parser.add_argument("--no-db", action="store_true", help="Skip saving to database")
     parser.add_argument("--verbose", action="store_true", help="Verbose logging")
     parser.add_argument("--walk-forward", action="store_true", help="Run walk-forward + Monte Carlo backtest")
