@@ -32,3 +32,4 @@ filterpy>=1.4.5
 # ML and RL dependencies
 gymnasium>=0.29.0
 stable-baselines3>=2.0.0
+vectorbt>=0.25.0

@@ -65,15 +65,19 @@ def run_trading_cycle():
         analyzer = AutomatedStockAnalysis(verbose=True)
         analyzer.run(strategy_config=strategy)
 
-        # Phase 2.5: Portfolio Backtest (auto-runs per config.py)
+        # Phase 2.5: Portfolio Backtest (auto-runs if strategy has backtesting=true)
         bt_cfg = config.PORTFOLIO_BACKTEST_CONFIG
-        if bt_cfg.get("enabled") and bt_cfg.get("auto_run_on_cycle"):
+        if bt_cfg.get("enabled") and strategy.get("analysis_config", {}).get("backtesting", False):
             print("Phase 2.5: Running portfolio backtest for " + strat_name + "...")
             logger.info("Phase 2.5: Running portfolio backtest for " + strat_name + "...")
             try:
                 from scripts.run_portfolio_backtest import run_portfolio_backtest
 
-                period = config.DATA_CACHE_CONFIG["periods"].get("portfolio_backtest", "5y")
+                # Use strategy-specific period, fallback to config default
+                period = strategy.get("recommendation_thresholds", {}).get(
+                    "backtest_period",
+                    config.DATA_CACHE_CONFIG["periods"].get("portfolio_backtest", "5y"),
+                )
                 max_stocks = bt_cfg.get("auto_run_max_stocks", 1000)
 
                 results = run_portfolio_backtest(

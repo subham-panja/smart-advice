@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import numpy as np
 import pandas as pd
@@ -14,8 +14,25 @@ class SwingTradingSignalAnalyzer:
     def __init__(self):
         pass
 
+    def _get_series(
+        self,
+        symbol: str,
+        df: pd.DataFrame,
+        indicator_store: Optional[Any],
+        name: str,
+        lookback: Optional[int] = None,
+    ) -> pd.Series:
+        """Get a historical series of an indicator, from store or TA-Lib."""
+        if indicator_store is not None:
+            return indicator_store.get_series(symbol, name, df.index[-1], lookback)
+        return pd.Series(dtype=float)
+
     def analyze_swing_opportunity(
-        self, symbol: str, df: pd.DataFrame, strategy_config: Dict[str, Any]
+        self,
+        symbol: str,
+        df: pd.DataFrame,
+        strategy_config: Dict[str, Any],
+        indicator_store: Optional[Any] = None,
     ) -> Dict[str, Any]:
         # Basic Setup
         gates_cfg = strategy_config["swing_trading_gates"]
@@ -37,13 +54,19 @@ class SwingTradingSignalAnalyzer:
         # 1. GATE CHECKS (Hard Constraints)
         # -------------------------------
         # Trend Gate (always required if present)
-        adx_series = ta.ADX(df["High"], df["Low"], df["Close"], 14)
-        adx = adx_series.iloc[-1]
-        pdi, mdi = (
-            ta.PLUS_DI(df["High"], df["Low"], df["Close"], 14).iloc[-1],
-            ta.MINUS_DI(df["High"], df["Low"], df["Close"], 14).iloc[-1],
-        )
-        sma = ta.SMA(df["Close"], sma_p).iloc[-1]
+        if indicator_store is not None:
+            adx = indicator_store.get(symbol, "adx", df.index[-1])
+            pdi = indicator_store.get(symbol, "pdi", df.index[-1])
+            mdi = indicator_store.get(symbol, "mdi", df.index[-1])
+            sma = indicator_store.get(symbol, "sma_50", df.index[-1])
+        else:
+            adx_series = ta.ADX(df["High"], df["Low"], df["Close"], 14)
+            adx = adx_series.iloc[-1]
+            pdi, mdi = (
+                ta.PLUS_DI(df["High"], df["Low"], df["Close"], 14).iloc[-1],
+                ta.MINUS_DI(df["High"], df["Low"], df["Close"], 14).iloc[-1],
+            )
+            sma = ta.SMA(df["Close"], sma_p).iloc[-1]
 
         trend_ok = adx > t_cfg["adx_min"]
         # DI alignment check (optional - some strategies like HMA retracement may not need it)
@@ -54,9 +77,14 @@ class SwingTradingSignalAnalyzer:
 
         # SMA Stack Check: 50 > 150 > 200 (Minervini/Weinstein requirement)
         if t_cfg.get("require_sma_stack"):
-            sma50 = ta.SMA(df["Close"], 50).iloc[-1]
-            sma150 = ta.SMA(df["Close"], 150).iloc[-1]
-            sma200 = ta.SMA(df["Close"], 200).iloc[-1]
+            if indicator_store is not None:
+                sma50 = indicator_store.get(symbol, "sma_50", df.index[-1])
+                sma150 = indicator_store.get(symbol, "sma_150", df.index[-1])
+                sma200 = indicator_store.get(symbol, "sma_200", df.index[-1])
+            else:
+                sma50 = ta.SMA(df["Close"], 50).iloc[-1]
+                sma150 = ta.SMA(df["Close"], 150).iloc[-1]
+                sma200 = ta.SMA(df["Close"], 200).iloc[-1]
             trend_ok = trend_ok and (sma50 > sma150 > sma200)
 
         # Volume Gate (respect enabled flag)
@@ -71,15 +99,18 @@ class SwingTradingSignalAnalyzer:
             # OBV trend check (accumulation detection)
             if "obv_trend_lookback" in vol_cfg:
                 obv_lookback = vol_cfg["obv_trend_lookback"]
-                obv = pd.Series(0.0, index=df.index)
-                for i in range(1, len(df)):
-                    if df["Close"].iloc[i] > df["Close"].iloc[i - 1]:
-                        obv.iloc[i] = obv.iloc[i - 1] + df["Volume"].iloc[i]
-                    elif df["Close"].iloc[i] < df["Close"].iloc[i - 1]:
-                        obv.iloc[i] = obv.iloc[i - 1] - df["Volume"].iloc[i]
-                    else:
-                        obv.iloc[i] = obv.iloc[i - 1]
-                obv_recent = obv.tail(obv_lookback).dropna()
+                if indicator_store is not None:
+                    obv_recent = self._get_series(symbol, df, indicator_store, "obv", lookback=obv_lookback)
+                else:
+                    obv = pd.Series(0.0, index=df.index)
+                    for i in range(1, len(df)):
+                        if df["Close"].iloc[i] > df["Close"].iloc[i - 1]:
+                            obv.iloc[i] = obv.iloc[i - 1] + df["Volume"].iloc[i]
+                        elif df["Close"].iloc[i] < df["Close"].iloc[i - 1]:
+                            obv.iloc[i] = obv.iloc[i - 1] - df["Volume"].iloc[i]
+                        else:
+                            obv.iloc[i] = obv.iloc[i - 1]
+                    obv_recent = obv.tail(obv_lookback).dropna()
                 if len(obv_recent) >= 5:
                     x = np.arange(len(obv_recent))
                     slope = np.polyfit(x, obv_recent.values, 1)[0]
@@ -89,13 +120,20 @@ class SwingTradingSignalAnalyzer:
         # Volatility Gate - require ATR in range (not too low, not too high)
         volatility_ok = True
         if gates_cfg["VOLATILITY_GATE"]["enabled"]:
-            atr = ta.ATR(df["High"], df["Low"], df["Close"], 14)
             lb = v_cfg["lookback_days"]
             max_pctile = v_cfg.get("max_percentile", 60)  # Upper bound: e.g., 60
             min_pctile = v_cfg.get("min_percentile", 20)  # Lower bound: e.g., 20
-            atr_recent = atr.iloc[-lb:].dropna()
+            if indicator_store is not None:
+                atr_recent = self._get_series(symbol, df, indicator_store, "atr_14", lookback=lb)
+                atr_recent = atr_recent.dropna()
+                if len(atr_recent) > 0:
+                    current_atr = atr_recent.iloc[-1]
+            else:
+                atr = ta.ATR(df["High"], df["Low"], df["Close"], 14)
+                atr_recent = atr.iloc[-lb:].dropna()
+                if len(atr_recent) > 0:
+                    current_atr = atr.iloc[-1]
             if len(atr_recent) > 0:
-                current_atr = atr.iloc[-1]
                 pctile = (atr_recent < current_atr).sum() / len(atr_recent) * 100
                 # ATR must be between min and max percentile (enough momentum, not crash-level)
                 volatility_ok = min_pctile <= pctile <= max_pctile
@@ -109,36 +147,57 @@ class SwingTradingSignalAnalyzer:
 
             if mtf_cfg.get("weekly_trend_check", False):
                 try:
-                    # Fetch weekly data for trend confirmation
-                    weekly_data = (
-                        df.resample("W")
-                        .agg({"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"})
-                        .dropna()
-                    )
+                    if indicator_store is not None:
+                        # Use pre-computed weekly indicators
+                        sma_fast_val = indicator_store.get(symbol, "weekly_sma_10", df.index[-1])
+                        sma_slow_val = indicator_store.get(symbol, "weekly_sma_30", df.index[-1])
+                        weekly_rsi_val = indicator_store.get(symbol, "weekly_rsi_14", df.index[-1])
+                        vwap_val = indicator_store.get(symbol, "vwap_20", df.index[-1])
 
-                    if len(weekly_data) >= 30:
-                        # Weekly SMA crossover check
-                        sma_fast = ta.SMA(weekly_data["Close"], mtf_cfg.get("weekly_sma_fast", 10))
-                        sma_slow = ta.SMA(weekly_data["Close"], mtf_cfg.get("weekly_sma_slow", 30))
-
-                        # Fast SMA should be above slow SMA (weekly uptrend)
-                        if sma_fast.iloc[-1] <= sma_slow.iloc[-1]:
-                            mtf_ok = False
-
-                        # Weekly RSI alignment check
-                        rsi_alignment_min = mtf_cfg.get("rsi_alignment_min", 60)
-                        weekly_rsi = ta.RSI(weekly_data["Close"], 14)
-                        if weekly_rsi.iloc[-1] < rsi_alignment_min:
-                            mtf_ok = False
-
-                        # VWAP confirmation - stock should be above VWAP (institutional accumulation)
-                        if mtf_cfg.get("vwap_confirmation", False):
-                            typical_price = (df["High"] + df["Low"] + df["Close"]) / 3
-                            cumulative_vp = (typical_price * df["Volume"]).rolling(20, min_periods=10).sum()
-                            cumulative_vol = df["Volume"].rolling(20, min_periods=10).sum()
-                            vwap = cumulative_vp / cumulative_vol
-                            if not vwap.empty and df["Close"].iloc[-1] < vwap.iloc[-1]:
+                        if not np.isnan(sma_fast_val) and not np.isnan(sma_slow_val):
+                            if sma_fast_val <= sma_slow_val:
                                 mtf_ok = False
+                        else:
+                            mtf_ok = False
+
+                        rsi_alignment_min = mtf_cfg.get("rsi_alignment_min", 60)
+                        if np.isnan(weekly_rsi_val) or weekly_rsi_val < rsi_alignment_min:
+                            mtf_ok = False
+
+                        if mtf_cfg.get("vwap_confirmation", False):
+                            if np.isnan(vwap_val) or df["Close"].iloc[-1] < vwap_val:
+                                mtf_ok = False
+                    else:
+                        # Fetch weekly data for trend confirmation
+                        weekly_data = (
+                            df.resample("W")
+                            .agg({"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"})
+                            .dropna()
+                        )
+
+                        if len(weekly_data) >= 30:
+                            # Weekly SMA crossover check
+                            sma_fast = ta.SMA(weekly_data["Close"], mtf_cfg.get("weekly_sma_fast", 10))
+                            sma_slow = ta.SMA(weekly_data["Close"], mtf_cfg.get("weekly_sma_slow", 30))
+
+                            # Fast SMA should be above slow SMA (weekly uptrend)
+                            if sma_fast.iloc[-1] <= sma_slow.iloc[-1]:
+                                mtf_ok = False
+
+                            # Weekly RSI alignment check
+                            rsi_alignment_min = mtf_cfg.get("rsi_alignment_min", 60)
+                            weekly_rsi = ta.RSI(weekly_data["Close"], 14)
+                            if weekly_rsi.iloc[-1] < rsi_alignment_min:
+                                mtf_ok = False
+
+                            # VWAP confirmation - stock should be above VWAP (institutional accumulation)
+                            if mtf_cfg.get("vwap_confirmation", False):
+                                typical_price = (df["High"] + df["Low"] + df["Close"]) / 3
+                                cumulative_vp = (typical_price * df["Volume"]).rolling(20, min_periods=10).sum()
+                                cumulative_vol = df["Volume"].rolling(20, min_periods=10).sum()
+                                vwap = cumulative_vp / cumulative_vol
+                                if not vwap.empty and df["Close"].iloc[-1] < vwap.iloc[-1]:
+                                    mtf_ok = False
                 except Exception as e:
                     logger.debug(f"MTF_GATE check failed for {symbol}: {e}")
                     mtf_ok = False  # Fail safe - if MTF check fails, gate fails
@@ -176,19 +235,28 @@ class SwingTradingSignalAnalyzer:
         # MACD
         if strat_cfg.get("MACD_Signal_Crossover", {}).get("enabled", False):
             macd_cfg = strat_cfg["MACD_Signal_Crossover"]
-            macd, macdsignal, histogram = ta.MACD(
-                df["Close"],
-                macd_cfg.get("fast_period", 12),
-                macd_cfg.get("slow_period", 26),
-                macd_cfg.get("signal_period", 9),
-            )
+            if indicator_store is not None:
+                macd_val = indicator_store.get(symbol, "macd", df.index[-1])
+                macdsignal_val = indicator_store.get(symbol, "macd_signal", df.index[-1])
+            else:
+                macd, macdsignal, histogram = ta.MACD(
+                    df["Close"],
+                    macd_cfg.get("fast_period", 12),
+                    macd_cfg.get("slow_period", 26),
+                    macd_cfg.get("signal_period", 9),
+                )
+                macd_val = macd.iloc[-1]
+                macdsignal_val = macdsignal.iloc[-1]
             # For signal scanning, just check MACD > Signal line
             # Strict histogram checks (bars below zero, first green) are handled in entry patterns
-            signals["MACD"] = 1 if macd.iloc[-1] > macdsignal.iloc[-1] else 0
+            signals["MACD"] = 1 if macd_val > macdsignal_val else 0
 
         # RSI
         if strat_cfg.get("RSI_Overbought_Oversold", {}).get("enabled", False):
-            rsi = ta.RSI(df["Close"], 14).iloc[-1]
+            if indicator_store is not None:
+                rsi = indicator_store.get(symbol, "rsi_14", df.index[-1])
+            else:
+                rsi = ta.RSI(df["Close"], 14).iloc[-1]
             signals["RSI"] = 1 if rsi > 50 else 0
 
         # RSI Strength Cross (Nitin strategy)
@@ -196,15 +264,31 @@ class SwingTradingSignalAnalyzer:
             rsi_cfg = strat_cfg["RSI_Strength_Cross"]
             rsi_period = rsi_cfg.get("rsi_period", 9)
             wma_period = rsi_cfg.get("slow_wma_period", 21)
-            rsi_short = ta.RSI(df["Close"], rsi_period)
-            rsi_wma = ta.WMA(rsi_short, wma_period)
+            if indicator_store is not None:
+                rsi_short = indicator_store.get(symbol, "rsi_9", df.index[-1])
+                # WMA of RSI not pre-computed; compute from series
+                rsi_short_series = self._get_series(symbol, df, indicator_store, "rsi_9")
+                rsi_wma_val = (
+                    rsi_short_series.rolling(wma_period, min_periods=1).mean().iloc[-1]
+                    if len(rsi_short_series) > 0
+                    else rsi_short
+                )
+            else:
+                rsi_short = ta.RSI(df["Close"], rsi_period)
+                rsi_wma = ta.WMA(rsi_short, wma_period)
+                rsi_short = rsi_short.iloc[-1]
+                rsi_wma_val = rsi_wma.iloc[-1]
             # RSI should be above its WMA (bullish momentum)
-            signals["RSI_Strength"] = 1 if rsi_short.iloc[-1] > rsi_wma.iloc[-1] else 0
+            signals["RSI_Strength"] = 1 if rsi_short > rsi_wma_val else 0
 
         # Bollinger Bands
         if strat_cfg.get("Bollinger_Band_Squeeze", {}).get("enabled", False):
-            upper, middle, lower = ta.BBANDS(df["Close"], 20, 2, 2)
-            signals["BBANDS"] = 1 if c > middle.iloc[-1] else 0
+            if indicator_store is not None:
+                bb_middle_val = indicator_store.get(symbol, "bb_middle", df.index[-1])
+            else:
+                upper, middle, lower = ta.BBANDS(df["Close"], 20, 2, 2)
+                bb_middle_val = middle.iloc[-1]
+            signals["BBANDS"] = 1 if c > bb_middle_val else 0
 
         # ADX Strength
         if strat_cfg.get("ADX_Trend_Strength", {}).get("enabled", False):
@@ -244,8 +328,12 @@ class SwingTradingSignalAnalyzer:
             entry_signals[pat_name] = 0
 
             if pat_name == "pullback_to_ema":
-                ema = ta.EMA(df["Close"], pat["ema_period"]).iloc[-1]
-                rsi = ta.RSI(df["Close"], 14).iloc[-1]
+                if indicator_store is not None:
+                    ema = indicator_store.get(symbol, "ema_21", df.index[-1])
+                    rsi = indicator_store.get(symbol, "rsi_14", df.index[-1])
+                else:
+                    ema = ta.EMA(df["Close"], pat["ema_period"]).iloc[-1]
+                    rsi = ta.RSI(df["Close"], 14).iloc[-1]
                 # Check if price is within configured distance of EMA and RSI is in range
                 max_distance = pat.get("max_distance_pct", 3.0) / 100.0
                 is_near_ema = abs(c - ema) / ema < max_distance
@@ -260,7 +348,13 @@ class SwingTradingSignalAnalyzer:
                     entry_signals[pat_name] = 1
 
             elif pat_name == "bollinger_squeeze_breakout":
-                upper, middle, lower = ta.BBANDS(df["Close"], pat["bb_period"], pat["bb_std"], pat["bb_std"])
+                if indicator_store is not None:
+                    bb_upper_series = indicator_store.get_full_series(symbol, "bb_upper")
+                    bb_middle_series = indicator_store.get_full_series(symbol, "bb_middle")
+                    bb_lower_series = indicator_store.get_full_series(symbol, "bb_lower")
+                    upper, middle, lower = bb_upper_series, bb_middle_series, bb_lower_series
+                else:
+                    upper, middle, lower = ta.BBANDS(df["Close"], pat["bb_period"], pat["bb_std"], pat["bb_std"])
                 bandwidth = (upper - lower) / middle
                 # Squeeze if bandwidth < threshold
                 is_squeeze = bandwidth.iloc[-2] < pat["squeeze_threshold"]
@@ -288,13 +382,17 @@ class SwingTradingSignalAnalyzer:
                     entry_signals[pat_name] = 1
 
             elif pat_name == "macd_zero_cross":
-                macd, _, histogram = ta.MACD(df["Close"], pat["fast"], pat["slow"], pat["signal"])
+                if indicator_store is not None:
+                    macd_line = indicator_store.get_full_series(symbol, "macd")
+                    histogram = indicator_store.get_full_series(symbol, "macd_hist")
+                else:
+                    macd_line, _, histogram = ta.MACD(df["Close"], pat["fast"], pat["slow"], pat["signal"])
                 # Cross from below zero to above zero
-                cross_ok = macd.iloc[-2] < 0 and macd.iloc[-1] > 0
+                cross_ok = macd_line.iloc[-2] < 0 and macd_line.iloc[-1] > 0
 
                 # Above zero only - if enabled, MACD must already be positive
                 if pat.get("above_zero_only", False):
-                    cross_ok = cross_ok and macd.iloc[-1] > 0
+                    cross_ok = cross_ok and macd_line.iloc[-1] > 0
 
                 # Require histogram expansion - momentum must be increasing
                 histogram_ok = True
@@ -323,13 +421,16 @@ class SwingTradingSignalAnalyzer:
                             entry_signals[pat_name] = 1
 
             elif pat_name == "volatility_contraction":
-                atr = ta.ATR(df["High"], df["Low"], df["Close"], 14)
+                if indicator_store is not None:
+                    atr_series = indicator_store.get_full_series(symbol, "atr_14")
+                else:
+                    atr_series = ta.ATR(df["High"], df["Low"], df["Close"], 14)
 
                 # Check min contractions - ATR should be decreasing over multiple periods
                 min_contractions = pat.get("min_contractions", 2)
                 contraction_count = 0
                 for i in range(1, min_contractions + 1):
-                    if atr.iloc[-i] < atr.iloc[-(i + 1)]:
+                    if atr_series.iloc[-i] < atr_series.iloc[-(i + 1)]:
                         contraction_count += 1
 
                 contraction_ok = contraction_count >= min_contractions
@@ -342,7 +443,7 @@ class SwingTradingSignalAnalyzer:
 
                 # Max ATR % of price - filter out extremely volatile stocks
                 max_atr_pct = pat.get("max_atr_pct_of_price", 3.0) / 100.0
-                atr_pct_ok = (atr.iloc[-1] / c) < max_atr_pct
+                atr_pct_ok = (atr_series.iloc[-1] / c) < max_atr_pct
 
                 if contraction_ok and volume_dry_ok and atr_pct_ok:
                     entry_signals[pat_name] = 1
@@ -440,13 +541,16 @@ class SwingTradingSignalAnalyzer:
         # RSI Momentum Filter - require RSI > threshold for all entry patterns
         # This filters out dead stocks with no upward momentum
         if entry_signals and any(v == 1 for v in entry_signals.values()):
-            rsi_14 = ta.RSI(df["Close"], 14)
-            rsi_current = rsi_14.iloc[-1]
+            if indicator_store is not None:
+                rsi_14_series = indicator_store.get_full_series(symbol, "rsi_14")
+            else:
+                rsi_14_series = ta.RSI(df["Close"], 14)
+            rsi_current = rsi_14_series.iloc[-1]
             rsi_momentum_min = strategy_config.get("rsi_momentum_filter", {}).get("min_rsi", 50)
             rsi_rising = strategy_config.get("rsi_momentum_filter", {}).get("require_rising", False)
             rsi_ok = rsi_current >= rsi_momentum_min
-            if rsi_rising and len(rsi_14) >= 6:
-                rsi_ok = rsi_ok and (rsi_current > rsi_14.iloc[-5])
+            if rsi_rising and len(rsi_14_series) >= 6:
+                rsi_ok = rsi_ok and (rsi_current > rsi_14_series.iloc[-5])
             if not rsi_ok:
                 for pat_name in entry_signals:
                     if entry_signals[pat_name] == 1:

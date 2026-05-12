@@ -130,10 +130,20 @@ class PortfolioBacktestSession:
         self._regime_check_date = None
         self._regime_check_cache = {}  # cache regime check per date
 
+        # Pre-fetched index data override (avoids union-date regime detection issues)
+        self._index_data_override: Optional[pd.DataFrame] = None
+
         # Results
         self.session_id: Any = None
         self.start_date: Optional[pd.Timestamp] = None
         self.end_date: Optional[pd.Timestamp] = None
+
+        # Pre-computed indicator store (optional, for vectorbt acceleration)
+        self._indicator_store: Any = None
+
+    def set_indicator_store(self, store: Any) -> None:
+        """Set a pre-computed indicator store for accelerated signal generation."""
+        self._indicator_store = store
 
     # ------------------------------------------------------------------
     # Public API
@@ -290,6 +300,27 @@ class PortfolioBacktestSession:
             "daily_snapshots": self.daily_snapshots,
             "date_range": {"start_date": str(self.start_date.date()), "end_date": str(self.end_date.date())},
         }
+
+    def run_with_indicator_store(
+        self,
+        symbols_data: Dict[str, pd.DataFrame],
+        indicator_store: Any,
+        sim_start_date: Optional[pd.Timestamp] = None,
+        sim_end_date: Optional[pd.Timestamp] = None,
+    ) -> Dict[str, Any]:
+        """Run portfolio backtest using a pre-computed indicator store for fast signal lookups.
+
+        Args:
+            symbols_data: Dict mapping symbol -> DataFrame (OHLCV)
+            indicator_store: IndicatorStore from vectorbt_indicator_batch
+            sim_start_date: Optional start date
+            sim_end_date: Optional end date
+
+        Returns:
+            Dict with session summary, trades, and per-stock metrics.
+        """
+        self.set_indicator_store(indicator_store)
+        return self.run(symbols_data, sim_start_date, sim_end_date)
 
     # ------------------------------------------------------------------
     # Simulation Core
@@ -662,7 +693,10 @@ class PortfolioBacktestSession:
 
             try:
                 swing = self.swing_analyzer.analyze_swing_opportunity(
-                    symbol, hist, strategy_config=self.strategy_config
+                    symbol,
+                    hist,
+                    strategy_config=self.strategy_config,
+                    indicator_store=self._indicator_store,
                 )
 
                 if swing.get("all_gates_passed") and swing.get("recommendation") == "BUY":
@@ -947,16 +981,19 @@ class PortfolioBacktestSession:
             return self._regime_status
 
         try:
-            # Get NIFTY data from symbols_data if available, otherwise fetch
+            # Get NIFTY data: use override first, then symbols_data, then fetch
             index_symbol = self.regime_config.get("index", "^NSEI")
-            if index_symbol in symbols_data:
+            if self._index_data_override is not None:
+                index_df = self._index_data_override
+                index_hist = index_df.loc[:date]
+            elif index_symbol in symbols_data:
                 index_df = symbols_data[index_symbol]
                 index_hist = index_df.loc[:date]
             else:
                 # Fetch index data on-the-fly
                 from scripts.data_fetcher import get_historical_data
 
-                full_data = get_historical_data(index_symbol, period="5y")
+                full_data = get_historical_data(index_symbol, period="10y")
                 index_hist = full_data.loc[:date]
 
             if len(index_hist) < 250:

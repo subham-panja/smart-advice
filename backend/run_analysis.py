@@ -140,3 +140,68 @@ class AutomatedStockAnalysis:
         logger.info(
             f"[{strategy_config['name']}] Pipeline Finished: {duration/60:.1f}m | {recos} Recommendations found."
         )
+
+
+def _run_portfolio_backtest_if_enabled(strategy_config: dict, max_stocks: int = 50):
+    """Run portfolio backtest if the strategy has backtesting enabled."""
+    bt_cfg = config.PORTFOLIO_BACKTEST_CONFIG
+    if not bt_cfg.get("enabled"):
+        return
+    if not strategy_config.get("analysis_config", {}).get("backtesting", False):
+        return
+
+    strat_name = strategy_config["name"]
+    logger.info(f"Running portfolio backtest for {strat_name}...")
+    try:
+        from scripts.run_portfolio_backtest import run_portfolio_backtest
+
+        period = strategy_config.get("recommendation_thresholds", {}).get(
+            "backtest_period",
+            config.DATA_CACHE_CONFIG["periods"].get("portfolio_backtest", "5y"),
+        )
+        results = run_portfolio_backtest(
+            strategy_name=strat_name,
+            max_stocks=max_stocks,
+            period=period,
+            save_to_db=True,
+            verbose=False,
+        )
+        logger.info(
+            "Portfolio backtest for %s: CAGR %.1f%% | Trades: %d"
+            % (strat_name, results["cagr"], results["total_trades"])
+        )
+    except Exception as e:
+        logger.error("Portfolio backtest failed for %s: %s" % (strat_name, e))
+
+
+if __name__ == "__main__":
+    import argparse
+    import sys
+
+    parser = argparse.ArgumentParser(description="Run stock analysis pipeline")
+    parser.add_argument("--strategy", type=str, default=None, help="Run one specific strategy")
+    parser.add_argument("--all", action="store_true", help="Run all enabled strategies")
+    parser.add_argument("--max-stocks", type=int, default=50, help="Max stocks per strategy")
+    args = parser.parse_args()
+
+    from utils.strategy_loader import StrategyLoader
+
+    if args.strategy:
+        strategies = [StrategyLoader.get_strategy_by_name(args.strategy)]
+        if not strategies[0]:
+            print(f"Error: Strategy '{args.strategy}' not found or not enabled.")
+            sys.exit(1)
+    else:
+        strategies = StrategyLoader.load_all_strategies()
+        if not strategies:
+            print("No enabled strategies found.")
+            sys.exit(1)
+
+    for strategy in strategies:
+        print(f"\n{'='*50}")
+        print(f"Strategy: {strategy['name']}")
+        print(f"{'='*50}\n")
+
+        analyzer = AutomatedStockAnalysis(verbose=True)
+        analyzer.run(strategy_config=strategy)
+        _run_portfolio_backtest_if_enabled(strategy, max_stocks=args.max_stocks)

@@ -53,7 +53,7 @@ def run_analysis(m):
     import subprocess
 
     script_path = os.path.join(os.path.dirname(__file__), "run_analysis.py")
-    res = subprocess.run([sys.executable, script_path], capture_output=True, text=True)
+    res = subprocess.run([sys.executable, script_path, "--all", "--max-stocks", "50"], capture_output=True, text=True)
     if res.returncode == 0:
         bot.send_message(m.chat.id, "✅ <b>Complete!</b>", parse_mode="HTML")
         view_recs(m, today=True)
