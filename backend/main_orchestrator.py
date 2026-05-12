@@ -34,9 +34,18 @@ def run_trading_cycle():
     PersistenceHandler().clear_old_data(config.DATA_PURGE_DAYS)
 
     # Load All Strategies
-    strategies = StrategyLoader.load_all_strategies()
-    if not strategies:
+    all_strategies = StrategyLoader.load_all_strategies()
+    if not all_strategies:
         raise RuntimeError("No enabled strategies found. Check your JSON configuration.")
+
+    # Only run Swing_Trading in the daily cycle
+    strategies = [s for s in all_strategies if s["name"] == "Swing_Trading"]
+    if not strategies:
+        raise RuntimeError("Swing_Trading strategy not found. Check swing_trading.json.")
+
+    logger.info(
+        "Running trading cycle for Swing_Trading only (%d other strategies skipped)" % (len(all_strategies) - 1)
+    )
 
     is_paper = trading_opts.get("is_paper_trading", True)
 
@@ -64,40 +73,6 @@ def run_trading_cycle():
         logger.info("Phase 2: Running analysis for " + strat_name + "...")
         analyzer = AutomatedStockAnalysis(verbose=True)
         analyzer.run(strategy_config=strategy)
-
-        # Phase 2.5: Portfolio Backtest (auto-runs if strategy has backtesting=true)
-        bt_cfg = config.PORTFOLIO_BACKTEST_CONFIG
-        if bt_cfg.get("enabled") and strategy.get("analysis_config", {}).get("backtesting", False):
-            print("Phase 2.5: Running portfolio backtest for " + strat_name + "...")
-            logger.info("Phase 2.5: Running portfolio backtest for " + strat_name + "...")
-            try:
-                from scripts.run_portfolio_backtest import run_portfolio_backtest
-
-                # Use strategy-specific period, fallback to config default
-                period = strategy.get("recommendation_thresholds", {}).get(
-                    "backtest_period",
-                    config.DATA_CACHE_CONFIG["periods"].get("portfolio_backtest", "5y"),
-                )
-                max_stocks = bt_cfg.get("auto_run_max_stocks", 1000)
-
-                results = run_portfolio_backtest(
-                    strategy_name=strat_name,
-                    max_stocks=max_stocks,
-                    period=period,
-                    save_to_db=True,
-                    verbose=False,
-                )
-                logger.info(
-                    "Portfolio backtest for %s: CAGR %.1f%% | Trades: %d | Win Rate: %.1f%%"
-                    % (strat_name, results["cagr"], results["total_trades"], results["win_rate"])
-                )
-                print(
-                    "   Portfolio Backtest Complete: CAGR %.1f%% | %d trades"
-                    % (results["cagr"], results["total_trades"])
-                )
-            except Exception as e:
-                logger.error("Portfolio backtest failed for %s: %s" % (strat_name, e))
-                print("   Portfolio Backtest Error: " + str(e))
 
         # Phase 3: Execute Recommendations for this strategy
         print("Phase 3: Executing recommendations for " + strat_name + "...")
