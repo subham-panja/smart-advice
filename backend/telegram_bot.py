@@ -309,18 +309,35 @@ def portfolio(m):
 
         total_pnl = total_current - total_invested
         total_pnl_pct = (total_pnl / total_invested * 100) if total_invested > 0 else 0
-        summary = (
+
+        # Send top 10 holdings + summary in first message
+        batch_size = 10
+        first_batch = lines[:batch_size]
+        header = (
             "💼 <b>Portfolio</b> ({} holdings)\n"
             "━━━━━━━━━━━━━━━━━━━━\n\n"
             "{}\n\n"
             "━━━━━━━━━━━━━━━━━━━━\n"
             "💵 Total Invested: ₹{:,.0f}\n"
             "📈 Current Value: ₹{:,.0f}\n"
-            "💰 Total PnL: ₹{:+,.0f} ({:+.1f}%)".format(
-                len(active), "\n\n".join(lines), total_invested, total_current, total_pnl, total_pnl_pct
+            "💰 Total PnL: ₹{:+,.0f} ({:+.1f}%)\n\n"
+            "<i>Showing top {} of {} holdings.</i>".format(
+                len(active),
+                "\n\n".join(first_batch),
+                total_invested,
+                total_current,
+                total_pnl,
+                total_pnl_pct,
+                min(batch_size, len(active)),
+                len(active),
             )
         )
-        bot.send_message(m.chat.id, summary, parse_mode="HTML")
+        bot.send_message(m.chat.id, header, parse_mode="HTML")
+
+        # Send remaining holdings in batches
+        for i in range(batch_size, len(lines), batch_size):
+            batch = lines[i : i + batch_size]
+            bot.send_message(m.chat.id, "\n\n".join(batch), parse_mode="HTML")
     else:
         bot.send_message(m.chat.id, "❌ Error")
 
