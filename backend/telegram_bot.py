@@ -6,7 +6,7 @@ from pymongo import MongoClient
 from telebot.types import ReplyKeyboardMarkup
 
 import config
-from utils.fivepaisa_client import get_5paisa_balance, get_5paisa_holdings
+from utils.fivepaisa_client import FivePaisaUtility, get_5paisa_balance, get_5paisa_holdings
 
 if not getattr(config, "TELEGRAM_CONFIG", {}).get("enabled", False):
     sys.exit(0)
@@ -29,6 +29,61 @@ def get_kb():
     kb.add("📊 View Recommendations", "📈 View Positions")
     kb.add("💼 Portfolio", "💰 Balance", "❓ Help")
     return kb
+
+
+# ---------------------------------------------------------------------------
+# 5paisa OAuth commands
+# ---------------------------------------------------------------------------
+
+
+@bot.message_handler(commands=["5paisa_login"])
+def fivepaisa_login(m):
+    """Generate OAuth URL for 5paisa login."""
+    if not check(m):
+        return
+    util = FivePaisaUtility()
+    url = util.get_oauth_url()
+    if not url:
+        bot.send_message(m.chat.id, "❌ 5paisa API keys missing in .env")
+        return
+    bot.send_message(
+        m.chat.id,
+        "🔐 <b>5paisa Login</b>\n\n"
+        "1. Visit this link:\n{}\n\n"
+        "2. Log in and approve the request\n\n"
+        "3. You will be redirected to a page with a <code>request_token</code>\n\n"
+        "4. Send it back here as:\n<code>/5paisa_token YOUR_REQUEST_TOKEN</code>".format(url),
+        parse_mode="HTML",
+    )
+
+
+@bot.message_handler(commands=["5paisa_token"])
+def fivepaisa_token(m):
+    """Complete OAuth flow with the request token."""
+    if not check(m):
+        return
+    parts = m.text.split()
+    if len(parts) < 2:
+        bot.send_message(m.chat.id, "❌ Usage: <code>/5paisa_token YOUR_REQUEST_TOKEN</code>", parse_mode="HTML")
+        return
+
+    request_token = parts[1]
+    util = FivePaisaUtility()
+    result = util.login_with_request_token(request_token)
+
+    if result.get("status") == "success":
+        access_token = result["access_token"]
+        bot.send_message(
+            m.chat.id,
+            "✅ <b>Login Successful!</b>\n\n"
+            "Access Token:\n<code>{}</code>\n\n"
+            "Add this to your .env as:\n"
+            "<code>FIVEPAISA_ACCESS_TOKEN={}</code>\n\n"
+            "Then restart the bot.".format(access_token, access_token),
+            parse_mode="HTML",
+        )
+    else:
+        bot.send_message(m.chat.id, "❌ <b>Login Failed</b>\n{}".format(result.get("message")), parse_mode="HTML")
 
 
 @bot.message_handler(commands=["start", "help"])
@@ -148,7 +203,7 @@ def balance(m):
         msg = f"💰 <b>Balance</b>\nMargin: ₹{b.get('available_margin', 0):.2f}\nNet: ₹{b.get('net_available', 0):.2f}"
         bot.send_message(m.chat.id, msg, parse_mode="HTML")
     else:
-        bot.send_message(m.chat.id, "❌ Error")
+        bot.send_message(m.chat.id, f"❌ Balance Error\n{b.get('message', 'Unknown error')}", parse_mode="HTML")
 
 
 @bot.message_handler(func=lambda m: m.text == "📈 View Positions")
