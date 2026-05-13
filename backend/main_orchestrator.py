@@ -17,17 +17,23 @@ def _send_telegram(message: str):
     """Send a message to Telegram chat. Fails silently if config is missing."""
     tg = getattr(config, "TELEGRAM_CONFIG", {})
     if not tg.get("enabled", False):
+        logger.warning("Telegram: not enabled")
         return
     token = tg.get("bot_token", "")
     chat_ids = tg.get("allowed_user_ids", [])
     if not token or not chat_ids:
+        logger.warning("Telegram: missing token or chat_ids")
         return
     url = f"https://api.telegram.org/bot{token}/sendMessage"
     for chat_id in chat_ids:
         try:
-            requests.post(url, json={"chat_id": chat_id, "text": message, "parse_mode": "HTML"}, timeout=10)
-        except Exception:
-            pass
+            resp = requests.post(url, json={"chat_id": chat_id, "text": message, "parse_mode": "HTML"}, timeout=10)
+            if resp.status_code == 200:
+                logger.info("Telegram message sent (chat_id=%s)" % chat_id)
+            else:
+                logger.error("Telegram API error: %s %s" % (resp.status_code, resp.text))
+        except Exception as e:
+            logger.error("Telegram send failed: %s" % e)
 
 
 def run_trading_cycle():
