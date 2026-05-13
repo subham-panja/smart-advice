@@ -1,4 +1,5 @@
 import logging
+import requests
 from datetime import datetime, timezone
 
 import config
@@ -12,6 +13,23 @@ setup_logging(verbose=True)
 logger = logging.getLogger("Orchestrator")
 
 
+def _send_telegram(message: str):
+    """Send a message to Telegram chat. Fails silently if config is missing."""
+    tg = getattr(config, "TELEGRAM_CONFIG", {})
+    if not tg.get("enabled", False):
+        return
+    token = tg.get("bot_token", "")
+    chat_ids = tg.get("allowed_user_ids", [])
+    if not token or not chat_ids:
+        return
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    for chat_id in chat_ids:
+        try:
+            requests.post(url, json={"chat_id": chat_id, "text": message, "parse_mode": "HTML"}, timeout=10)
+        except Exception:
+            pass
+
+
 def run_trading_cycle():
     """Main entry point for the unified trading cycle."""
     print("")
@@ -20,6 +38,8 @@ def run_trading_cycle():
     print("=" * 50)
     print("")
     logger.warning("=== STARTING UNIFIED TRADING CYCLE ===")
+
+    _send_telegram("🔄 <b>Trading Cycle Started</b>\nRunning analysis and execution...")
 
     # App-level trading config
     trading_opts = config.TRADING_OPTIONS
@@ -50,6 +70,8 @@ def run_trading_cycle():
     else:
         from scripts.execution_engine import ExecutionEngine
         from scripts.portfolio_monitor import PortfolioMonitor
+
+    total_executed = 0
 
     for strategy in strategies:
         strat_name = strategy["name"]
@@ -158,6 +180,35 @@ def run_trading_cycle():
                     )
 
         print("   Executed %d trades for %s" % (executed_count, strat_name))
+        total_executed += executed_count
+
+    # Final summary
+    open_positions = get_open_positions()
+    db = get_mongodb()
+    today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).replace(tzinfo=None)
+    buy_recs = list(
+        db.recommended_shares.find(
+            {"recommendation_date": {"$gte": today_start}, "recommendation_strength": "BUY"}
+        )
+    )
+
+    positions_text = ""
+    for p in open_positions:
+        pnl = p.get("unrealized_pnl", 0)
+        pnl_pct = p.get("unrealized_pnl_pct", 0)
+        positions_text += f"• {p['symbol']} | Qty: {p['quantity']} | PnL: ₹{pnl:+,.0f} ({pnl_pct:+.1f}%)\n"
+
+    recs_text = ""
+    for r in buy_recs:
+        recs_text += f"• {r['symbol']} | Score: {r.get('combined_score', 0):.2f} | ₹{r.get('buy_price', 0):.2f}\n"
+
+    summary = (
+        f"✅ <b>Trading Cycle Complete</b>\n\n"
+        f"📈 <b>Open Positions</b> ({len(open_positions)}):\n{positions_text or 'None\n'}"
+        f"📋 <b>Today's Recommendations</b> ({len(buy_recs)}):\n{recs_text or 'None\n'}"
+        f"💰 <b>Trades Executed</b>: {total_executed}"
+    )
+    _send_telegram(summary)
 
     print("")
     print("=" * 50)
