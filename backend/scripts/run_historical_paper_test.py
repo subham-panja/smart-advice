@@ -77,7 +77,7 @@ def _print_summary(results: dict):
     print("")
 
 
-def _send_telegram_summary(results: dict, strategy_name: str):
+def _send_telegram_summary(results: dict, strategy_name: str, months: int):
     """Send formatted Telegram summary matching orchestrator format."""
     r = results
     initial_cap = r["initial_capital"]
@@ -87,20 +87,20 @@ def _send_telegram_summary(results: dict, strategy_name: str):
     pnl_pct = (total_pnl / initial_cap) * 100
 
     # Top trades
-    sells = [t for t in r.get("trades", []) if t.get("action") == "SELL"]
-    win_count = sum(1 for s in sells if s.get("pnl", 0) > 0)
+    sells = [t for t in r.get("trades", []) if t.trade_type == "SELL"]
+    win_count = sum(1 for s in sells if s.pnl > 0)
     loss_count = len(sells) - win_count
 
     trades_text = ""
     # Show last 5 trades
     for t in sells[-5:]:
-        pnl = t.get("pnl", 0)
+        pnl = t.pnl
         emoji = "🟢" if pnl >= 0 else "🔴"
         trades_text += "{} {} | PnL: ₹{:+,.0f} ({:+.1f}%)\n".format(
             emoji,
-            t.get("symbol", "?"),
+            t.symbol,
             pnl,
-            t.get("pnl_pct", 0),
+            t.pnl_pct,
         )
 
     header = "📝 Historical Paper Trading"
@@ -194,7 +194,7 @@ def run_historical_test(
 
     if send_telegram:
         print("Sending Telegram summary...")
-        _send_telegram_summary(results, strategy_name)
+        _send_telegram_summary(results, strategy_name, months)
 
     return results
 
