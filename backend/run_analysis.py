@@ -28,6 +28,7 @@ class AutomatedStockAnalysis:
         self.verbose = verbose
         self.fresh = fresh
         self.start_time = datetime.now()
+        self.scanned_symbols_count = 0
 
     def run(self, strategy_config: Dict[str, Any], use_all_symbols: bool = False):
         """Executes the analysis pipeline."""
@@ -51,6 +52,7 @@ class AutomatedStockAnalysis:
 
         symbols = StockScanner.get_symbols(strategy_config=strategy_config)
         symbols_list = list(symbols.keys())
+        self.scanned_symbols_count = len(symbols_list)
 
         # Save candidates to filtered_stocks
         strat_name = strategy_config["name"]

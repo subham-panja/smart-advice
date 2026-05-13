@@ -72,6 +72,7 @@ def run_trading_cycle():
         from scripts.portfolio_monitor import PortfolioMonitor
 
     total_executed = 0
+    analysis_failed = False
 
     for strategy in strategies:
         strat_name = strategy["name"]
@@ -88,8 +89,16 @@ def run_trading_cycle():
         # Phase 2: Run Analysis for this strategy
         print("Phase 2: Running analysis for " + strat_name + "...")
         logger.info("Phase 2: Running analysis for " + strat_name + "...")
-        analyzer = AutomatedStockAnalysis(verbose=True)
-        analyzer.run(strategy_config=strategy)
+        try:
+            analyzer = AutomatedStockAnalysis(verbose=True)
+            analyzer.run(strategy_config=strategy)
+            # Check if the scanner produced any candidates
+            if not analyzer.scanned_symbols_count or analyzer.scanned_symbols_count == 0:
+                logger.warning("Analysis scan produced 0 candidates for %s" % strat_name)
+                analysis_failed = True
+        except Exception as e:
+            logger.error("Analysis failed for %s: %s" % (strat_name, e))
+            analysis_failed = True
 
         # Phase 3: Execute Recommendations for this strategy
         print("Phase 3: Executing recommendations for " + strat_name + "...")
@@ -202,12 +211,21 @@ def run_trading_cycle():
     for r in buy_recs:
         recs_text += f"• {r['symbol']} | Score: {r.get('combined_score', 0):.2f} | ₹{r.get('buy_price', 0):.2f}\n"
 
-    summary = (
-        f"✅ <b>Trading Cycle Complete</b>\n\n"
-        f"📈 <b>Open Positions</b> ({len(open_positions)}):\n{positions_text or 'None\n'}"
-        f"📋 <b>Today's Recommendations</b> ({len(buy_recs)}):\n{recs_text or 'None\n'}"
-        f"💰 <b>Trades Executed</b>: {total_executed}"
-    )
+    if analysis_failed:
+        summary = (
+            f"⚠️ <b>Trading Cycle — Scan Failed</b>\n\n"
+            f"Chartink API was unreachable. Stock scan could not complete.\n"
+            f"Try again in a few minutes.\n\n"
+            f"📈 <b>Open Positions</b> ({len(open_positions)}):\n{positions_text or 'None\n'}"
+            f"💰 <b>Trades Executed</b>: {total_executed}"
+        )
+    else:
+        summary = (
+            f"✅ <b>Trading Cycle Complete</b>\n\n"
+            f"📈 <b>Open Positions</b> ({len(open_positions)}):\n{positions_text or 'None\n'}"
+            f"📋 <b>Today's Recommendations</b> ({len(buy_recs)}):\n{recs_text or 'None\n'}"
+            f"💰 <b>Trades Executed</b>: {total_executed}"
+        )
     _send_telegram(summary)
 
     print("")
