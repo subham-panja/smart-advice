@@ -284,10 +284,43 @@ def portfolio(m):
         if not active:
             bot.send_message(m.chat.id, "📭 Empty")
             return
-        msg = "💼 <b>Portfolio</b>\n" + "\n".join(
-            [f"• {h['Symbol']}: {h['Quantity']} @ ₹{h['AvgRate']:.2f}" for h in active]
+
+        total_invested = 0
+        total_current = 0
+        lines = []
+        for h in active:
+            qty = h.get("Quantity", 0)
+            avg = h.get("AvgRate", 0)
+            ltp = h.get("LTP", 0)
+            invested = qty * avg
+            current = qty * ltp
+            pnl = current - invested
+            pnl_pct = (pnl / invested * 100) if invested > 0 else 0
+            total_invested += invested
+            total_current += current
+            emoji = "🟢" if pnl >= 0 else "🔴"
+            lines.append(
+                "{} <b>{}</b>\n"
+                "  Qty: {} | Avg: ₹{:.2f} | LTP: ₹{:.2f}\n"
+                "  Value: ₹{:,.0f} | PnL: ₹{:+,.0f} ({:+.1f}%)".format(
+                    emoji, h["Symbol"], qty, avg, ltp, current, pnl, pnl_pct
+                )
+            )
+
+        total_pnl = total_current - total_invested
+        total_pnl_pct = (total_pnl / total_invested * 100) if total_invested > 0 else 0
+        summary = (
+            "💼 <b>Portfolio</b> ({} holdings)\n"
+            "━━━━━━━━━━━━━━━━━━━━\n\n"
+            "{}\n\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            "💵 Total Invested: ₹{:,.0f}\n"
+            "📈 Current Value: ₹{:,.0f}\n"
+            "💰 Total PnL: ₹{:+,.0f} ({:+.1f}%)".format(
+                len(active), "\n\n".join(lines), total_invested, total_current, total_pnl, total_pnl_pct
+            )
         )
-        bot.send_message(m.chat.id, msg, parse_mode="HTML")
+        bot.send_message(m.chat.id, summary, parse_mode="HTML")
     else:
         bot.send_message(m.chat.id, "❌ Error")
 
