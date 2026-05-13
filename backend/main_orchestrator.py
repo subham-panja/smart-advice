@@ -1,6 +1,7 @@
 import logging
-import requests
 from datetime import datetime, timezone
+
+import requests
 
 import config
 from database import get_mongodb, get_open_positions
@@ -197,42 +198,101 @@ def run_trading_cycle():
         print("   Executed %d trades for %s" % (executed_count, strat_name))
         total_executed += executed_count
 
-    # Final summary
+    # Final summary — match telegram_bot.py format exactly
     open_positions = get_open_positions()
     db = get_mongodb()
     today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).replace(tzinfo=None)
     buy_recs = list(
-        db.recommended_shares.find(
-            {"recommendation_date": {"$gte": today_start}, "recommendation_strength": "BUY"}
-        )
+        db.recommended_shares.find({"recommendation_date": {"$gte": today_start}, "recommendation_strength": "BUY"})
     )
-
-    positions_text = ""
-    for p in open_positions:
-        pnl = p.get("unrealized_pnl", 0)
-        pnl_pct = p.get("unrealized_pnl_pct", 0)
-        positions_text += f"• {p['symbol']} | Qty: {p['quantity']} | PnL: ₹{pnl:+,.0f} ({pnl_pct:+.1f}%)\n"
-
-    recs_text = ""
-    for r in buy_recs:
-        recs_text += f"• {r['symbol']} | Score: {r.get('combined_score', 0):.2f} | ₹{r.get('buy_price', 0):.2f}\n"
+    initial_cap = trading_opts.get("initial_capital", 100000.0)
+    is_paper = trading_opts.get("is_paper_trading", True)
 
     if analysis_failed:
         summary = (
-            f"⚠️ <b>Trading Cycle — Scan Failed</b>\n\n"
-            f"Chartink API was unreachable. Stock scan could not complete.\n"
-            f"Try again in a few minutes.\n\n"
-            f"📈 <b>Open Positions</b> ({len(open_positions)}):\n{positions_text or 'None\n'}"
-            f"💰 <b>Trades Executed</b>: {total_executed}"
+            "⚠️ <b>Trading Cycle — Scan Failed</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            "Chartink API was unreachable. Stock scan could not complete.\n"
+            "Try again in a few minutes."
         )
+        _send_telegram(summary)
     else:
-        summary = (
-            f"✅ <b>Trading Cycle Complete</b>\n\n"
-            f"📈 <b>Open Positions</b> ({len(open_positions)}):\n{positions_text or 'None\n'}"
-            f"📋 <b>Today's Recommendations</b> ({len(buy_recs)}):\n{recs_text or 'None\n'}"
-            f"💰 <b>Trades Executed</b>: {total_executed}"
+        # Send recommendations (one message per rec, matching view_recs format)
+        for r in buy_recs:
+            bt = r.get("backtest_metrics", {})
+            score = r.get("combined_score", 0)
+            quantity = r.get("suggested_quantity", 1)
+            buy_price = r.get("buy_price", 0)
+            sell_price = r.get("sell_price", 0)
+            stop_loss = r.get("stop_loss", 0)
+            total_cost = quantity * buy_price
+            cap_pct = r.get("allocation_pct", (total_cost / initial_cap) * 100)
+            rr = r.get("rr_ratio", 0)
+            rec_msg = (
+                f"📈 <b>{r['symbol']}</b> | <b>{r.get('strategy_name', 'Swing_Trading')}</b>\n"
+                f"━━━━━━━━━━━━━━━━━━━━\n"
+                f"🎯 Score: <b>{score:.1f}/100</b>\n"
+                f"💰 <b>Trade Plan</b>:\n"
+                f"• Entry: ₹{buy_price:.2f}\n"
+                f"• Target: ₹{sell_price:.2f}\n"
+                f"• Stop Loss: ₹{stop_loss:.2f}\n"
+                f"• RR Ratio: <b>{rr:.2f}</b>\n\n"
+                f"🔢 <b>Sizing (₹{initial_cap/100000:.1f}L Cap)</b>:\n"
+                f"• Quantity: <b>{quantity}</b>\n"
+                f"• Allocation: <b>₹{total_cost:,.2f} ({cap_pct:.1f}%)</b>\n\n"
+                f"📊 <b>Backtest Stats</b>:\n"
+                f"• Trades: <b>{bt.get('total_trades', 0)}</b>\n"
+                f"• Win Rate: {bt.get('avg_win_rate', 0):.1f}%\n"
+                f"• Avg CAGR: {bt.get('avg_cagr', 0):.1f}%\n"
+                f"• Expectancy: {bt.get('avg_expectancy', 0.0):.2f}\n\n"
+                f"📝 <b>Analysis</b>: {r.get('reason', 'Technical Momentum Breakout')}"
+            )
+            _send_telegram(rec_msg)
+
+        # Send positions summary (matching view_positions format)
+        total_mkt_val = 0
+        total_pnl_val = 0
+        positions_msg = ""
+        for p in open_positions:
+            current_p = p.get("current_price", p["entry_price"])
+            pnl_val = (current_p - p["entry_price"]) * p["quantity"]
+            pnl_pct = ((current_p - p["entry_price"]) / p["entry_price"]) * 100
+            total_cost = p.get("total_investment", p["quantity"] * p["entry_price"])
+            total_mkt_val += current_p * p["quantity"]
+            total_pnl_val += pnl_val
+            status_emoji = "🟢" if pnl_pct >= 0 else "🔴"
+            allocation = p.get("allocation_pct", (total_cost / initial_cap) * 100)
+            positions_msg += (
+                f"{status_emoji} <b>{p['symbol']}</b> | {p.get('strategy_name', 'Swing_Trading')}\n"
+                f"📅 Entered: {p['entry_date'].strftime('%Y-%m-%d %H:%M') if p.get('entry_date') else 'N/A'}\n"
+                f"🔢 Qty: {p['quantity']} @ ₹{p['entry_price']:.2f}\n"
+                f"💰 Cost: ₹{total_cost:,.2f} ({allocation:.1f}% Cap)\n"
+                f"🎯 Target: ₹{p['target']:.2f} | 🛑 SL: ₹{p['stop_loss']:.2f}\n"
+                f"💸 PnL: ₹{pnl_val:+,.2f} ({pnl_pct:+.2f}%)\n\n"
+            )
+
+        cash_left = initial_cap - sum(
+            p.get("total_investment", p["quantity"] * p["entry_price"]) for p in open_positions
         )
-    _send_telegram(summary)
+        total_equity = total_mkt_val + cash_left
+        overall_pnl_pct = ((total_equity - initial_cap) / initial_cap) * 100
+        header = "📝 Active Paper Positions" if is_paper else "💼 Active Live Positions"
+
+        summary = (
+            f"✅ <b>Trading Cycle Complete!</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"{header} ({len(open_positions)}):\n"
+            f"{'━━━━━━━━━━━━━━━━━━━━\n' + positions_msg if positions_msg else '📭 No open positions found.\n\n'}"
+            f"📊 <b>PORTFOLIO SUMMARY</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"💵 Initial Capital: ₹{initial_cap:,.2f}\n"
+            f"📈 Market Value: ₹{total_mkt_val:,.2f}\n"
+            f"🏦 Cash Balance: ₹{cash_left:,.2f}\n"
+            f"💰 Net Equity: ₹{total_equity:,.2f}\n"
+            f"📊 Total PnL: ₹{total_pnl_val:+,.2f} ({overall_pnl_pct:+.2f}%)\n\n"
+            f"💰 Trades Executed: {total_executed}"
+        )
+        _send_telegram(summary)
 
     print("")
     print("=" * 50)
