@@ -357,14 +357,14 @@ class ExecutionEngine:
         if not self.strategy_config:
             raise RuntimeError(
                 "Market regime detection is DISABLED but required by this strategy. "
-                "Enable market_regime_detection in hybrid_trading.json or provide strategy_config to ExecutionEngine."
+                "Enable market_regime_detection in your strategy config or provide strategy_config to ExecutionEngine."
             )
 
         regime_config = self.strategy_config.get("market_regime_config", {})
         if not regime_config:
             raise RuntimeError(
                 "Market regime detection is DISABLED but required by this strategy. "
-                "Ensure 'market_regime_config' is present in hybrid_trading.json with 'index' and 'bull_market_rule'."
+                "Ensure 'market_regime_config' is present in your strategy config with 'index' and 'bull_market_rule'."
             )
 
         try:
@@ -379,7 +379,7 @@ class ExecutionEngine:
         except Exception as e:
             raise RuntimeError(
                 f"Market regime detection failed: {e}. "
-                "Check your market_regime_config in hybrid_trading.json or verify index data availability."
+                "Check your market_regime_config in your strategy config or verify index data availability."
             ) from e
 
     def _check_market_breadth_paper(self, strategy_config: dict) -> bool:

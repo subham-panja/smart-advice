@@ -8,7 +8,7 @@
     "fundamental_analysis": true,
     "sentiment_analysis": false,
     "sector_analysis": true,
-    "market_regime_detection": true,
+    "market_regime_detection": false,
     "backtesting": true,
     "risk_management": true,
     "options_oi": true
@@ -120,7 +120,10 @@
       "is_bonus": false,
       "fast_period": 12,
       "slow_period": 26,
-      "signal_period": 9
+      "signal_period": 9,
+      "check_divergence": false,
+      "divergence_bars": 10,
+      "block_on_bearish_divergence": false
     },
     "ADX_Trend_Strength": {
       "enabled": true,
@@ -138,10 +141,12 @@
       "is_bonus": false,
       "period": 20,
       "std": 2,
-      "squeeze_threshold": 0.95
+      "squeeze_threshold": 0.95,
+      "atr_multiplier": 1.5,
+      "volatility_limit": 2.5
     },
     "Relative_Strength_Comparison": {
-      "enabled": true,
+      "enabled": false,
       "is_bonus": true,
       "period": 55,
       "threshold": 0.0
@@ -156,7 +161,9 @@
     "Volume_Breakout": {
       "enabled": true,
       "is_bonus": false,
-      "period": 20
+      "period": 20,
+      "threshold": 2.0,
+      "regime_override": null
     },
     "Candlestick_Patterns": {
       "enabled": false,

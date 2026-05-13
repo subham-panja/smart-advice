@@ -65,6 +65,8 @@ def run_date_range(strategy_name, start_date, end_date, max_stocks=50):
 
 
 if __name__ == "__main__":
+    STRATEGY_NAME = "Swing_Trading"  # Change to test other strategies
+
     tests = [
         ("2019-01-01", "2024-06-30", "COVID crash + recovery + choppy"),
         ("2021-05-01", "2026-05-12", "Bull run (baseline)"),
@@ -78,7 +80,7 @@ if __name__ == "__main__":
         print(f"Testing: {label}")
         print(f"Period: {start} → {end}")
         print(f"{'='*60}")
-        result = run_date_range("Swing_Trading", start, end)
+        result = run_date_range(STRATEGY_NAME, start, end)
         if result:
             all_results.append(
                 {

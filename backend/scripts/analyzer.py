@@ -228,16 +228,27 @@ class StockAnalyzer:
         bt_ok = True
         if consider_bt:
             # Note: backtest_utils must be updated if it uses defaults
-            m = res["backtest"]["combined_metrics"]
-            # Check for min_backtest_return in threshold, if missing it will crash as requested
-            bt_ok = m["avg_cagr"] >= rec_thresholds["min_backtest_return"]
-            audit_log["steps"].append(
-                {
-                    "step": "Backtest CAGR",
-                    "status": "PASS" if bt_ok else "FAIL",
-                    "reason": f"CAGR {m['avg_cagr']:.2f}% (Req: {rec_thresholds['min_backtest_return']}%)",
-                }
-            )
+            bt_result = res.get("backtest", {})
+            m = bt_result.get("combined_metrics")
+            if m is None:
+                bt_ok = False
+                audit_log["steps"].append(
+                    {
+                        "step": "Backtest CAGR",
+                        "status": "FAIL",
+                        "reason": "Backtest skipped (insufficient data)",
+                    }
+                )
+            else:
+                # Check for min_backtest_return in threshold, if missing it will crash as requested
+                bt_ok = m["avg_cagr"] >= rec_thresholds["min_backtest_return"]
+                audit_log["steps"].append(
+                    {
+                        "step": "Backtest CAGR",
+                        "status": "PASS" if bt_ok else "FAIL",
+                        "reason": f"CAGR {m['avg_cagr']:.2f}% (Req: {rec_thresholds['min_backtest_return']}%)",
+                    }
+                )
 
         buy_t = rec_thresholds["buy_combined"]
         res["is_recommended"] = bool(score >= buy_t and bt_ok and passed_floors)

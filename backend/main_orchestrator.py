@@ -38,14 +38,9 @@ def run_trading_cycle():
     if not all_strategies:
         raise RuntimeError("No enabled strategies found. Check your JSON configuration.")
 
-    # Only run Swing_Trading in the daily cycle
-    strategies = [s for s in all_strategies if s["name"] == "Swing_Trading"]
-    if not strategies:
-        raise RuntimeError("Swing_Trading strategy not found. Check swing_trading.json.")
+    logger.info("Running trading cycle for %d enabled strategy(ies)" % len(all_strategies))
 
-    logger.info(
-        "Running trading cycle for Swing_Trading only (%d other strategies skipped)" % (len(all_strategies) - 1)
-    )
+    strategies = all_strategies
 
     is_paper = trading_opts.get("is_paper_trading", True)
 
