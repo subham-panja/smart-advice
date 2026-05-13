@@ -291,7 +291,7 @@ def portfolio(m):
         for h in active:
             qty = h.get("Quantity", 0)
             avg = h.get("AvgRate", 0)
-            ltp = h.get("LTP", 0)
+            ltp = h.get("CurrentPrice", h.get("LTP", 0))
             invested = qty * avg
             current = qty * ltp
             pnl = current - invested
