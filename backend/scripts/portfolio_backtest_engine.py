@@ -173,7 +173,7 @@ class PortfolioBacktestSession:
 
         # 1. Build common timeline
         common_dates = self._get_common_dates(symbols_data)
-        if len(common_dates) < 100:
+        if len(common_dates) < 60:
             raise ValueError(f"Insufficient common trading days: {len(common_dates)}")
 
         # Filter to simulation date range if provided
@@ -182,7 +182,7 @@ class PortfolioBacktestSession:
         if sim_end_date is not None:
             common_dates = common_dates[common_dates <= sim_end_date]
 
-        if len(common_dates) < 100:
+        if len(common_dates) < 60:
             raise ValueError(f"Insufficient common trading days after date filter: {len(common_dates)}")
 
         self.start_date = common_dates[0]
