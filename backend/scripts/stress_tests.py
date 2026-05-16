@@ -94,6 +94,12 @@ def run_regime_tests(
     symbols_data = fetch_symbols_data(symbols, period="10y", verbose=False)
     index_data = _prepare_index_data(strategy, symbols_data, "10y")
 
+    # Pre-compute indicators once
+    from scripts.vectorbt_indicator_batch import IndicatorStore, compute_all_indicators
+
+    indicators = compute_all_indicators(symbols_data, strategy_config=strategy)
+    store = IndicatorStore(indicators)
+
     # Minimum data filter
     MIN_DAYS = 250
     for sym, df in list(symbols_data.items()):
@@ -124,6 +130,7 @@ def run_regime_tests(
                         break
 
         engine = PortfolioBacktestSession(strategy_config=strategy)
+        engine.set_indicator_store(store)
         if index_data is not None:
             engine._index_data_override = index_data
 
@@ -215,12 +222,19 @@ def run_param_sensitivity(
                         sim_start = d
                     break
 
+    # Pre-compute indicators once for all variations
+    from scripts.vectorbt_indicator_batch import IndicatorStore, compute_all_indicators
+
+    indicators = compute_all_indicators(symbols_data, strategy_config=strategy)
+    store = IndicatorStore(indicators)
+
     # Run base case
     print(f"\n{'='*70}")
     print("PARAMETER SENSITIVITY ANALYSIS")
     print(f"{'='*70}\n")
 
     base_engine = PortfolioBacktestSession(strategy_config=strategy)
+    base_engine.set_indicator_store(store)
     if index_data is not None:
         base_engine._index_data_override = index_data
     base_result = base_engine.run(symbols_data, sim_start_date=sim_start, sim_end_date=sim_end)
@@ -240,6 +254,7 @@ def run_param_sensitivity(
             _apply_param_change(test_strat, param_name, new_value)
 
             engine = PortfolioBacktestSession(strategy_config=test_strat)
+            engine.set_indicator_store(store)
             if index_data is not None:
                 engine._index_data_override = index_data
 
@@ -361,6 +376,12 @@ def run_cost_sensitivity(
                         sim_start = d
                     break
 
+    # Pre-compute indicators once for all cost scenarios
+    from scripts.vectorbt_indicator_batch import IndicatorStore, compute_all_indicators
+
+    indicators = compute_all_indicators(symbols_data, strategy_config=strategy)
+    store = IndicatorStore(indicators)
+
     print(f"\n{'='*70}")
     print("TRANSACTION COST SENSITIVITY")
     print(f"{'='*70}\n")
@@ -378,6 +399,7 @@ def run_cost_sensitivity(
         config.PORTFOLIO_BACKTEST_CONFIG["slippage_pct"] = scenario["slippage"]
 
         engine = PortfolioBacktestSession(strategy_config=strategy)
+        engine.set_indicator_store(store)
         if index_data is not None:
             engine._index_data_override = index_data
 

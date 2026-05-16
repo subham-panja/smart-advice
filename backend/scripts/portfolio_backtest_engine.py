@@ -471,7 +471,7 @@ class PortfolioBacktestSession:
                 continue
 
             current_price = df.loc[date, "Close"]
-            atr = self._calculate_atr(df, date)
+            atr = self._calculate_atr_from_store(symbol, date) or self._calculate_atr(df, date)
             bars_held = self.bar_count - pos.bar_executed
             days_held = (date - pos.entry_date).days if hasattr(date, "__sub__") else bars_held
             weeks_held = days_held / 7.0
@@ -856,8 +856,7 @@ class PortfolioBacktestSession:
             current_price = df.loc[date, "Close"]
 
             # ATR trigger check
-            hist = df.loc[:date]
-            atr = self._calculate_atr(hist, date)
+            atr = self._calculate_atr_from_store(symbol, date) or self._calculate_atr(df.loc[:date], date)
             step = steps[pos.adds_count]
             trigger_mult = step.get("trigger_step_atr", 1.5)
             required_price = pos.last_add_price + (trigger_mult * atr)
