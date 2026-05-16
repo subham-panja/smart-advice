@@ -96,6 +96,7 @@ class PortfolioBacktestSession:
 
         self.initial_capital = cfg.get("initial_capital", 100000.0)
         self.brokerage = cfg.get("brokerage_charges", 0.0020)
+        self.slippage = cfg.get("slippage_pct", 0.0005)  # 0.05% slippage on execution
         self.ranking_method = cfg.get("ranking_method", "combined_score")
         self.save_snapshots = cfg.get("save_daily_snapshots", True)
         self.same_day_recycling = cfg.get("same_day_cash_recycling", True)
@@ -721,14 +722,17 @@ class PortfolioBacktestSession:
         """Execute a BUY order with portfolio-aware position sizing."""
         symbol = candidate["symbol"]
         df = symbols_data[symbol]
-        current_price = df.loc[date, "Close"]
+        close_price = df.loc[date, "Close"]
+
+        # Apply slippage: pay slightly more than close on buys
+        exec_price = close_price * (1 + self.slippage)
 
         # Calculate risk params using initial capital (not inflated portfolio value)
         portfolio_value = self._current_portfolio_value(symbols_data, date)
         self.risk_manager.balance = self.initial_capital
 
         hist = df.loc[:date]
-        risk = self.risk_manager.calculate_risk_params(hist, current_price, self.strategy_config, self._regime_status)
+        risk = self.risk_manager.calculate_risk_params(hist, exec_price, self.strategy_config, self._regime_status)
 
         if not risk.get("risk_reward_ok"):
             return
@@ -738,19 +742,19 @@ class PortfolioBacktestSession:
             return
 
         # Respect max_position_pct
-        max_by_pct = int((portfolio_value * self.max_position_pct) / current_price)
+        max_by_pct = int((portfolio_value * self.max_position_pct) / exec_price)
         size = min(size, max_by_pct)
 
         # Respect available cash
-        cost = size * current_price
+        cost = size * exec_price
         if cost > self.cash:
-            max_by_cash = int(self.cash / current_price)
+            max_by_cash = int(self.cash / exec_price)
             size = min(size, max_by_cash)
 
         if size <= 0:
             return
 
-        cost = size * current_price
+        cost = size * exec_price
         brokerage_cost = cost * self.brokerage
         total_cost = cost + brokerage_cost
 
@@ -764,7 +768,7 @@ class PortfolioBacktestSession:
         position = PortfolioPosition(
             symbol=symbol,
             entry_date=date,
-            entry_price=current_price,
+            entry_price=exec_price,
             quantity=size,
             stop_loss=risk["stop_loss"],
             current_stop_loss=risk["stop_loss"],
@@ -776,7 +780,7 @@ class PortfolioBacktestSession:
             symbol=symbol,
             trade_type="BUY",
             entry_date=str(date.date()),
-            entry_price=current_price,
+            entry_price=exec_price,
             quantity=size,
             position_value=cost,
             allocation_pct=(cost / self.initial_capital) * 100,
@@ -789,7 +793,7 @@ class PortfolioBacktestSession:
         self.trades.append(trade)
 
         logger.info(
-            f"🟢 BUY {symbol} @ ₹{current_price:.2f} | Qty: {size} | "
+            f"🟢 BUY {symbol} @ ₹{exec_price:.2f} | Qty: {size} | "
             f"SL: ₹{risk['stop_loss']:.2f} | Cash left: ₹{self.cash:,.0f}"
         )
 

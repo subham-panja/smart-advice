@@ -171,15 +171,41 @@ def run_historical_test(
     print("Fetching 10y historical data...")
     symbols_data = fetch_symbols_data(symbols, period="10y", verbose=False)
 
-    if fresh and "^NSEI" in strategy.get("market_regime_config", {}).get("index", ""):
-        # Re-fetch index data if regime detection is enabled
-        pass
-
     index_data = _prepare_index_data(strategy, symbols_data, "10y")
+
+    # Ensure index data has enough rows for regime detection (250+ days)
+    index_symbol = strategy.get("market_regime_config", {}).get("index", "^NSEI")
+    if index_data is None or len(index_data) < 250:
+        print(
+            "  Re-fetching %s index data fresh (got %d rows, need 250+)..."
+            % (index_symbol, len(index_data) if index_data is not None else 0)
+        )
+        try:
+            from utils.data_cache import fetch_multiple_symbols_cached
+
+            idx = fetch_multiple_symbols_cached({index_symbol: index_symbol}, period="10y", verbose=False, fresh=True)
+            index_data = idx.get(index_symbol)
+            print("  Fetched %d rows of index data" % (len(index_data) if index_data is not None else 0))
+        except Exception as e:
+            print("  WARNING: Could not fetch index data: %s" % e)
+            index_data = None
 
     # Build tz-aware timestamps matching the engine's Asia/Kolkata index
     sim_end = pd.Timestamp(end_date, tz="Asia/Kolkata")
     sim_start = sim_end - pd.DateOffset(months=months)
+
+    # Clamp sim_start to earliest available data across all symbols + index
+    all_dates = []
+    for sym, df in symbols_data.items():
+        if len(df) > 0:
+            all_dates.append(df.index.min())
+    if index_data is not None and len(index_data) > 0:
+        all_dates.append(index_data.index.min())
+    if all_dates:
+        earliest = max(all_dates)  # latest of the earliest dates
+        if sim_start < earliest:
+            print("  Adjusting sim_start from %s to %s (earliest available data)" % (sim_start.date(), earliest.date()))
+            sim_start = earliest
 
     print("Running simulation: %s -> %s (%d months)" % (sim_start.date(), sim_end.date(), months))
     print("")

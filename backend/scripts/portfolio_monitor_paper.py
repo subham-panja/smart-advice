@@ -67,15 +67,33 @@ class PortfolioMonitor:
                 if not entry_row.empty:
                     open_price = round(entry_row["Open"].iloc[0], 2)
                     if abs(open_price - entry_price) > 0.01:
+                        # Recalculate risk with corrected entry price
+                        corrected_investment = round(
+                            open_price * pos["quantity"] * (1 + 0.0020), 2
+                        )  # include brokerage
+                        sl_distance = entry_price - pos.get("stop_loss", entry_price)  # original SL distance
+                        adjusted_sl = round(open_price - sl_distance, 2)
+                        qty = pos["quantity"]
+                        new_initial_risk = round((open_price - adjusted_sl) * qty, 2)
+
                         logger.info(
                             f"📊 ENTRY PRICE CORRECTION: {symbol} | "
-                            f"Old: ₹{entry_price:.2f} → New (Open): ₹{open_price:.2f}"
+                            f"Old: ₹{entry_price:.2f} → New (Open): ₹{open_price:.2f} | "
+                            f"SL adjusted: ₹{pos.get('stop_loss', 0):.2f} → ₹{adjusted_sl:.2f}"
                         )
                         update_position(
                             symbol,
-                            {"entry_price": open_price, "total_investment": round(open_price * pos["quantity"], 2)},
+                            {
+                                "entry_price": open_price,
+                                "total_investment": corrected_investment,
+                                "stop_loss": adjusted_sl,
+                                "current_stop_loss": max(adjusted_sl, current_sl),
+                                "initial_risk": new_initial_risk,
+                                "risk_pct_of_cap": round((new_initial_risk / 100000.0) * 100, 2),
+                            },
                         )
                         entry_price = open_price
+                        current_sl = max(adjusted_sl, current_sl)
 
             # Update Live Price in DB for Telegram PnL
             update_position(symbol, {"current_price": current_price})

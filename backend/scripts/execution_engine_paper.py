@@ -151,18 +151,44 @@ class ExecutionEngine:
                 return True
 
             try:
-                total_investment = round(quantity * price, 2)
+                # Apply slippage: execution price slightly worse than signal price
+                slippage_pct = 0.0005  # 0.05%
+                exec_price = price * (1 + slippage_pct)
+
+                # Fetch Open price for entry date if available (realistic next-day execution)
+                try:
+                    from scripts.data_fetcher import get_historical_data
+
+                    hist = get_historical_data(symbol, period="5d", fresh=True)
+                    if hist is not None and not hist.empty:
+                        entry_date_obj = datetime.now(timezone.utc).replace(tzinfo=None).date()
+                        day_row = hist[hist.index.date == entry_date_obj]
+                        if not day_row.empty:
+                            exec_price = round(day_row["Open"].iloc[0], 2)
+                        else:
+                            exec_price = round(exec_price, 2)
+                    else:
+                        exec_price = round(exec_price, 2)
+                except Exception:
+                    exec_price = round(exec_price, 2)
+
+                # Apply brokerage on buy: total cost = qty * price * (1 + brokerage_pct)
+                total_investment = round(quantity * exec_price * (1 + self.brokerage_pct), 2)
                 allocation_pct = round((total_investment / self.initial_capital) * 100, 2)
+
+                # Calculate stop_loss relative to exec_price
+                sl_distance = price - stop_loss  # original SL distance from signal
+                adjusted_stop_loss = round(exec_price - sl_distance, 2)
 
                 pos_data = {
                     "symbol": symbol,
                     "quantity": quantity,
                     "initial_quantity": quantity,
-                    "entry_price": round(price, 2),
+                    "entry_price": round(exec_price, 2),
                     "total_investment": total_investment,
                     "allocation_pct": allocation_pct,
-                    "stop_loss": round(stop_loss, 2),
-                    "current_stop_loss": round(stop_loss, 2),
+                    "stop_loss": adjusted_stop_loss,
+                    "current_stop_loss": adjusted_stop_loss,
                     "target": round(target, 2),
                     "current_target": round(target, 2),
                     "recomm_id": recomm_id,
@@ -171,8 +197,10 @@ class ExecutionEngine:
                     "status": "OPEN",
                     "trade_type": "LONG_BUY",
                     "is_paper": self.is_paper_trading,
-                    "initial_risk": round((price - stop_loss) * quantity, 2),
-                    "risk_pct_of_cap": round(((price - stop_loss) * quantity / self.initial_capital) * 100, 2),
+                    "initial_risk": round((exec_price - adjusted_stop_loss) * quantity, 2),
+                    "risk_pct_of_cap": round(
+                        ((exec_price - adjusted_stop_loss) * quantity / self.initial_capital) * 100, 2
+                    ),
                     "adds_count": 0,
                 }
                 res = insert_position(pos_data)
@@ -451,7 +479,11 @@ class ExecutionEngine:
 
         if self.is_paper_trading:
             qty_str = f"Qty: {quantity}" if quantity else "FULL Position"
-            logger.info(f"PAPER TRADING: Executing SELL for {symbol} | {qty_str} | Price: {price} | Reason: {reason}")
+            # Apply brokerage on sell: net proceeds = price * (1 - brokerage_pct)
+            net_price = price * (1 - self.brokerage_pct)
+            logger.info(
+                f"PAPER TRADING: Executing SELL for {symbol} | {qty_str} | Price: {price} | Net: {net_price:.2f} | Reason: {reason}"
+            )
 
             try:
                 if quantity:
@@ -463,9 +495,12 @@ class ExecutionEngine:
                         new_qty = current_qty - quantity
                         if new_qty <= 0:
                             # Should have been a full exit
-                            close_position(symbol, price, reason)
-                            logger.info(f"✅ FULL EXIT: {symbol} | Price: {price} | Reason: {reason}")
+                            close_position(symbol, net_price, reason)
+                            logger.info(
+                                f"✅ FULL EXIT: {symbol} | Price: {price} | Net: {net_price:.2f} | Reason: {reason}"
+                            )
                         else:
+                            # Record partial exit with net price
                             update_position(
                                 symbol,
                                 {
@@ -475,21 +510,24 @@ class ExecutionEngine:
                                         {
                                             "date": datetime.now(timezone.utc).replace(tzinfo=None),
                                             "quantity": quantity,
-                                            "price": price,
+                                            "price": net_price,
+                                            "gross_price": price,
                                             "reason": reason,
                                         }
                                     ],
                                 },
                             )
                             logger.info(
-                                f"✅ PARTIAL SELL: {symbol} | Sold {quantity} of {current_qty} @ {price} | Reason: {reason}"
+                                f"✅ PARTIAL SELL: {symbol} | Sold {quantity} of {current_qty} @ {price} (net: {net_price:.2f}) | Reason: {reason}"
                             )
                     return True
                 else:
                     # Full Exit
-                    res = close_position(symbol, price, reason)
+                    res = close_position(symbol, net_price, reason)
                     if res and (getattr(res, "modified_count", 0) > 0 or getattr(res, "upserted_id", None)):
-                        logger.info(f"Successfully closed position for {symbol}")
+                        logger.info(
+                            f"Successfully closed position for {symbol} | Gross: {price} | Net: {net_price:.2f}"
+                        )
                         return True
                     else:
                         raise ValueError(f"Could not find open position to close for {symbol}")
