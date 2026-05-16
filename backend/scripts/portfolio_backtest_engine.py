@@ -763,6 +763,7 @@ class PortfolioBacktestSession:
         if self.use_realistic_costs:
             from scripts.execution_costs import calculate_buy_cost
 
+            cost = size * exec_price
             costs = calculate_buy_cost(exec_price, size)
             total_cost = costs.net_cost
         else:
@@ -778,6 +779,7 @@ class PortfolioBacktestSession:
             if self.use_realistic_costs:
                 from scripts.execution_costs import calculate_buy_cost
 
+                cost = size * exec_price
                 costs = calculate_buy_cost(exec_price, size)
                 total_cost = costs.net_cost
             else:
@@ -930,6 +932,7 @@ class PortfolioBacktestSession:
         if self.use_realistic_costs:
             from scripts.execution_costs import calculate_sell_cost
 
+            gross_value = pos.quantity * fill_price
             costs = calculate_sell_cost(fill_price, pos.quantity)
             net_value = costs.net_proceeds
         else:
@@ -987,6 +990,7 @@ class PortfolioBacktestSession:
         if self.use_realistic_costs:
             from scripts.execution_costs import calculate_sell_cost
 
+            gross_value = qty * fill_price
             costs = calculate_sell_cost(fill_price, qty)
             net_value = costs.net_proceeds
         else:

@@ -21,6 +21,7 @@ Usage:
 import argparse
 import os
 import sys
+import time
 from datetime import datetime
 
 import pandas as pd
@@ -35,8 +36,59 @@ from scripts.run_portfolio_backtest import (
     run_walk_forward_backtest,
 )
 from utils.logger import setup_logging
+from utils.persistence_handler import PersistenceHandler
 from utils.stock_scanner import StockScanner
 from utils.strategy_loader import StrategyLoader
+
+
+class Timer:
+    """Track elapsed time and estimate remaining time per phase."""
+
+    def __init__(self):
+        self.start = time.time()
+        self.phase_times: list[dict] = []
+
+    def elapsed(self) -> str:
+        s = time.time() - self.start
+        if s < 60:
+            return f"{s:.1f}s"
+        m, sec = divmod(int(s), 60)
+        h, m = divmod(m, 60)
+        if h:
+            return f"{h}h {m}m {sec}s"
+        return f"{m}m {sec}s"
+
+    def phase_start(self, name: str):
+        print(f"\n⏱️  [{self.elapsed()}] Starting: {name}")
+        self.phase_times.append({"name": name, "start": time.time()})
+
+    def phase_end(self):
+        if self.phase_times:
+            p = self.phase_times[-1]
+            took = time.time() - p["start"]
+            if took < 60:
+                print(f"⏱️  [{self.elapsed()}] Completed: {p['name']} ({took:.1f}s)")
+            else:
+                m, s = divmod(int(took), 60)
+                h, m = divmod(m, 60)
+                if h:
+                    print(f"⏱️  [{self.elapsed()}] Completed: {p['name']} ({h}h {m}m {s}s)")
+                else:
+                    print(f"⏱️  [{self.elapsed()}] Completed: {p['name']} ({m}m {s}s)")
+
+    def estimate_remaining(self, phases_done: int, total_phases: int) -> str:
+        if phases_done == 0:
+            return "calculating..."
+        elapsed = time.time() - self.start
+        avg = elapsed / phases_done
+        remaining = avg * (total_phases - phases_done)
+        if remaining < 60:
+            return f"~{remaining:.0f}s remaining"
+        m, s = divmod(int(remaining), 60)
+        h, m = divmod(m, 60)
+        if h:
+            return f"~{h}h {m}m remaining"
+        return f"~{m}m {s}s remaining"
 
 
 def _send_telegram(message: str):
@@ -117,11 +169,21 @@ def run_historical_with_realistic_costs(
 
     print(f"Simulation: {sim_start.date()} -> {sim_end.date()} ({months} months)")
 
+    # Pre-compute all indicators with vectorbt (one-time batch computation)
+    print("Pre-computing indicators with vectorbt...")
+    from scripts.vectorbt_indicator_batch import IndicatorStore, compute_all_indicators
+
+    indicators = compute_all_indicators(symbols_data, strategy_config=strategy)
+    store = IndicatorStore(indicators)
+    print(f"Indicators pre-computed for {len(indicators.symbols)} stocks × {len(indicators.dates)} dates")
+
     engine = PortfolioBacktestSession(strategy_config=strategy)
+    engine.set_indicator_store(store)
     if index_data is not None:
         engine._index_data_override = index_data
 
     print(f"Execution realism: gap_risk={'ON' if engine.use_realistic_costs else 'OFF'}")
+    print("IndicatorStore: ENABLED (O(1) lookups)")
     results = engine.run(symbols_data, sim_start_date=sim_start, sim_end_date=sim_end)
 
     # Print summary
@@ -203,20 +265,79 @@ def main():
     args = parser.parse_args()
 
     setup_logging(verbose=False)
-    start_time = datetime.now()
+    timer = Timer()
+
+    # Count total phases for ETA
+    total_phases = 6
+    if args.skip_wf:
+        total_phases -= 1
+    if args.skip_stress:
+        total_phases -= 1
+    phases_done = 0
+
+    print(f"\n{'='*70}")
+    print(f"ULTIMATE BACKTEST — {args.strategy}")
+    print(
+        f"Stocks: {args.max_stocks} | Months: {args.months} | Skip WF: {args.skip_wf} | Skip Stress: {args.skip_stress}"
+    )
+    print(f"{'='*70}")
 
     # Phase 1: Historical with realistic costs
+    timer.phase_start("Phase 1: Historical Backtest (Realistic Costs)")
     historical = run_historical_with_realistic_costs(args.strategy, args.end_date, args.months, args.max_stocks)
+    timer.phase_end()
+    phases_done += 1
+    print(f"   {timer.estimate_remaining(phases_done, total_phases)}")
+
+    # Save to DB
+    timer.phase_start("Phase 1b: Save Results to MongoDB")
+    session_id = None
+    try:
+        persister = PersistenceHandler()
+        session_id = persister.create_backtest_session(
+            strategy_name=args.strategy,
+            strategy_config={"months": args.months, "max_stocks": args.max_stocks},
+            capital_config={"initial_capital": 100000},
+            symbols=[],
+        )
+        print(f"DB Session ID: {session_id}")
+        persister.save_portfolio_backtest_trades(session_id, historical.get("trades", []))
+        persister.save_portfolio_backtest_snapshots(session_id, historical.get("daily_snapshots", []))
+        summary_metrics = {
+            "initial_capital": historical["initial_capital"],
+            "final_portfolio_value": historical["final_portfolio_value"],
+            "total_return_pct": historical["total_return_pct"],
+            "cagr": historical["cagr"],
+            "max_drawdown_pct": historical["max_drawdown_pct"],
+            "sharpe_ratio": historical["sharpe_ratio"],
+            "total_trades": historical["total_trades"],
+            "win_rate": historical["win_rate"],
+            "profit_factor": historical["profit_factor"],
+            "expectancy": historical["expectancy"],
+        }
+        persister.complete_backtest_session(
+            session_id,
+            summary_metrics,
+            date_range=historical.get("date_range"),
+        )
+        print("Results saved to MongoDB")
+    except Exception as e:
+        print(f"DB save failed: {e}")
+    timer.phase_end()
+    phases_done += 1
+    print(f"   {timer.estimate_remaining(phases_done, total_phases)}")
 
     # Phase 2: Statistical validation
+    timer.phase_start("Phase 2: Statistical Validation")
     validation = run_validation_phase(historical.get("daily_snapshots", []))
+    timer.phase_end()
+    phases_done += 1
+    print(f"   {timer.estimate_remaining(phases_done, total_phases)}")
 
     # Phase 3: Walk-forward (optional)
     wf_results = None
     if not args.skip_wf:
-        print(f"\n{'='*70}")
-        print("PHASE 3: WALK-FORWARD MONTE CARLO")
-        print(f"{'='*70}\n")
+        timer.phase_start("Phase 3: Walk-Forward Monte Carlo")
         try:
             wf_results = run_walk_forward_backtest(
                 strategy_name=args.strategy,
@@ -229,20 +350,32 @@ def main():
         except Exception as e:
             print(f"Walk-forward failed: {e}")
             wf_results = {"status": "failed", "error": str(e)}
+        timer.phase_end()
+        phases_done += 1
+        print(f"   {timer.estimate_remaining(phases_done, total_phases)}")
 
     # Phase 4: Stress tests (optional)
     stress_results = None
     if not args.skip_stress:
+        timer.phase_start("Phase 4: Stress Tests (Regime + Param + Cost)")
         from scripts.stress_tests import run_all_stress_tests
 
         stress_results = run_all_stress_tests(args.strategy, args.max_stocks)
+        timer.phase_end()
+        phases_done += 1
+        print(f"   {timer.estimate_remaining(phases_done, total_phases)}")
 
     # Phase 5: Trade diagnostics
+    timer.phase_start("Phase 5: Trade Diagnostics")
     from scripts.trade_diagnostics import run_all_diagnostics
 
     _ = run_all_diagnostics(strategy_name=args.strategy)
+    timer.phase_end()
+    phases_done += 1
+    print(f"   {timer.estimate_remaining(phases_done, total_phases)}")
 
     # Phase 6: Confidence score
+    timer.phase_start("Phase 6: Composite Confidence Score")
     from scripts.confidence_scorer import compute_confidence_score, print_confidence_report
 
     param_results = stress_results.get("param_sensitivity", []) if stress_results else None
@@ -257,8 +390,112 @@ def main():
         cost_sensitivity_results=cost_results,
         base_cagr=historical.get("cagr", 0),
     )
-
     print_confidence_report(confidence)
+    timer.phase_end()
+    phases_done += 1
+
+    # ===== PRINT RESULTS IN TABLE FORMAT =====
+    print(f"\n{'='*70}")
+    print("ULTIMATE BACKTEST RESULTS")
+    print(f"{'='*70}\n")
+
+    # Table 1: Performance Summary
+    perf_data = {
+        "Metric": [
+            "Date Range",
+            "Initial Capital",
+            "Final Value",
+            "Total Return",
+            "CAGR",
+            "Max Drawdown",
+            "Sharpe Ratio",
+            "Profit Factor",
+            "Win Rate",
+            "Total Trades",
+            "Expectancy",
+            "Avg Positions Held",
+        ],
+        "Value": [
+            f"{historical['date_range']['start_date']} → {historical['date_range']['end_date']}",
+            f"₹{historical['initial_capital']:,.0f}",
+            f"₹{historical['final_portfolio_value']:,.0f}",
+            f"{historical['total_return_pct']:+.2f}%",
+            f"{historical['cagr']:.2f}%",
+            f"{historical['max_drawdown_pct']:.2f}%",
+            f"{historical['sharpe_ratio']:.2f}",
+            f"{historical['profit_factor']:.2f}",
+            f"{historical['win_rate']:.1f}%",
+            str(historical["total_trades"]),
+            f"₹{historical['expectancy']:,.2f}",
+            f"{historical['avg_positions_held']:.1f}",
+        ],
+    }
+    perf_df = pd.DataFrame(perf_data)
+    print(perf_df.to_string(index=False))
+
+    # Table 2: Statistical Validation
+    dsr = validation.get("dsr", {})
+    mc = validation.get("monte_carlo_permutation", {})
+    mlrs = validation.get("minimum_track_record", {})
+    stat_data = {
+        "Test": [
+            "Deflated Sharpe Ratio",
+            "DSR Confidence",
+            "Monte Carlo p-value",
+            "Min Track Record (years)",
+            "Actual Track Record (years)",
+            "Edge Verified",
+        ],
+        "Result": [
+            f"{dsr.get('dsr', 'N/A')}",
+            f"{dsr.get('confidence_pct', 'N/A')}%",
+            f"{mc.get('p_value', 'N/A')}",
+            f"{mlrs.get('mlrs_years', 'N/A')}",
+            f"{mlrs.get('actual_years', 'N/A')}",
+            "YES" if validation.get("edge_verified") else "NO",
+        ],
+        "Status": [
+            "PASS" if dsr.get("significant") else "FAIL",
+            "PASS" if dsr.get("dsr", 0) > 0.5 else "FAIL",
+            "PASS" if mc.get("significant") else "FAIL",
+            "PASS" if mlrs.get("sufficient") else "FAIL",
+            "PASS" if mlrs.get("sufficient") else "FAIL",
+            "PASS" if validation.get("edge_verified") else "FAIL",
+        ],
+    }
+    stat_df = pd.DataFrame(stat_data)
+    print(f"\n{stat_df.to_string(index=False)}")
+
+    # Table 3: Confidence Score Components
+    components = confidence.get("components", {})
+    comp_data = {
+        "Component": [
+            "Walk-Forward Stability",
+            "Deflated Sharpe Ratio",
+            "Monte Carlo Permutation",
+            "Stress Tests",
+            "Parameter Stability",
+            "Cost Resilience",
+            "Data Sufficiency",
+        ],
+        "Score": [
+            f"{components.get('walk_forward', {}).get('score', 0):.0f}/15",
+            f"{components.get('dsr', {}).get('score', 0):.0f}/15",
+            f"{components.get('mc_permutation', {}).get('score', 0):.0f}/15",
+            f"{components.get('stress_tests', {}).get('score', 0):.0f}/15",
+            f"{components.get('param_stability', {}).get('score', 0):.0f}/10",
+            f"{components.get('cost_resilience', {}).get('score', 0):.0f}/10",
+            f"{components.get('data_sufficiency', {}).get('score', 0):.0f}/5",
+        ],
+        "Weight": ["15%", "15%", "15%", "15%", "10%", "10%", "5%"],
+    }
+    comp_df = pd.DataFrame(comp_data)
+    print(f"\n{comp_df.to_string(index=False)}")
+    print(f"\n{'='*70}")
+    print(f"TOTAL CONFIDENCE: {confidence['total_score']}/100  |  Level: {confidence['confidence_level']}")
+    print(f"Realistic CAGR Projection: {confidence['realistic_cagr']:.1f}%")
+    print(f"Edge Verified: {'YES' if confidence['edge_verified'] else 'NO'}")
+    print(f"{'='*70}")
 
     # Telegram summary
     if args.telegram:
@@ -277,11 +514,13 @@ def main():
             f"• Level: {confidence['confidence_level']}\n"
             f"• Realistic CAGR: {confidence['realistic_cagr']:.1f}%\n"
             f"• Edge Verified: {'YES' if confidence['edge_verified'] else 'NO'}\n\n"
-            f"⏱️ Duration: {(datetime.now() - start_time).total_seconds():.0f}s"
+            f"⏱️ Duration: {timer.elapsed()}"
         )
         _send_telegram(msg)
 
-    print(f"\nTotal runtime: {(datetime.now() - start_time).total_seconds():.1f}s")
+    print(f"\n{'='*70}")
+    print(f"TOTAL RUNTIME: {timer.elapsed()}")
+    print(f"{'='*70}")
     print("Done.")
 
 
