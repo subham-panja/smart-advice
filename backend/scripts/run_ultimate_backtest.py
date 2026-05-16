@@ -118,27 +118,43 @@ def run_historical_with_realistic_costs(
     months: int,
     max_stocks: int = 50,
 ) -> dict:
-    """Phase 1: Historical backtest with execution realism."""
+    """Phase 1: Historical backtest with execution realism.
+
+    Runs the strategy over real historical data with:
+    - Gap risk on entry (overnight price jumps)
+    - STT, stamp duty, SEBI charges
+    - Slippage on entry/exit
+    - Brokerage charges
+    """
+    t_phase = time.time()  # Track this phase's own timing
     print(f"\n{'='*70}")
     print("PHASE 1: HISTORICAL BACKTEST (REALISTIC COSTS)")
     print(f"{'='*70}\n")
 
+    # Load strategy config from YAML/DB
+    print("[1/6] Loading strategy config...")
     strategy = StrategyLoader.get_strategy_by_name(strategy_name)
     if not strategy:
         raise RuntimeError(f"Strategy '{strategy_name}' not found")
 
+    # Enable market regime detection (bull/bear/sideways filter)
     strategy.setdefault("analysis_config", {})["market_regime_detection"] = True
 
+    # Scan stocks via Chartink API based on strategy screening rules
+    print("[2/6] Scanning stocks via Chartink...")
     symbols = StockScanner().get_symbols(strategy_config=strategy)
     symbols = dict(list(symbols.items())[:max_stocks])
-    print(f"Selected {len(symbols)} stocks")
+    print(f"  → Selected {len(symbols)} stocks (max {max_stocks})")
 
-    print("Fetching 10y historical data...")
+    # Fetch 10 years of OHLCV data via yfinance (one-time download)
+    print("[3/6] Fetching 10y historical OHLCV data...")
     symbols_data = fetch_symbols_data(symbols, period="10y", verbose=False)
 
+    # Fetch NIFTY 50 index data for regime detection warmup
     index_data = _prepare_index_data(strategy, symbols_data, "10y")
 
-    # Minimum data filter
+    # Filter out stocks with insufficient history (< 250 trading days)
+    print("[4/6] Filtering stocks with insufficient data...")
     MIN_DAYS = 250
     excluded = 0
     for sym, df in list(symbols_data.items()):
@@ -146,13 +162,14 @@ def run_historical_with_realistic_costs(
             excluded += 1
             del symbols_data[sym]
     if excluded:
-        print(f"Excluded {excluded} stocks with < {MIN_DAYS} days")
-    print(f"Remaining: {len(symbols_data)} stocks")
+        print(f"  → Excluded {excluded} stocks with < {MIN_DAYS} days")
+    print(f"  → Remaining: {len(symbols_data)} stocks")
 
+    # Calculate simulation date range
     sim_end = pd.Timestamp(end_date, tz="Asia/Kolkata")
     sim_start = sim_end - pd.DateOffset(months=months)
 
-    # Regime warmup
+    # Advance sim_start if needed for regime warmup (needs 250 days of index data)
     if index_data is not None:
         stock_only = {
             k: v for k, v in symbols_data.items() if k != strategy.get("market_regime_config", {}).get("index", "^NSEI")
@@ -163,28 +180,36 @@ def run_historical_with_realistic_costs(
             for d in union_dates:
                 if len(index_data.loc[:d]) >= 250:
                     if sim_start < d:
-                        print(f"Advancing sim_start to {d.date()} for regime warmup")
+                        print(f"  → Advancing sim_start to {d.date()} for regime warmup (need 250 index days)")
                         sim_start = d
                     break
 
-    print(f"Simulation: {sim_start.date()} -> {sim_end.date()} ({months} months)")
+    print(f"[5/6] Simulation range: {sim_start.date()} → {sim_end.date()} ({months} months)")
 
-    # Pre-compute all indicators with vectorbt (one-time batch computation)
-    print("Pre-computing indicators with vectorbt...")
+    # Pre-compute all indicators with vectorbt (one-time vectorized batch across all symbols × dates)
+    # This replaces ~26 per-symbol per-date TA-Lib calls with O(1) lookups
+    print("[6/6] Pre-computing indicators with vectorbt (batch across all symbols)...")
     from scripts.vectorbt_indicator_batch import IndicatorStore, compute_all_indicators
 
     indicators = compute_all_indicators(symbols_data, strategy_config=strategy)
     store = IndicatorStore(indicators)
-    print(f"Indicators pre-computed for {len(indicators.symbols)} stocks × {len(indicators.dates)} dates")
+    print(
+        f"  → Pre-computed {len(indicators.symbols)} stocks × {len(indicators.dates)} dates = {len(indicators.symbols) * len(indicators.dates):,} indicator values"
+    )
 
+    # Create simulation engine with vectorbt store and index data override
     engine = PortfolioBacktestSession(strategy_config=strategy)
-    engine.set_indicator_store(store)
+    engine.set_indicator_store(store)  # Enable O(1) indicator lookups during simulation
     if index_data is not None:
         engine._index_data_override = index_data
 
-    print(f"Execution realism: gap_risk={'ON' if engine.use_realistic_costs else 'OFF'}")
-    print("IndicatorStore: ENABLED (O(1) lookups)")
+    print(f"  → Execution realism: gap_risk={'ON' if engine.use_realistic_costs else 'OFF'}")
+    print("  → IndicatorStore: ENABLED (O(1) lookups, no TA-Lib during simulation)")
+    print(
+        f"\n▶ Running day-by-day simulation ({len([d for d in symbols_data[sym].index if sim_start <= d <= sim_end]) if symbols_data else '?'} trading days)..."
+    )
     results = engine.run(symbols_data, sim_start_date=sim_start, sim_end_date=sim_end)
+    print(f"  → Simulation done ({time.time() - t_phase:.1f}s total for Phase 1)")
 
     # Print summary
     print(f"\n{'='*60}")
@@ -267,8 +292,8 @@ def main():
     setup_logging(verbose=False)
     timer = Timer()
 
-    # Count total phases for ETA
-    total_phases = 6
+    # Calculate total phases for ETA estimation
+    total_phases = 6  # 1:Historical, 1b:DB save, 2:Validation, 3:WF, 4:Stress, 5:Diagnostics, 6:Confidence
     if args.skip_wf:
         total_phases -= 1
     if args.skip_stress:
@@ -277,31 +302,41 @@ def main():
 
     print(f"\n{'='*70}")
     print(f"ULTIMATE BACKTEST — {args.strategy}")
-    print(
-        f"Stocks: {args.max_stocks} | Months: {args.months} | Skip WF: {args.skip_wf} | Skip Stress: {args.skip_stress}"
-    )
+    print(f"{'='*70}")
+    print("Configuration:")
+    print(f"  Stocks: {args.max_stocks} | Lookback: {args.months} months ({args.months//12}y)")
+    print(f"  End date: {args.end_date}")
+    print(f"  Skip Walk-Forward: {args.skip_wf}")
+    print(f"  Skip Stress Tests: {args.skip_stress}")
+    print(f"  Send Telegram: {args.telegram}")
+    print(f"  Total phases to run: {total_phases}")
     print(f"{'='*70}")
 
-    # Phase 1: Historical with realistic costs
+    # ─── PHASE 1: Historical Backtest ───
+    # Runs the strategy over real historical data with realistic execution costs
     timer.phase_start("Phase 1: Historical Backtest (Realistic Costs)")
     historical = run_historical_with_realistic_costs(args.strategy, args.end_date, args.months, args.max_stocks)
     timer.phase_end()
     phases_done += 1
-    print(f"   {timer.estimate_remaining(phases_done, total_phases)}")
+    print(f"   ⏳ {timer.estimate_remaining(phases_done, total_phases)}")
 
-    # Save to DB
+    # ─── PHASE 1b: Save Results to MongoDB ───
+    # Persists trades, daily snapshots, and summary metrics for later review
     timer.phase_start("Phase 1b: Save Results to MongoDB")
     session_id = None
     try:
         persister = PersistenceHandler()
+        print("  → Creating backtest session...")
         session_id = persister.create_backtest_session(
             strategy_name=args.strategy,
             strategy_config={"months": args.months, "max_stocks": args.max_stocks},
             capital_config={"initial_capital": 100000},
             symbols=[],
         )
-        print(f"DB Session ID: {session_id}")
+        print(f"  → Session ID: {session_id}")
+        print(f"  → Saving {len(historical.get('trades', []))} trades...")
         persister.save_portfolio_backtest_trades(session_id, historical.get("trades", []))
+        print(f"  → Saving {len(historical.get('daily_snapshots', []))} daily snapshots...")
         persister.save_portfolio_backtest_snapshots(session_id, historical.get("daily_snapshots", []))
         summary_metrics = {
             "initial_capital": historical["initial_capital"],
@@ -315,29 +350,36 @@ def main():
             "profit_factor": historical["profit_factor"],
             "expectancy": historical["expectancy"],
         }
+        print("  → Saving summary metrics...")
         persister.complete_backtest_session(
             session_id,
             summary_metrics,
             date_range=historical.get("date_range"),
         )
-        print("Results saved to MongoDB")
+        print("  ✅ Results saved to MongoDB")
     except Exception as e:
-        print(f"DB save failed: {e}")
+        print(f"  ❌ DB save failed: {e}")
     timer.phase_end()
     phases_done += 1
-    print(f"   {timer.estimate_remaining(phases_done, total_phases)}")
+    print(f"   ⏳ {timer.estimate_remaining(phases_done, total_phases)}")
 
-    # Phase 2: Statistical validation
-    timer.phase_start("Phase 2: Statistical Validation")
+    # ─── PHASE 2: Statistical Validation ───
+    # Tests whether the strategy's edge is statistically significant
+    # DSR: Deflated Sharpe Ratio (accounts for multiple testing bias)
+    # MC Permutation: Randomizes returns to test if Sharpe could be luck
+    # MLRS: Minimum Track Record (is the sample size sufficient?)
+    timer.phase_start("Phase 2: Statistical Validation (DSR + MC Permutation + MLRS)")
     validation = run_validation_phase(historical.get("daily_snapshots", []))
     timer.phase_end()
     phases_done += 1
-    print(f"   {timer.estimate_remaining(phases_done, total_phases)}")
+    print(f"   ⏳ {timer.estimate_remaining(phases_done, total_phases)}")
 
-    # Phase 3: Walk-forward (optional)
+    # ─── PHASE 3: Walk-Forward Monte Carlo ───
+    # Splits data into rolling windows, runs 8 parallel backtest simulations
+    # Tests whether the strategy works across different time periods
     wf_results = None
     if not args.skip_wf:
-        timer.phase_start("Phase 3: Walk-Forward Monte Carlo")
+        timer.phase_start("Phase 3: Walk-Forward Monte Carlo (8 windows, parallel)")
         try:
             wf_results = run_walk_forward_backtest(
                 strategy_name=args.strategy,
@@ -348,33 +390,42 @@ def main():
                 save_to_db=False,
             )
         except Exception as e:
-            print(f"Walk-forward failed: {e}")
+            print(f"  ❌ Walk-forward failed: {e}")
             wf_results = {"status": "failed", "error": str(e)}
         timer.phase_end()
         phases_done += 1
-        print(f"   {timer.estimate_remaining(phases_done, total_phases)}")
+        print(f"   ⏳ {timer.estimate_remaining(phases_done, total_phases)}")
 
-    # Phase 4: Stress tests (optional)
+    # ─── PHASE 4: Stress Tests ───
+    # 3 sub-tests:
+    #   4a. Regime tests: bull/bear/crash/sideways specific periods
+    #   4b. Parameter sensitivity: +/-20% on 6 key parameters (13 runs)
+    #   4c. Cost sensitivity: 4 brokerage/slippage scenarios
     stress_results = None
     if not args.skip_stress:
-        timer.phase_start("Phase 4: Stress Tests (Regime + Param + Cost)")
+        timer.phase_start("Phase 4: Stress Tests (Regime + Param Sensitivity + Cost Sensitivity)")
         from scripts.stress_tests import run_all_stress_tests
 
+        print("  → 4a: Running regime-specific backtests (5 periods)...")
         stress_results = run_all_stress_tests(args.strategy, args.max_stocks)
         timer.phase_end()
         phases_done += 1
-        print(f"   {timer.estimate_remaining(phases_done, total_phases)}")
+        print(f"   ⏳ {timer.estimate_remaining(phases_done, total_phases)}")
 
-    # Phase 5: Trade diagnostics
+    # ─── PHASE 5: Trade Diagnostics ───
+    # Analyzes individual trade characteristics:
+    # avg hold time, win/loss distribution, exit reasons, max concurrent positions
     timer.phase_start("Phase 5: Trade Diagnostics")
     from scripts.trade_diagnostics import run_all_diagnostics
 
     _ = run_all_diagnostics(strategy_name=args.strategy)
     timer.phase_end()
     phases_done += 1
-    print(f"   {timer.estimate_remaining(phases_done, total_phases)}")
+    print(f"   ⏳ {timer.estimate_remaining(phases_done, total_phases)}")
 
-    # Phase 6: Confidence score
+    # ─── PHASE 6: Composite Confidence Score ───
+    # Combines all phase results into a 0-100 score
+    # Weights: WF 15%, DSR 15%, MC Perm 15%, Stress 15%, Param 10%, Cost 10%, Data 5%
     timer.phase_start("Phase 6: Composite Confidence Score")
     from scripts.confidence_scorer import compute_confidence_score, print_confidence_report
 
