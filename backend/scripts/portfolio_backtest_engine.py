@@ -102,6 +102,20 @@ class PortfolioBacktestSession:
         self.same_day_recycling = cfg.get("same_day_cash_recycling", True)
         self.force_close_delisted = cfg.get("force_close_delisted", True)
 
+        # Execution realism: gap risk seed for reproducibility
+        self.gap_seed = cfg.get("gap_risk_seed", 42)
+
+        # Use execution_costs module if available (realistic Indian market costs)
+        try:
+            import importlib.util
+
+            if importlib.util.find_spec("scripts.execution_costs") is not None:
+                self.use_realistic_costs = True
+            else:
+                self.use_realistic_costs = False
+        except Exception:
+            self.use_realistic_costs = False
+
         # Risk params from strategy's risk_management section (matches live trading)
         risk_cfg = strategy_config.get("risk_management", {})
         self.risk_per_trade = risk_cfg.get("risk_per_trade_pct", 2.0) / 100.0
@@ -745,20 +759,33 @@ class PortfolioBacktestSession:
         max_by_pct = int((portfolio_value * self.max_position_pct) / exec_price)
         size = min(size, max_by_pct)
 
+        # Calculate realistic buy cost
+        if self.use_realistic_costs:
+            from scripts.execution_costs import calculate_buy_cost
+
+            costs = calculate_buy_cost(exec_price, size)
+            total_cost = costs.net_cost
+        else:
+            cost = size * exec_price
+            brokerage_cost = cost * self.brokerage
+            total_cost = cost + brokerage_cost
+
         # Respect available cash
-        cost = size * exec_price
-        if cost > self.cash:
+        if total_cost > self.cash:
             max_by_cash = int(self.cash / exec_price)
             size = min(size, max_by_cash)
+            # Recalculate cost with adjusted size
+            if self.use_realistic_costs:
+                from scripts.execution_costs import calculate_buy_cost
 
-        if size <= 0:
-            return
+                costs = calculate_buy_cost(exec_price, size)
+                total_cost = costs.net_cost
+            else:
+                cost = size * exec_price
+                brokerage_cost = cost * self.brokerage
+                total_cost = cost + brokerage_cost
 
-        cost = size * exec_price
-        brokerage_cost = cost * self.brokerage
-        total_cost = cost + brokerage_cost
-
-        if total_cost > self.cash:
+        if size <= 0 or total_cost > self.cash:
             return
 
         # Deduct cash
@@ -890,9 +917,25 @@ class PortfolioBacktestSession:
         if not pos:
             return None
 
-        gross_value = pos.quantity * price
-        brokerage_cost = gross_value * self.brokerage
-        net_value = gross_value - brokerage_cost
+        # Apply gap risk modeling for realistic exit fills
+        if self.use_realistic_costs:
+            from scripts.execution_costs import apply_gap_risk
+
+            atr = self._calculate_atr_from_store(symbol, date) or (price * 0.02)
+            fill_price = apply_gap_risk(price, atr, reason, seed=self.gap_seed + self.bar_count)
+        else:
+            fill_price = price
+
+        # Calculate realistic sell costs
+        if self.use_realistic_costs:
+            from scripts.execution_costs import calculate_sell_cost
+
+            costs = calculate_sell_cost(fill_price, pos.quantity)
+            net_value = costs.net_proceeds
+        else:
+            gross_value = pos.quantity * fill_price
+            brokerage_cost = gross_value * self.brokerage
+            net_value = gross_value - brokerage_cost
 
         pnl = net_value - (pos.quantity * pos.entry_price)
         pnl_pct = (pnl / (pos.quantity * pos.entry_price)) * 100 if pos.entry_price > 0 else 0
@@ -931,9 +974,25 @@ class PortfolioBacktestSession:
         self, symbol: str, date: pd.Timestamp, price: float, qty: int, pos: PortfolioPosition, reason: str
     ) -> PortfolioTrade:
         """Sell a portion of a position."""
-        gross_value = qty * price
-        brokerage_cost = gross_value * self.brokerage
-        net_value = gross_value - brokerage_cost
+        # Apply gap risk for partial sells too
+        if self.use_realistic_costs:
+            from scripts.execution_costs import apply_gap_risk
+
+            atr = self._calculate_atr_from_store(symbol, date) or (price * 0.02)
+            fill_price = apply_gap_risk(price, atr, reason, seed=self.gap_seed + self.bar_count)
+        else:
+            fill_price = price
+
+        # Calculate realistic costs
+        if self.use_realistic_costs:
+            from scripts.execution_costs import calculate_sell_cost
+
+            costs = calculate_sell_cost(fill_price, qty)
+            net_value = costs.net_proceeds
+        else:
+            gross_value = qty * fill_price
+            brokerage_cost = gross_value * self.brokerage
+            net_value = gross_value - brokerage_cost
 
         cost_basis = qty * pos.entry_price
         pnl = net_value - cost_basis
@@ -1106,6 +1165,21 @@ class PortfolioBacktestSession:
             return float(atr_series.loc[date]) if date in atr_series.index else float(atr_series.iloc[-1])
         except Exception:
             return 0.0
+
+    def _calculate_atr_from_store(self, symbol: str, date: pd.Timestamp, period: int = 14) -> Optional[float]:
+        """Get ATR from pre-computed vectorbt indicator store (O(1) lookup).
+
+        Falls back to None if indicator store is not available.
+        """
+        if self._indicator_store is None:
+            return None
+        try:
+            atr_val = self._indicator_store.get(symbol, "atr_14", date)
+            if atr_val is not None and not np.isnan(atr_val):
+                return float(atr_val)
+        except Exception:
+            pass
+        return None
 
     def _can_open_new_position(self, symbol: str) -> bool:
         """Check if we can open a new position (regime-adaptive)."""

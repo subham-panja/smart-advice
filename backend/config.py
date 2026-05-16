@@ -95,7 +95,9 @@ TRADING_OPTIONS = {
 PORTFOLIO_BACKTEST_CONFIG = {
     "enabled": True,
     "initial_capital": 100000.0,
-    "brokerage_charges": 0.0020,
+    "brokerage_charges": 0.0003,  # 0.03% discount broker (was 0.20%)
+    "slippage_pct": 0.0015,  # 0.15% realistic mid-cap slippage (was 0.05%)
+    "gap_risk_seed": 42,  # Reproducible gap risk modeling
     "ranking_method": "combined_score",
     "save_daily_snapshots": True,
     "same_day_cash_recycling": True,
