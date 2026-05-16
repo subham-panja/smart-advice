@@ -55,7 +55,7 @@ def _send_telegram(message: str):
             pass
 
 
-def _print_summary(results: dict):
+def _print_summary(results: dict, excluded_count: int = 0):
     """Print console summary table."""
     r = results
     print("")
@@ -73,6 +73,8 @@ def _print_summary(results: dict):
     print("Win Rate:          {:.1f}%".format(r["win_rate"]))
     print("Profit Factor:     {:.2f}".format(r["profit_factor"]))
     print("Expectancy:        {:.2f}".format(r["expectancy"]))
+    if excluded_count > 0:
+        print("Excluded Stocks:   {} (insufficient data)".format(excluded_count))
     print("=" * 60)
     print("")
 
@@ -122,7 +124,7 @@ def _send_telegram_summary(results: dict, strategy_name: str, months: int):
         "📅 Period: {} → {}".format(
             "✅",
             strategy_name,
-            args.months,
+            months,
             header,
             initial_cap,
             final_value,
@@ -194,18 +196,67 @@ def run_historical_test(
     sim_end = pd.Timestamp(end_date, tz="Asia/Kolkata")
     sim_start = sim_end - pd.DateOffset(months=months)
 
-    # Clamp sim_start to earliest available data across all symbols + index
-    all_dates = []
+    # Filter stocks by minimum data threshold (250 trading days ≈ 1 year)
+    # This excludes newer IPOs and stocks with insufficient history
+    MIN_TRADING_DAYS = 250
+    excluded_stocks = []
+    for sym, df in list(symbols_data.items()):
+        if len(df) < MIN_TRADING_DAYS:
+            excluded_stocks.append((sym, len(df)))
+            del symbols_data[sym]
+    if excluded_stocks:
+        print("  Excluded %d stocks with < %d trading days:" % (len(excluded_stocks), MIN_TRADING_DAYS))
+        for sym, days in sorted(excluded_stocks, key=lambda x: x[1])[:10]:
+            print("    - %s (%d days)" % (sym, days))
+        if len(excluded_stocks) > 10:
+            print("    ... and %d more" % (len(excluded_stocks) - 10))
+        print("  Remaining: %d stocks" % len(symbols_data))
+
+    # Find actual common date range across remaining stocks
+    all_first_dates = []
+    all_last_dates = []
     for sym, df in symbols_data.items():
         if len(df) > 0:
-            all_dates.append(df.index.min())
+            all_first_dates.append(df.index.min())
+            all_last_dates.append(df.index.max())
     if index_data is not None and len(index_data) > 0:
-        all_dates.append(index_data.index.min())
-    if all_dates:
-        earliest = max(all_dates)  # latest of the earliest dates
-        if sim_start < earliest:
-            print("  Adjusting sim_start from %s to %s (earliest available data)" % (sim_start.date(), earliest.date()))
-            sim_start = earliest
+        all_first_dates.append(index_data.index.min())
+        all_last_dates.append(index_data.index.max())
+
+    if all_first_dates:
+        earliest_available = min(all_first_dates)
+        latest_available = max(all_last_dates)
+        if sim_start < earliest_available:
+            print(
+                "  Adjusting sim_start from %s to %s (earliest common date)"
+                % (sim_start.date(), earliest_available.date())
+            )
+            sim_start = earliest_available
+        if sim_end > latest_available:
+            print(
+                "  Adjusting sim_end from %s to %s (latest available date)" % (sim_end.date(), latest_available.date())
+            )
+            sim_end = latest_available
+
+        # Report coverage
+        coverage_first = min(df.index.min() for df in symbols_data.values() if len(df) > 0)
+        coverage_last = max(df.index.max() for df in symbols_data.values() if len(df) > 0)
+        print("  Stock data coverage: %s → %s" % (coverage_first.date(), coverage_last.date()))
+
+    # Regime detection warmup: find first date where index has 250+ rows
+    if index_data is not None:
+        stock_only = {
+            k: v for k, v in symbols_data.items() if k != strategy.get("market_regime_config", {}).get("index", "^NSEI")
+        }
+        all_sets = [set(df.index) for df in stock_only.values()]
+        if all_sets:
+            union_dates = sorted(set.union(*all_sets))
+            for d in union_dates:
+                if len(index_data.loc[:d]) >= 250:
+                    if sim_start < d:
+                        print("  Advancing sim_start to %s for regime detection warmup (250+ index rows)" % d.date())
+                        sim_start = d
+                    break
 
     print("Running simulation: %s -> %s (%d months)" % (sim_start.date(), sim_end.date(), months))
     print("")
@@ -216,7 +267,7 @@ def run_historical_test(
 
     results = engine.run(symbols_data, sim_start_date=sim_start, sim_end_date=sim_end)
 
-    _print_summary(results)
+    _print_summary(results, excluded_count=len(excluded_stocks))
 
     if send_telegram:
         print("Sending Telegram summary...")
