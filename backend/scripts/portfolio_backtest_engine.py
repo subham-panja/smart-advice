@@ -211,9 +211,22 @@ class PortfolioBacktestSession:
         self._last_dates = {sym: df.index[-1] for sym, df in symbols_data.items()}
 
         # 3. Day-by-day simulation
+        total_days = len(common_dates)
+        import time as _time
+
+        _t0 = _time.time()
         for i, date in enumerate(common_dates):
             self.bar_count = i
             self._simulate_day(date, symbols_data)
+            # Print progress every 250 days
+            if (i + 1) % 250 == 0 or i == total_days - 1:
+                pct = (i + 1) / total_days * 100
+                elapsed = _time.time() - _t0
+                speed = (i + 1) / elapsed if elapsed > 0 else 0
+                eta = (total_days - i - 1) / speed if speed > 0 else 0
+                print(
+                    f"  Progress: {i+1}/{total_days} ({pct:.0f}%) | {self.cash:,.0f} cash | {len(self.positions)} pos | {elapsed:.0f}s elapsed, ~{eta:.0f}s left"
+                )
 
         # 4. Force-close any remaining open positions at last price
         self._force_close_all_at_end(symbols_data)
@@ -281,9 +294,21 @@ class PortfolioBacktestSession:
         self._last_dates = {sym: df.index[-1] for sym, df in symbols_data.items()}
 
         # 3. Day-by-day simulation using pre-computed signals
+        total_days = len(common_dates)
+        import time as _time
+
+        _t0 = _time.time()
         for i, date in enumerate(common_dates):
             self.bar_count = i
             self._simulate_day_with_signals(date, symbols_data, precomputed_signals)
+            if (i + 1) % 250 == 0 or i == total_days - 1:
+                pct = (i + 1) / total_days * 100
+                elapsed = _time.time() - _t0
+                speed = (i + 1) / elapsed if elapsed > 0 else 0
+                eta = (total_days - i - 1) / speed if speed > 0 else 0
+                print(
+                    f"  Progress: {i+1}/{total_days} ({pct:.0f}%) | {self.cash:,.0f} cash | {len(self.positions)} pos | {elapsed:.0f}s elapsed, ~{eta:.0f}s left"
+                )
 
         # 4. Force-close any remaining open positions
         self._force_close_all_at_end(symbols_data)
@@ -351,7 +376,7 @@ class PortfolioBacktestSession:
             curr_value = self._current_portfolio_value(symbols_data, date)
             daily_loss_pct = ((curr_value - prev_value) / prev_value) * 100
             if daily_loss_pct <= -max_daily_loss_pct:
-                logger.warning(
+                logger.info(
                     f"🛑 MAX DAILY LOSS TRIGGERED on {date.date()}: Loss {daily_loss_pct:.2f}% >= {max_daily_loss_pct}% threshold. "
                     f"Force closing all positions."
                 )
@@ -401,7 +426,7 @@ class PortfolioBacktestSession:
             curr_value = self._current_portfolio_value(symbols_data, date)
             daily_loss_pct = ((curr_value - prev_value) / prev_value) * 100
             if daily_loss_pct <= -max_daily_loss_pct:
-                logger.warning(
+                logger.info(
                     f"🛑 MAX DAILY LOSS TRIGGERED on {date.date()}: Loss {daily_loss_pct:.2f}% >= {max_daily_loss_pct}% threshold."
                 )
                 for symbol in list(self.positions.keys()):
