@@ -18,7 +18,6 @@ and compounds returns across all stocks simultaneously.
 
 import argparse
 import logging
-import multiprocessing
 import os
 import random
 import re
@@ -320,6 +319,58 @@ def _walk_forward_mc_worker(args):
         }
 
 
+def _walk_forward_mc_worker_sequential(
+    strategy_config,
+    sampled_data,
+    window_idx,
+    mc_iter,
+    sim_start_date,
+    sim_end_date,
+    precomputed_signals=None,
+    indicator_store=None,
+):
+    """Sequential worker that uses pre-computed signals for fast execution.
+
+    This replaces the multiprocessing worker. With pre-computed signals,
+    the simulation is fast enough to run sequentially without multiprocessing.
+    """
+    from scripts.portfolio_backtest_engine import PortfolioBacktestSession
+
+    engine = PortfolioBacktestSession(strategy_config=strategy_config)
+
+    if indicator_store is not None:
+        engine.set_indicator_store(indicator_store)
+
+    try:
+        if precomputed_signals is not None:
+            # Filter signals to only sampled symbols
+            filtered_signals = {sym: precomputed_signals[sym] for sym in sampled_data if sym in precomputed_signals}
+            result = engine.run_with_signals(sampled_data, filtered_signals)
+        else:
+            result = engine.run(sampled_data, sim_start_date=sim_start_date, sim_end_date=sim_end_date)
+        return {
+            "window": window_idx,
+            "mc_iteration": mc_iter,
+            "symbols_count": len(sampled_data),
+            "status": "success",
+            "cagr": float(result["cagr"]),
+            "total_return": float(result["total_return_pct"]),
+            "max_drawdown": float(result["max_drawdown_pct"]),
+            "sharpe": float(result["sharpe_ratio"]),
+            "total_trades": int(result["total_trades"]),
+            "win_rate": float(result["win_rate"]),
+            "profit_factor": float(result["profit_factor"]),
+        }
+    except Exception as e:
+        return {
+            "window": window_idx,
+            "mc_iteration": mc_iter,
+            "symbols_count": len(sampled_data),
+            "status": "failed",
+            "error": str(e),
+        }
+
+
 # ---------------------------------------------------------------------------
 # Simple Portfolio Backtest
 # ---------------------------------------------------------------------------
@@ -576,6 +627,18 @@ def run_walk_forward_backtest(
     completed_count = 0
     all_cagrs = []
 
+    # Pre-compute indicators ONCE for the full dataset (shared across all windows)
+    full_indicator_store = None
+    try:
+        from scripts.vectorbt_indicator_batch import IndicatorStore, compute_all_indicators
+
+        logger.info(f"  Pre-computing indicators for {len(symbols_data)} symbols (full dataset)...")
+        full_indicators = compute_all_indicators(symbols_data, strategy)
+        full_indicator_store = IndicatorStore(full_indicators)
+        logger.info("  Full indicators computed in one vectorized pass")
+    except Exception as e:
+        logger.warning(f"  Full indicator pre-computation failed: {e}")
+
     for window_idx, (window_start, window_end) in enumerate(windows):
         logger.info(f"\n{'='*50}")
         logger.info(f"WINDOW {window_idx+1}/{len(windows)}: {window_start.date()} → {window_end.date()}")
@@ -592,83 +655,74 @@ def run_walk_forward_backtest(
             logger.warning(f"Too few symbols in window {window_idx+1} ({len(window_data)}), skipping")
             continue
 
-        window_indicator_data = None
+        # Pre-compute signals ONCE for this window (avoids per-day scan in each MC iteration)
+        window_signals = None
         try:
-            from scripts.vectorbt_indicator_batch import compute_all_indicators
-
-            logger.info(f"  Computing indicators for {len(window_data)} symbols...")
-            window_indicators = compute_all_indicators(window_data, strategy)
-            window_indicator_data = window_indicators
-            logger.info("  Indicators computed in one vectorized pass")
+            logger.info(f"  Pre-computing signals for {len(window_data)} symbols...")
+            window_signals = _precompute_window_signals(window_data, full_indicator_store, strategy)
+            logger.info(f"  Signals pre-computed for {len(window_signals)} symbols")
         except Exception as e:
-            logger.warning(f"  Indicator pre-computation failed: {e}, falling back to TA-Lib")
+            logger.warning(f"  Signal pre-computation failed: {e}")
 
-        sample_map = {}
-        task_args = []
+        # Run MC iterations sequentially (pre-computed signals make this fast enough)
+        window_results = []
         for mc_iter in range(mc_iterations):
             sample_size = max(int(len(window_data) * 0.7), 20)
             sampled_symbols = random.sample(list(window_data.keys()), sample_size)
-            sample_map[(window_idx + 1, mc_iter + 1)] = sampled_symbols
-
             sampled_data = {sym: window_data[sym] for sym in sampled_symbols}
-            task_args.append(
-                (
-                    strategy,
-                    sampled_data,
-                    window_idx + 1,
-                    mc_iter + 1,
-                    window_start,
-                    window_end,
-                    window_indicator_data,
-                )
+
+            result = _walk_forward_mc_worker_sequential(
+                strategy,
+                sampled_data,
+                window_idx + 1,
+                mc_iter + 1,
+                window_start,
+                window_end,
+                window_signals,
+                full_indicator_store,
             )
 
-        num_workers = min(config.NUM_WORKER_PROCESSES, mc_iterations)
-        ctx = multiprocessing.get_context("spawn")
+            completed_count += 1
+            elapsed = (datetime.now() - start_time).total_seconds()
 
-        with ctx.Pool(processes=num_workers) as pool:
-            for result in pool.imap_unordered(_walk_forward_mc_worker, task_args):
-                completed_count += 1
-                elapsed = (datetime.now() - start_time).total_seconds()
+            if result["status"] == "success":
+                all_cagrs.append(result["cagr"])
+                all_results.append(result)
+                window_results.append(result)
 
-                if result["status"] == "success":
-                    all_cagrs.append(result["cagr"])
-                    all_results.append(result)
+            pct = completed_count / total_runs * 100
+            if completed_count % max(1, total_runs // 10) == 0 or completed_count == total_runs:
+                remaining = total_runs - completed_count
+                eta = (elapsed / completed_count * remaining) if completed_count > 0 else 0
+                logger.info(f"Walk-forward progress: {pct:.0f}% ({completed_count}/{total_runs}) | " f"ETA: {eta:.0f}s")
 
-                if save_to_db and persistence and wf_session_id:
-                    syms = sample_map.get((result["window"], result["mc_iteration"]), [])
-                    persistence.save_walk_forward_run(
-                        session_id=wf_session_id,
-                        window=result["window"],
-                        mc_iteration=result["mc_iteration"],
-                        symbols_count=result["symbols_count"],
-                        sampled_symbols=syms,
-                        result=result,
-                    )
+        # Batch DB writes per window (instead of per-iteration)
+        if save_to_db and persistence and wf_session_id and window_results:
+            for mc_iter_idx, result in enumerate(window_results):
+                syms = random.sample(list(window_data.keys()), max(int(len(window_data) * 0.7), 20))
+                persistence.save_walk_forward_run(
+                    session_id=wf_session_id,
+                    window=result["window"],
+                    mc_iteration=result["mc_iteration"],
+                    symbols_count=result["symbols_count"],
+                    sampled_symbols=syms,
+                    result=result,
+                )
 
-                    running_cagrs = [c for c in all_cagrs if c != 0]
-                    persistence.update_walk_forward_progress(
-                        session_id=wf_session_id,
-                        current_window=result["window"],
-                        completed_runs=completed_count,
-                        total_runs=total_runs,
-                        elapsed=elapsed,
-                        cagrs_so_far=running_cagrs,
-                    )
+            running_cagrs = [c for c in all_cagrs if c != 0]
+            persistence.update_walk_forward_progress(
+                session_id=wf_session_id,
+                current_window=window_idx + 1,
+                completed_runs=completed_count,
+                total_runs=total_runs,
+                elapsed=elapsed,
+                cagrs_so_far=running_cagrs,
+            )
 
-                pct = completed_count / total_runs * 100
-                if completed_count % max(1, total_runs // 10) == 0 or completed_count == total_runs:
-                    remaining = total_runs - completed_count
-                    eta = (elapsed / completed_count * remaining) if completed_count > 0 else 0
-                    logger.info(
-                        f"Walk-forward progress: {pct:.0f}% ({completed_count}/{total_runs}) | " f"ETA: {eta:.0f}s"
-                    )
-
-        if all_results:
-            window_cagrs = [r["cagr"] for r in all_results if r.get("window") == window_idx + 1]
-            if window_cagrs:
-                avg_cagr = sum(window_cagrs) / len(window_cagrs)
-                logger.info(f"  Window {window_idx+1} complete: {len(window_cagrs)} MC runs, avg CAGR {avg_cagr:.1f}%")
+        if window_results:
+            window_cagrs = [r["cagr"] for r in window_results]
+            avg_cagr = sum(window_cagrs) / len(window_cagrs)
+            logger.info(f"  Window {window_idx+1} complete: {len(window_cagrs)} MC runs, avg CAGR {avg_cagr:.1f}%")
 
     if not all_results:
         return {"status": "failed", "reason": "No successful runs"}

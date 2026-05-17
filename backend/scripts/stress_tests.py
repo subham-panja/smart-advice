@@ -72,6 +72,9 @@ def run_regime_tests(
     strategy_name: str = "Swing_Trading",
     max_stocks: int = 50,
     verbose: bool = False,
+    symbols: dict = None,
+    symbols_data: dict = None,
+    index_data=None,
 ) -> List[Dict[str, Any]]:
     """Run historical backtests on specific market regimes.
 
@@ -88,11 +91,13 @@ def run_regime_tests(
     print("REGIME-SPECIFIC STRESS TESTS")
     print(f"{'='*70}\n")
 
-    # Fetch 10y data once, reuse across tests
-    symbols = StockScanner().get_symbols(strategy_config=strategy)
-    symbols = dict(list(symbols.items())[:max_stocks])
-    symbols_data = fetch_symbols_data(symbols, period="10y", verbose=False)
-    index_data = _prepare_index_data(strategy, symbols_data, "10y")
+    # Use pre-fetched data if provided, otherwise fetch
+    if symbols is None:
+        symbols = StockScanner().get_symbols(strategy_config=strategy)
+        symbols = dict(list(symbols.items())[:max_stocks])
+    if symbols_data is None:
+        symbols_data = fetch_symbols_data(symbols, period="10y", verbose=False)
+        index_data = _prepare_index_data(strategy, symbols_data, "10y")
 
     # Pre-compute indicators once
     from scripts.vectorbt_indicator_batch import IndicatorStore, compute_all_indicators
@@ -438,11 +443,19 @@ def run_cost_sensitivity(
 def run_all_stress_tests(
     strategy_name: str = "Swing_Trading",
     max_stocks: int = 50,
+    symbols: dict = None,
+    symbols_data: dict = None,
+    index_data=None,
 ) -> Dict[str, Any]:
-    """Run all stress tests and return combined results."""
-    regime_results = run_regime_tests(strategy_name, max_stocks)
-    param_results = run_param_sensitivity(strategy_name, max_stocks)
-    cost_results = run_cost_sensitivity(strategy_name, max_stocks)
+    """Run all stress tests and return combined results.
+
+    If symbols/symbols_data are provided, reuse them instead of re-fetching.
+    """
+    regime_results = run_regime_tests(
+        strategy_name, max_stocks, symbols=symbols, symbols_data=symbols_data, index_data=index_data
+    )
+    param_results = run_param_sensitivity(strategy_name, max_stocks, symbols=symbols, symbols_data=symbols_data)
+    cost_results = run_cost_sensitivity(strategy_name, max_stocks, symbols=symbols, symbols_data=symbols_data)
 
     # Summary
     regime_pass = sum(1 for r in regime_results if r["passed"])

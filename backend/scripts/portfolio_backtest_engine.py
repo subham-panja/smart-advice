@@ -1069,21 +1069,37 @@ class PortfolioBacktestSession:
         if not bread_cfg.get("enabled", True):
             return True
 
-        sma_period = bread_cfg.get("sma_period", 20)
-        min_advance_pct = bread_cfg.get("min_advance_pct", 35)  # minimum % stocks above SMA
+        min_advance_pct = bread_cfg.get("min_advance_pct", 35)
 
-        above_count = 0
-        total = 0
-        for symbol, df in symbols_data.items():
-            if date not in df.index:
-                continue
-            hist = df.loc[:date]
-            if len(hist) < sma_period:
-                continue
-            total += 1
-            sma = hist["Close"].tail(sma_period).mean()
-            if hist["Close"].iloc[-1] > sma:
-                above_count += 1
+        # Use pre-computed sma_20 from IndicatorStore if available
+        if self._indicator_store is not None:
+            above_count = 0
+            total = 0
+            for symbol in symbols_data.keys():
+                if date not in symbols_data[symbol].index:
+                    continue
+                close_val = self._indicator_store.get(symbol, "close", date)
+                sma_val = self._indicator_store.get(symbol, "sma_20", date)
+                if np.isnan(close_val) or np.isnan(sma_val):
+                    continue
+                total += 1
+                if close_val > sma_val:
+                    above_count += 1
+        else:
+            # Fallback: compute SMA-20 on the fly
+            sma_period = 20
+            above_count = 0
+            total = 0
+            for symbol, df in symbols_data.items():
+                if date not in df.index:
+                    continue
+                hist = df.loc[:date]
+                if len(hist) < sma_period:
+                    continue
+                total += 1
+                sma = hist["Close"].tail(sma_period).mean()
+                if hist["Close"].iloc[-1] > sma:
+                    above_count += 1
 
         if total < 5:
             return True  # Too few stocks to judge, allow by default

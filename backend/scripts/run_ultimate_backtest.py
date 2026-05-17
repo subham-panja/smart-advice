@@ -418,7 +418,14 @@ def main():
         from scripts.stress_tests import run_all_stress_tests
 
         print("  → 4a: Running regime-specific backtests (5 periods)...")
-        stress_results = run_all_stress_tests(args.strategy, args.max_stocks)
+        # Reuse symbols and data from Phase 1 instead of re-scanning/re-fetching
+        stress_results = run_all_stress_tests(
+            args.strategy,
+            args.max_stocks,
+            symbols=None,  # Will scan inside (different universe needed for regime tests)
+            symbols_data=None,  # Will fetch 10y inside (regime tests need full history)
+            index_data=None,
+        )
         timer.phase_end()
         phases_done += 1
         print(f"   ⏳ {timer.estimate_remaining(phases_done, total_phases)}")

@@ -31,6 +31,7 @@ class ComputedIndicators:
     adx: pd.DataFrame = field(repr=False)
     pdi: pd.DataFrame = field(repr=False)  # PLUS_DI
     mdi: pd.DataFrame = field(repr=False)  # MINUS_DI
+    sma_20: pd.DataFrame = field(repr=False)
     sma_50: pd.DataFrame = field(repr=False)
     sma_150: pd.DataFrame = field(repr=False)
     sma_200: pd.DataFrame = field(repr=False)
@@ -73,6 +74,7 @@ class IndicatorStore:
             "adx",
             "pdi",
             "mdi",
+            "sma_20",
             "sma_50",
             "sma_150",
             "sma_200",
@@ -207,9 +209,11 @@ def compute_all_indicators(
     mdi.columns = symbols
 
     # SMAs
+    sma_20 = vbt.talib("SMA").run(close, timeperiod=20).real
     sma_50 = vbt.talib("SMA").run(close, timeperiod=50).real
     sma_150 = vbt.talib("SMA").run(close, timeperiod=150).real
     sma_200 = vbt.talib("SMA").run(close, timeperiod=200).real
+    sma_20.columns = symbols
     sma_50.columns = symbols
     sma_150.columns = symbols
     sma_200.columns = symbols
@@ -277,6 +281,7 @@ def compute_all_indicators(
         adx=adx,
         pdi=pdi,
         mdi=mdi,
+        sma_20=sma_20,
         sma_50=sma_50,
         sma_150=sma_150,
         sma_200=sma_200,
