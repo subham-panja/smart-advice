@@ -147,6 +147,8 @@ def run_historical_with_realistic_costs(
     symbols = dict(list(symbols.items())[:max_stocks])
     print(f"  → Selected {len(symbols)} stocks (max {max_stocks})")
 
+    # Scanned symbols returned in results["_scanned_symbols"] for reuse
+
     print(f"[3/6] Fetching {period} historical OHLCV data...")
     symbols_data = fetch_symbols_data(symbols, period=period, verbose=False)
 
@@ -232,6 +234,7 @@ def run_historical_with_realistic_costs(
     print(f"Excluded Stocks:   {excluded}")
     print(f"{'='*60}\n")
 
+    results["_scanned_symbols"] = symbols
     return results
 
 
@@ -395,6 +398,7 @@ def main():
             wf_results = run_walk_forward_backtest(
                 strategy_name=args.strategy,
                 period=period,
+                symbols=historical.get("_scanned_symbols"),
                 max_stocks=args.max_stocks,
                 mc_iterations=args.mc_iterations,
                 verbose=False,
@@ -422,8 +426,8 @@ def main():
         stress_results = run_all_stress_tests(
             args.strategy,
             args.max_stocks,
-            symbols=None,  # Will scan inside (different universe needed for regime tests)
-            symbols_data=None,  # Will fetch 10y inside (regime tests need full history)
+            symbols=historical.get("_scanned_symbols"),
+            symbols_data=None,  # Stress tests need 10y data, will fetch internally
             index_data=None,
         )
         timer.phase_end()

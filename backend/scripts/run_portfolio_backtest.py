@@ -326,13 +326,12 @@ def _walk_forward_mc_worker_sequential(
     mc_iter,
     sim_start_date,
     sim_end_date,
-    precomputed_signals=None,
     indicator_store=None,
 ):
-    """Sequential worker that uses pre-computed signals for fast execution.
+    """Sequential worker using IndicatorStore for O(1) indicator lookups.
 
-    This replaces the multiprocessing worker. With pre-computed signals,
-    the simulation is fast enough to run sequentially without multiprocessing.
+    No signal pre-computation needed — the IndicatorStore makes per-day
+    signal scans fast enough to run sequentially.
     """
     from scripts.portfolio_backtest_engine import PortfolioBacktestSession
 
@@ -342,12 +341,7 @@ def _walk_forward_mc_worker_sequential(
         engine.set_indicator_store(indicator_store)
 
     try:
-        if precomputed_signals is not None:
-            # Filter signals to only sampled symbols
-            filtered_signals = {sym: precomputed_signals[sym] for sym in sampled_data if sym in precomputed_signals}
-            result = engine.run_with_signals(sampled_data, filtered_signals)
-        else:
-            result = engine.run(sampled_data, sim_start_date=sim_start_date, sim_end_date=sim_end_date)
+        result = engine.run(sampled_data, sim_start_date=sim_start_date, sim_end_date=sim_end_date)
         return {
             "window": window_idx,
             "mc_iteration": mc_iter,
@@ -566,6 +560,7 @@ def run_walk_forward_backtest(
     mc_iterations: int = 10,
     verbose: bool = False,
     save_to_db: bool = True,
+    symbols: dict = None,
 ) -> Dict:
     """Run walk-forward backtesting with Monte Carlo sampling."""
 
@@ -577,10 +572,11 @@ def run_walk_forward_backtest(
     if not strategy:
         raise RuntimeError(f"Strategy {strategy_name} not found")
 
-    scanner = StockScanner()
-    symbols = scanner.get_symbols(strategy_config=strategy)
+    if symbols is None:
+        scanner = StockScanner()
+        symbols = scanner.get_symbols(strategy_config=strategy)
     symbols_list = list(symbols.keys())[:max_stocks]
-    logger.info(f"Scanner returned {len(symbols_list)} symbols for universe")
+    logger.info(f"Using {len(symbols_list)} symbols for universe")
 
     logger.info(f"Fetching {period} historical data for {len(symbols_list)} symbols...")
     symbols_data = fetch_symbols_data(symbols, period=period, verbose=verbose)
@@ -655,16 +651,8 @@ def run_walk_forward_backtest(
             logger.warning(f"Too few symbols in window {window_idx+1} ({len(window_data)}), skipping")
             continue
 
-        # Pre-compute signals ONCE for this window (avoids per-day scan in each MC iteration)
-        window_signals = None
-        try:
-            logger.info(f"  Pre-computing signals for {len(window_data)} symbols...")
-            window_signals = _precompute_window_signals(window_data, full_indicator_store, strategy)
-            logger.info(f"  Signals pre-computed for {len(window_signals)} symbols")
-        except Exception as e:
-            logger.warning(f"  Signal pre-computation failed: {e}")
-
-        # Run MC iterations sequentially (pre-computed signals make this fast enough)
+        # Run MC iterations sequentially using IndicatorStore for O(1) lookups
+        # (no signal pre-computation needed — IndicatorStore makes per-day scans fast)
         window_results = []
         for mc_iter in range(mc_iterations):
             sample_size = max(int(len(window_data) * 0.7), 20)
@@ -678,7 +666,6 @@ def run_walk_forward_backtest(
                 mc_iter + 1,
                 window_start,
                 window_end,
-                window_signals,
                 full_indicator_store,
             )
 
