@@ -1,6 +1,6 @@
 {
   "name": "Momentum_Trading",
-  "enabled": false,
+  "enabled": true,
   "description": "Momentum strategy focusing on 52-week high breakouts, relative strength leaders, and trending stocks. Wider stops, longer holds, and concentrated positions for capturing multi-month moves.",
   "version": "1.0",
   "analysis_config": {

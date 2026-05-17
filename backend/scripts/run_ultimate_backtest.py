@@ -323,10 +323,9 @@ def main():
     # ─── PHASE 1: Historical Backtest ───
     # Runs the strategy over real historical data with realistic execution costs
     timer.phase_start("Phase 1: Historical Backtest (Realistic Costs)")
-    # Calculate fetch period from months + 1 year buffer for warmup
-    fetch_months = args.months + 12
-    fetch_years = min(fetch_months / 12, 10)
-    period = f"{int(fetch_years)}y"
+    # Calculate fetch period from --months + 1 year buffer for warmup
+    # Fetch max available data; sim range controlled by --months
+    period = "max"
     historical = run_historical_with_realistic_costs(
         args.strategy, args.end_date, args.months, args.max_stocks, period=period
     )

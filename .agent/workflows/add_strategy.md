@@ -43,7 +43,7 @@ Use this for a complete new trading system with gates, entry patterns, and exit 
 ### 1. Create JSON File
 - Location: `backend/strategies/`
 - Filename: `[strategy_name].json` (snake_case)
-- Template: Copy from `backend/strategies/hybrid_trading.json`.
+- Template: Copy from `backend/strategies/swing_trading.json`.
 
 ### 2. Define Key Sections
 - `name`: Unique strategy name.
@@ -62,18 +62,19 @@ cd backend
 python -c "import json; json.load(open('strategies/your_strategy.json')); print('JSON Valid')"
 ```
 
-### 4. Test Strategy
+### 4. Test Strategy Loading
 ```bash
 cd backend
 python -c "from utils.strategy_loader import StrategyLoader; s = StrategyLoader.get_strategy_by_name('YourStrategy'); print('Loaded:', s['name'])"
 ```
 
-### 5. Run Analysis
+### 5. Run Ultimate Backtest
 ```bash
 cd backend
-python run_analysis.py
+python scripts/run_ultimate_backtest.py --strategy YourStrategy --months 120 --max-stocks 10 --mc-iterations 8
 ```
-Note: The pipeline automatically loads all enabled strategies. No need to pass `--symbol` or `--max-stocks` flags directly to `run_analysis.py` unless testing specific paths.
+
+This runs all 6 validation phases (historical, statistical, walk-forward, stress tests, diagnostics, confidence score) in ~2 minutes.
 
 ---
 

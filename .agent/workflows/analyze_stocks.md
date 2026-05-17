@@ -37,6 +37,13 @@ Use the "Start Full Analysis" button on `http://localhost:3000`.
 ### Option D: Trigger via Telegram
 Send "Run Analysis" to the configured Telegram bot.
 
+### Option E: Run Ultimate Backtest
+Full 6-phase strategy validation:
+```bash
+cd backend
+python scripts/run_ultimate_backtest.py --strategy Swing_Trading --months 120 --max-stocks 10 --mc-iterations 8
+```
+
 ## 4. Verification
 - **Logs**: Check `backend/logs/` for any "Network Error" or "API 429" warnings.
 - **Database**: Check MongoDB collections:
@@ -45,7 +52,9 @@ Send "Run Analysis" to the configured Telegram bot.
   - `scan_runs` - Scan execution history
   - `swing_gate_results` - Gate pass/fail data
   - `positions` - Open paper trading positions
-  - `portfolio_backtest_daily_snapshots` - Portfolio backtest equity curves (if auto-run enabled)
+  - `portfolio_backtest_daily_snapshots` - Portfolio backtest equity curves
+  - `backtest_sessions` - Ultimate backtest session metadata
+  - `backtest_trades` - Individual trade records from backtests
 - **Audit Log**: Check `backend/logs/audit_log.json` for detailed per-stock analysis logs.
 - **Frontend**: Refresh `http://localhost:3000` to see the new dashboard data.
 - **Positions**: If running the full cycle, check `positions` collection for new/open trades.

@@ -1,69 +1,79 @@
-# FSA Strategy Segregation Plan
+# FSA Strategy Segregation Plan — COMPLETED
 
 ## Overview
-Transition the trading system from a monolithic configuration to a modular, multi-strategy architecture. Each strategy will be self-contained in its own JSON configuration, allowing for dynamic loading and parallel/sequential execution.
+Transition the trading system from a monolithic configuration to a modular, multi-strategy architecture. Each strategy is self-contained in its own JSON configuration, allowing for dynamic loading and parallel/sequential execution.
 
-## 1. Strategy JSON Structure
-Each strategy will be defined in a JSON file located in `backend/strategies/`.
+**Status**: Fully implemented and operational.
 
-**Example: `delayed_ep.json`**
-```json
-{
-    "name": "Delayed_EP",
-    "enabled": true,
-    "weights": {
-        "technical": 0.90,
-        "fundamental": 0.05,
-        "sector": 0.05
-    },
-    "entry_patterns": [
-        {
-            "name": "pullback_to_ema",
-            "ema_period": 10,
-            "rsi_range": [40, 70]
-        }
-    ],
-    "exit_rules": {
-        "targets": [
-            {"name": "Target 1", "atr_multiplier": 3.0, "sell_percentage": 0.5},
-            {"name": "Target 2", "atr_multiplier": 4.5, "sell_percentage": 1.0}
-        ],
-        "atr_stop_multiplier": 1.5,
-        "trail_stop_atr": 3.0,
-        "time_stop_bars": 15,
-        "breakeven_at_target_1": true
-    }
-}
-```
+## 1. Strategy JSON Structure — COMPLETED
+Each strategy is defined in a JSON file located in `backend/strategies/`.
 
-## 2. Refined `config.py`
-The `config.py` file will be limited to core infrastructure settings:
+### Available Strategies
+
+| File | Name | Status | Description |
+|------|------|--------|-------------|
+| `swing_trading.json` | Swing_Trading | Enabled | Classic swing with gates, multi-target exits, pyramiding |
+| `momentum_trading.json` | Momentum_Trading | Enabled | 52-week high breakouts, RS leaders, wider stops |
+| `hybrid_trading.json` | Hybrid_Trading | Enabled | Multi-factor combined strategy |
+| `triple_confirm.json` | Nitin_Triple_Confirm_Retracement | Enabled | Retracement-based strategy |
+
+### Strategy JSON Schema
+Each strategy file contains:
+- `name`: Unique identifier
+- `enabled`: Boolean to activate/deactivate
+- `description`: Strategy description
+- `version`: Version string
+- `analysis_config`: Toggle technical/fundamental/sentiment/sector/backtesting/risk/options_oi
+- `analysis_weights`: Weight distribution (technical, fundamental, sentiment, sector)
+- `stock_filters`: Price, volume, market cap, moving average filters
+- `swing_trading_gates`: TREND_GATE, VOLATILITY_GATE, VOLUME_GATE, MTF_GATE
+- `entry_patterns`: pullback_to_ema, bollinger_squeeze_breakout, macd_zero_cross, etc.
+- `exit_rules`: Multi-target ATR-based exits, trailing stop, breakeven, time-stop
+- `risk_management`: Position sizing, stop loss type, regime adaptive risk
+- `pyramiding`: Multi-step position adding with ATR triggers
+- `strategy_config`: Individual indicator modules with `enabled` and `is_bonus` flags
+- `fundamental_config`: ROCE, debt-to-equity, profit growth thresholds
+- `chartink_config`: Screening cache settings
+
+## 2. Refined `config.py` — COMPLETED
+`config.py` is limited to core infrastructure settings:
 - MongoDB Connection (Host, Port, DB Name)
 - Broker Credentials (5Paisa API keys, User ID, Password)
 - Global Flags (`IS_PAPER`, `VERBOSE_LOGGING`, `AUTO_EXECUTE`)
 - Global Timeouts and Threading counts
+- Trading cost configuration (STT, stamp duty, brokerage, slippage)
 
-## 3. Dynamic Strategy Loader
-Implementation of an automated loader in the `main_orchestrator.py` or a dedicated `StrategyManager`:
-1. Use `os.listdir()` to scan `backend/strategies/*.json`.
-2. Parse each file and validate the mandatory `"name"` field.
-3. Register the strategy in the global execution registry.
+## 3. Dynamic Strategy Loader — COMPLETED
+**File**: `backend/utils/strategy_loader.py`
 
-## 4. Execution Workflow
-For each enabled strategy in the registry:
-1. **Initialize Engine**: Load the specific weights and parameters for the strategy.
-2. **Analysis**: Run the full market scan (Phase 2) using that strategy's logic.
-3. **Execution**: Identify recommendations and trigger paper/live orders (Phase 3).
-4. **Persistence**: Every recommendation and position MUST include a `strategy_name` field for tracking.
+Implementation:
+1. Scans `backend/strategies/*.json` using `os.listdir()`
+2. Parses each file and validates mandatory `name` and `enabled` fields
+3. `load_all_strategies()` returns all enabled strategies
+4. `get_strategy_by_name(name)` fetches a specific strategy by name
+5. Used by `run_ultimate_backtest.py`, `run_analysis.py`, and `main_orchestrator.py`
 
-## 5. Risk & Portfolio Management
-- **Consolidated Monitor**: A single `PortfolioMonitor` will track all open positions but will apply the specific `exit_rules` based on the `strategy_name` metadata stored in each position.
-- **Unified Capital**: All strategies share the `initial_capital` pool unless sub-allocation logic is implemented later.
+## 4. Execution Workflow — COMPLETED
+For each enabled strategy:
+1. **Initialize Engine**: Load the specific weights and parameters from JSON
+2. **Analysis**: Run the full market scan using that strategy's logic
+3. **Execution**: Identify recommendations and trigger paper/live orders
+4. **Persistence**: Every recommendation and position includes `strategy_name` field
+
+## 5. Risk & Portfolio Management — COMPLETED
+- **Consolidated Monitor**: Single `PortfolioMonitor` tracks all open positions, applies specific `exit_rules` based on `strategy_name` metadata
+- **Unified Capital**: All strategies share the `initial_capital` pool
+- **Regime Adaptive Risk**: Each strategy has bull/bear risk parameters in JSON
 
 ## 6. Implementation Status
 - [x] Initial EP Logic Hardened
 - [x] Paper Trading Engine Verified
-- [ ] Create `backend/strategies/` directory
-- [ ] Migrate `Delayed_EP` settings to JSON
-- [ ] Implement Dynamic Strategy Loader
-- [ ] Update Database Schema to include `strategy_name`
+- [x] Create `backend/strategies/` directory
+- [x] Migrate strategies to JSON (4 strategies defined)
+- [x] Implement Dynamic Strategy Loader
+- [x] Update Database Schema to include `strategy_name`
+- [x] Multi-strategy backtest support in ultimate backtest runner
+- [x] Strategy-specific Chartink screening rules
+
+---
+*Last Updated: 2026-05-17*
