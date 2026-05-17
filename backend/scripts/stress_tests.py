@@ -186,8 +186,10 @@ PARAM_VARIATIONS = {
 def run_param_sensitivity(
     strategy_name: str = "Swing_Trading",
     max_stocks: int = 50,
-    test_months: int = 60,  # 5-year test window
+    test_months: int = 60,
     end_date: str = "2026-05-15",
+    symbols: dict = None,
+    symbols_data: dict = None,
 ) -> List[Dict[str, Any]]:
     """Test strategy performance with +/- 20% parameter variations.
 
@@ -200,10 +202,13 @@ def run_param_sensitivity(
 
     strategy.setdefault("analysis_config", {})["market_regime_detection"] = True
 
-    symbols = StockScanner().get_symbols(strategy_config=strategy)
-    symbols = dict(list(symbols.items())[:max_stocks])
-    symbols_data = fetch_symbols_data(symbols, period="10y", verbose=False)
-    index_data = _prepare_index_data(strategy, symbols_data, "10y")
+    if symbols_data is None:
+        symbols = StockScanner().get_symbols(strategy_config=strategy)
+        symbols = dict(list(symbols.items())[:max_stocks])
+        symbols_data = fetch_symbols_data(symbols, period="10y", verbose=False)
+        index_data = _prepare_index_data(strategy, symbols_data, "10y")
+    else:
+        index_data = None
 
     MIN_DAYS = 250
     for sym, df in list(symbols_data.items()):
@@ -342,6 +347,8 @@ def run_cost_sensitivity(
     max_stocks: int = 50,
     test_months: int = 60,
     end_date: str = "2026-05-15",
+    symbols: dict = None,
+    symbols_data: dict = None,
 ) -> List[Dict[str, Any]]:
     """Test performance at different cost levels.
 
@@ -354,10 +361,13 @@ def run_cost_sensitivity(
 
     strategy.setdefault("analysis_config", {})["market_regime_detection"] = True
 
-    symbols = StockScanner().get_symbols(strategy_config=strategy)
-    symbols = dict(list(symbols.items())[:max_stocks])
-    symbols_data = fetch_symbols_data(symbols, period="10y", verbose=False)
-    index_data = _prepare_index_data(strategy, symbols_data, "10y")
+    if symbols_data is None:
+        symbols = StockScanner().get_symbols(strategy_config=strategy)
+        symbols = dict(list(symbols.items())[:max_stocks])
+        symbols_data = fetch_symbols_data(symbols, period="10y", verbose=False)
+        index_data = _prepare_index_data(strategy, symbols_data, "10y")
+    else:
+        index_data = None
 
     MIN_DAYS = 250
     for sym, df in list(symbols_data.items()):
