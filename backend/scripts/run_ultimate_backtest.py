@@ -117,6 +117,7 @@ def run_historical_with_realistic_costs(
     end_date: str,
     months: int,
     max_stocks: int = 50,
+    period: str = "5y",
 ) -> dict:
     """Phase 1: Historical backtest with execution realism.
 
@@ -146,12 +147,11 @@ def run_historical_with_realistic_costs(
     symbols = dict(list(symbols.items())[:max_stocks])
     print(f"  → Selected {len(symbols)} stocks (max {max_stocks})")
 
-    # Fetch 10 years of OHLCV data via yfinance (one-time download)
-    print("[3/6] Fetching 10y historical OHLCV data...")
-    symbols_data = fetch_symbols_data(symbols, period="10y", verbose=False)
+    print(f"[3/6] Fetching {period} historical OHLCV data...")
+    symbols_data = fetch_symbols_data(symbols, period=period, verbose=False)
 
     # Fetch NIFTY 50 index data for regime detection warmup
-    index_data = _prepare_index_data(strategy, symbols_data, "10y")
+    index_data = _prepare_index_data(strategy, symbols_data, period)
 
     # Filter out stocks with insufficient history (< 250 trading days)
     print("[4/6] Filtering stocks with insufficient data...")
@@ -205,9 +205,13 @@ def run_historical_with_realistic_costs(
 
     print(f"  → Execution realism: gap_risk={'ON' if engine.use_realistic_costs else 'OFF'}")
     print("  → IndicatorStore: ENABLED (O(1) lookups, no TA-Lib during simulation)")
-    print(
-        f"\n▶ Running day-by-day simulation ({len([d for d in symbols_data[sym].index if sim_start <= d <= sim_end]) if symbols_data else '?'} trading days)..."
-    )
+    # Count trading days in simulation range
+    if symbols_data:
+        first_sym = next(iter(symbols_data))
+        num_days = len([d for d in symbols_data[first_sym].index if sim_start <= d <= sim_end])
+    else:
+        num_days = "?"
+    print(f"\n▶ Running day-by-day simulation ({num_days} trading days)...")
     results = engine.run(symbols_data, sim_start_date=sim_start, sim_end_date=sim_end)
     print(f"  → Simulation done ({time.time() - t_phase:.1f}s total for Phase 1)")
 
@@ -287,6 +291,7 @@ def main():
     parser.add_argument("--telegram", action="store_true", help="Send summary to Telegram")
     parser.add_argument("--skip-wf", action="store_true", help="Skip walk-forward analysis")
     parser.add_argument("--skip-stress", action="store_true", help="Skip stress tests")
+    parser.add_argument("--mc-iterations", type=int, default=8, help="WF MC iterations per window (default 8)")
     args = parser.parse_args()
 
     setup_logging(verbose=False)
@@ -315,7 +320,13 @@ def main():
     # ─── PHASE 1: Historical Backtest ───
     # Runs the strategy over real historical data with realistic execution costs
     timer.phase_start("Phase 1: Historical Backtest (Realistic Costs)")
-    historical = run_historical_with_realistic_costs(args.strategy, args.end_date, args.months, args.max_stocks)
+    # Calculate fetch period from months + 1 year buffer for warmup
+    fetch_months = args.months + 12
+    fetch_years = min(fetch_months / 12, 10)
+    period = f"{int(fetch_years)}y"
+    historical = run_historical_with_realistic_costs(
+        args.strategy, args.end_date, args.months, args.max_stocks, period=period
+    )
     timer.phase_end()
     phases_done += 1
     print(f"   ⏳ {timer.estimate_remaining(phases_done, total_phases)}")
@@ -383,9 +394,9 @@ def main():
         try:
             wf_results = run_walk_forward_backtest(
                 strategy_name=args.strategy,
-                period="10y",
+                period=period,
                 max_stocks=args.max_stocks,
-                mc_iterations=8,
+                mc_iterations=args.mc_iterations,
                 verbose=False,
                 save_to_db=False,
             )

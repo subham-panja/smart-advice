@@ -216,11 +216,22 @@ class PersistenceHandler:
         try:
             db = get_mongodb()
             now = datetime.now(timezone.utc).replace(tzinfo=None)
+            trade_docs = []
             for t in trades:
-                t["session_id"] = session_id
-                t.setdefault("created_at", now)
-                t.setdefault("updated_at", now)
-            db.portfolio_backtest_trades.insert_many(trades)
+                # Convert dataclass objects to dicts if needed
+                if hasattr(t, "__dataclass_fields__"):
+                    from dataclasses import asdict
+
+                    doc = asdict(t)
+                elif isinstance(t, dict):
+                    doc = t
+                else:
+                    doc = dict(t)
+                doc["session_id"] = session_id
+                doc.setdefault("created_at", now)
+                doc.setdefault("updated_at", now)
+                trade_docs.append(doc)
+            db.portfolio_backtest_trades.insert_many(trade_docs)
             return True
         except Exception as e:
             logger.error(f"Portfolio trades save error: {e}")

@@ -276,10 +276,13 @@ def _precompute_window_signals(window_data, indicator_store, strategy_config):
 
 
 def _walk_forward_mc_worker(args):
-    """Worker function for walk-forward Monte Carlo iteration."""
+    """Worker function for walk-forward Monte Carlo iteration.
+
+    Each worker builds its own IndicatorStore and computes signals on-the-fly.
+    This avoids pickling massive pre-computed signal dicts across processes.
+    """
     strategy_config, sampled_data, window_idx, mc_iter, sim_start_date, sim_end_date = args[:6]
-    precomputed_signals = args[6] if len(args) > 6 else None
-    indicator_store_data = args[7] if len(args) > 7 else None
+    indicator_store_data = args[6] if len(args) > 6 else None
 
     engine = PortfolioBacktestSession(strategy_config=strategy_config)
 
@@ -293,12 +296,7 @@ def _walk_forward_mc_worker(args):
             pass
 
     try:
-        if precomputed_signals is not None:
-            # Filter pre-computed signals to only sampled symbols
-            filtered_signals = {sym: precomputed_signals[sym] for sym in sampled_data if sym in precomputed_signals}
-            result = engine.run_with_signals(sampled_data, filtered_signals)
-        else:
-            result = engine.run(sampled_data, sim_start_date=sim_start_date, sim_end_date=sim_end_date)
+        result = engine.run(sampled_data, sim_start_date=sim_start_date, sim_end_date=sim_end_date)
         return {
             "window": window_idx,
             "mc_iteration": mc_iter,
@@ -590,26 +588,18 @@ def run_walk_forward_backtest(
             if len(sliced) >= 200:
                 window_data[sym] = sliced
 
-        if len(window_data) < 20:
-            logger.warning(f"Too few symbols in window {window_idx+1}, skipping")
+        if len(window_data) < 5:
+            logger.warning(f"Too few symbols in window {window_idx+1} ({len(window_data)}), skipping")
             continue
 
-        window_indicator_store = None
         window_indicator_data = None
-        window_signals = None
         try:
-            from scripts.vectorbt_indicator_batch import IndicatorStore, compute_all_indicators
+            from scripts.vectorbt_indicator_batch import compute_all_indicators
 
             logger.info(f"  Computing indicators for {len(window_data)} symbols...")
             window_indicators = compute_all_indicators(window_data, strategy)
-            window_indicator_store = IndicatorStore(window_indicators)
             window_indicator_data = window_indicators
             logger.info("  Indicators computed in one vectorized pass")
-
-            # Pre-compute signals once for this window (avoids redundant scanning in each MC worker)
-            logger.info(f"  Pre-computing signals for {len(window_data)} symbols across all dates...")
-            window_signals = _precompute_window_signals(window_data, window_indicator_store, strategy)
-            logger.info(f"  Signals pre-computed for {len(window_signals)} symbols")
         except Exception as e:
             logger.warning(f"  Indicator pre-computation failed: {e}, falling back to TA-Lib")
 
@@ -629,7 +619,6 @@ def run_walk_forward_backtest(
                     mc_iter + 1,
                     window_start,
                     window_end,
-                    window_signals,
                     window_indicator_data,
                 )
             )
