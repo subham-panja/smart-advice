@@ -1,6 +1,6 @@
 {
   "name": "Hybrid_Trading",
-  "enabled": true,
+  "enabled": false,
   "analysis_config": {
     "technical_analysis": true,
     "fundamental_analysis": true,

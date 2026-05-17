@@ -118,6 +118,7 @@ def run_historical_with_realistic_costs(
     months: int,
     max_stocks: int = 50,
     period: str = "5y",
+    excluded_date_ranges: list = None,
 ) -> dict:
     """Phase 1: Historical backtest with execution realism.
 
@@ -142,9 +143,14 @@ def run_historical_with_realistic_costs(
     strategy.setdefault("analysis_config", {})["market_regime_detection"] = True
 
     # Scan stocks via Chartink API based on strategy screening rules
-    print("[2/6] Scanning stocks via Chartink...")
-    symbols = StockScanner().get_symbols(strategy_config=strategy)
-    symbols = dict(list(symbols.items())[:max_stocks])
+    # Use NSE fallback if Chartink returns too few symbols
+    print("[2/6] Scanning stocks (Chartink + NSE fallback)...")
+    symbols = StockScanner.get_symbols_with_fallback(
+        strategy_config=strategy,
+        min_symbols=50,
+        max_stocks=max_stocks,
+        source="both",
+    )
     print(f"  → Selected {len(symbols)} stocks (max {max_stocks})")
 
     # Scanned symbols returned in results["_scanned_symbols"] for reuse
@@ -214,7 +220,9 @@ def run_historical_with_realistic_costs(
     else:
         num_days = "?"
     print(f"\n▶ Running day-by-day simulation ({num_days} trading days)...")
-    results = engine.run(symbols_data, sim_start_date=sim_start, sim_end_date=sim_end)
+    results = engine.run(
+        symbols_data, sim_start_date=sim_start, sim_end_date=sim_end, excluded_date_ranges=excluded_date_ranges
+    )
     print(f"  → Simulation done ({time.time() - t_phase:.1f}s total for Phase 1)")
 
     # Print summary
@@ -295,6 +303,19 @@ def main():
     parser.add_argument("--skip-wf", action="store_true", help="Skip walk-forward analysis")
     parser.add_argument("--skip-stress", action="store_true", help="Skip stress tests")
     parser.add_argument("--mc-iterations", type=int, default=8, help="WF MC iterations per window (default 8)")
+    parser.add_argument(
+        "--symbol-source",
+        type=str,
+        default="both",
+        choices=["chartink", "nse_universe", "both"],
+        help="Symbol source: chartink (live scan), nse_universe (NSE list), both (Chartink + NSE fill)",
+    )
+    parser.add_argument(
+        "--min-symbols", type=int, default=50, help="Min symbols before expanding from NSE universe (default 50)"
+    )
+    parser.add_argument(
+        "--exclude-dates", type=str, default="", help="Date ranges to exclude, e.g. '2020-01-01:2020-12-31'"
+    )
     args = parser.parse_args()
 
     setup_logging(verbose=False)
@@ -320,6 +341,17 @@ def main():
     print(f"  Total phases to run: {total_phases}")
     print(f"{'='*70}")
 
+    # Parse excluded date ranges (e.g. '2020-01-01:2020-12-31')
+    excluded_date_ranges = []
+    if args.exclude_dates:
+        for range_str in args.exclude_dates.split(","):
+            range_str = range_str.strip()
+            if ":" in range_str:
+                start, end = range_str.split(":", 1)
+                excluded_date_ranges.append((start.strip(), end.strip()))
+        if excluded_date_ranges:
+            print(f"  Excluded date ranges: {excluded_date_ranges}")
+
     # ─── PHASE 1: Historical Backtest ───
     # Runs the strategy over real historical data with realistic execution costs
     timer.phase_start("Phase 1: Historical Backtest (Realistic Costs)")
@@ -327,7 +359,12 @@ def main():
     # Fetch max available data; sim range controlled by --months
     period = "max"
     historical = run_historical_with_realistic_costs(
-        args.strategy, args.end_date, args.months, args.max_stocks, period=period
+        args.strategy,
+        args.end_date,
+        args.months,
+        args.max_stocks,
+        period=period,
+        excluded_date_ranges=excluded_date_ranges if excluded_date_ranges else None,
     )
     timer.phase_end()
     phases_done += 1

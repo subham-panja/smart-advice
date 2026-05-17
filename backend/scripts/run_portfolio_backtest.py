@@ -655,7 +655,8 @@ def run_walk_forward_backtest(
         # (no signal pre-computation needed — IndicatorStore makes per-day scans fast)
         window_results = []
         for mc_iter in range(mc_iterations):
-            sample_size = max(int(len(window_data) * 0.7), 20)
+            n = len(window_data)
+            sample_size = min(max(int(n * 0.7), 5), n)
             sampled_symbols = random.sample(list(window_data.keys()), sample_size)
             sampled_data = {sym: window_data[sym] for sym in sampled_symbols}
 
@@ -686,7 +687,8 @@ def run_walk_forward_backtest(
         # Batch DB writes per window (instead of per-iteration)
         if save_to_db and persistence and wf_session_id and window_results:
             for mc_iter_idx, result in enumerate(window_results):
-                syms = random.sample(list(window_data.keys()), max(int(len(window_data) * 0.7), 20))
+                n_syms = len(window_data)
+                syms = random.sample(list(window_data.keys()), min(max(int(n_syms * 0.7), 5), n_syms))
                 persistence.save_walk_forward_run(
                     session_id=wf_session_id,
                     window=result["window"],

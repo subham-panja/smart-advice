@@ -88,8 +88,14 @@ class PortfolioTrade:
 class PortfolioBacktestSession:
     """Core portfolio backtest engine with multi-stock compounding."""
 
-    def __init__(self, strategy_config: Dict[str, Any], capital_config: Optional[Dict] = None):
+    def __init__(
+        self,
+        strategy_config: Dict[str, Any],
+        capital_config: Optional[Dict] = None,
+        excluded_date_ranges: Optional[List[tuple]] = None,
+    ):
         self.strategy_config = strategy_config
+        self.excluded_date_ranges = excluded_date_ranges or []
 
         # Backtest config from config.py (strategy-level risk comes from strategy_config)
         cfg = capital_config if capital_config else PORTFOLIO_BACKTEST_CONFIG
@@ -169,6 +175,7 @@ class PortfolioBacktestSession:
         symbols_data: Dict[str, pd.DataFrame],
         sim_start_date: Optional[pd.Timestamp] = None,
         sim_end_date: Optional[pd.Timestamp] = None,
+        excluded_date_ranges: Optional[List[tuple]] = None,
     ) -> Dict[str, Any]:
         """Run the portfolio backtest across all provided symbols.
 
@@ -176,6 +183,7 @@ class PortfolioBacktestSession:
             symbols_data: Dict mapping symbol -> DataFrame (5yr OHLCV)
             sim_start_date: Optional start date for simulation (uses full data if None)
             sim_end_date: Optional end date for simulation
+            excluded_date_ranges: Optional list of (start, end) date tuples to exclude
 
         Returns:
             Dict with session summary, trades, and per-stock metrics.
@@ -196,6 +204,17 @@ class PortfolioBacktestSession:
             common_dates = common_dates[common_dates >= sim_start_date]
         if sim_end_date is not None:
             common_dates = common_dates[common_dates <= sim_end_date]
+
+        # Filter out excluded date ranges (e.g. 2020 COVID period)
+        excluded = excluded_date_ranges or self.excluded_date_ranges
+        if excluded:
+            before = len(common_dates)
+            for excl_start, excl_end in excluded:
+                excl_start = pd.Timestamp(excl_start, tz=common_dates.tz)
+                excl_end = pd.Timestamp(excl_end, tz=common_dates.tz)
+                common_dates = common_dates[~((common_dates >= excl_start) & (common_dates <= excl_end))]
+            if len(common_dates) < before:
+                logger.info(f"   Excluded {before - len(common_dates)} dates from {len(excluded)} range(s)")
 
         if len(common_dates) < 60:
             raise ValueError(f"Insufficient common trading days after date filter: {len(common_dates)}")

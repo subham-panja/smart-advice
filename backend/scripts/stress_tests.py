@@ -173,8 +173,10 @@ def run_regime_tests(
 # 2. Parameter Sensitivity Analysis
 # ---------------------------------------------------------------------------
 
+# Fine-grained ATR stop sweep (replaces coarse low/high test)
+ATR_STOP_SWEEP = [2.0, 2.4, 2.8, 3.0, 3.2, 3.4, 3.6, 4.0]
+
 PARAM_VARIATIONS = {
-    "atr_stop_multiplier": {"base": 3.0, "low": 2.4, "high": 3.6},
     "time_stop_bars": {"base": 12, "low": 10, "high": 14},
     "min_rsi": {"base": 50, "low": 45, "high": 55},
     "min_volume_ratio": {"base": 0.6, "low": 0.5, "high": 0.7},
@@ -252,6 +254,44 @@ def run_param_sensitivity(
     print(f"Base case CAGR: {base_cagr:.1f}%\n")
 
     results = [{"param": "BASE", "value": "base", "cagr": round(base_cagr, 2), "passed": True}]
+
+    # --- ATR Stop Multiplier Fine-Grained Sweep ---
+    print("--- ATR Stop Multiplier Sweep ---")
+    atr_cagrs = []
+    for atr_val in ATR_STOP_SWEEP:
+        test_strat = _deep_copy_strategy(strategy)
+        _apply_param_change(test_strat, "atr_stop_multiplier", atr_val)
+        engine = PortfolioBacktestSession(strategy_config=test_strat)
+        engine.set_indicator_store(store)
+        if index_data is not None:
+            engine._index_data_override = index_data
+        result = engine.run(symbols_data, sim_start_date=sim_start, sim_end_date=sim_end)
+        test_cagr = result["cagr"]
+        atr_cagrs.append((atr_val, test_cagr))
+        results.append({"param": "atr_stop_multiplier", "value": atr_val, "cagr": round(test_cagr, 2), "passed": True})
+
+    # Print ATR sweep table with cliff detection
+    print(f"  {'ATR':>5}  {'CAGR':>8}  {'Delta%':>8}  {'Cliff?':>7}")
+    cliff_detected = False
+    prev_cagr = None
+    for atr_val, test_cagr in atr_cagrs:
+        if prev_cagr is not None and base_cagr != 0:
+            delta = ((test_cagr - prev_cagr) / abs(base_cagr)) * 100
+            is_cliff = abs(delta) > 50
+            if is_cliff:
+                cliff_detected = True
+            cliff_flag = "CLIFF!" if is_cliff else ""
+        else:
+            delta = 0
+            cliff_flag = ""
+        if prev_cagr is None:
+            prev_cagr = test_cagr
+        else:
+            prev_cagr = test_cagr
+        print(f"  {atr_val:>5.1f}  {test_cagr:>7.1f}%  {delta:>+7.1f}%  {cliff_flag:>7}")
+    if cliff_detected:
+        print("  *** CLIFF DETECTED: ATR stop multiplier is a fragile parameter ***")
+    print()
 
     tolerance = 0.30  # CAGR must stay within +/- 30% of base
 

@@ -51,3 +51,51 @@ class StockScanner:
             return dict(list(res.items())[:max_stocks]) if max_stocks else res
 
         return {}
+
+    @staticmethod
+    def get_symbols_with_fallback(
+        strategy_config: Dict[str, Any],
+        min_symbols: int = 50,
+        max_stocks: int = 200,
+        source: str = "both",
+    ) -> Dict[str, Any]:
+        """Chartink first, then fill from NSE universe if needed.
+
+        Args:
+            strategy_config: Strategy config with stock_filters
+            min_symbols: Minimum symbol count before expanding from NSE
+            max_stocks: Maximum symbols to return
+            source: 'chartink' (Chartink only), 'nse_universe' (NSE only), 'both' (Chartink + NSE fill)
+
+        Returns:
+            Dict of symbols {symbol: name}
+        """
+        chartink_syms = {}
+
+        # Try Chartink first
+        if source in ("chartink", "both") and config.USE_CHARTINK:
+            chartink_syms = StockScanner.get_symbols(
+                strategy_config=strategy_config, max_stocks=max_stocks, use_all_symbols=False
+            )
+
+        # If we have enough from Chartink or Chartink-only mode, return
+        if len(chartink_syms) >= min_symbols or source == "chartink":
+            return dict(list(chartink_syms.items())[:max_stocks])
+
+        # Expand from NSE universe
+        from scripts.data_fetcher import get_all_nse_symbols
+
+        nse_syms = get_all_nse_symbols()
+        # nse_syms is a dict {symbol: symbol} or list
+
+        if isinstance(nse_syms, list):
+            nse_dict = {s: {"name": s} for s in nse_syms}
+        else:
+            nse_dict = nse_syms
+
+        # Filter out already-found Chartink symbols, then take remaining
+        remaining = {k: v for k, v in nse_dict.items() if k not in chartink_syms}
+
+        # Combine: Chartink picks first, then fill from NSE
+        combined = {**chartink_syms, **remaining}
+        return dict(list(combined.items())[:max_stocks])
