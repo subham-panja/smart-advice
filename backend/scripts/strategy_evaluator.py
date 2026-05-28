@@ -60,7 +60,8 @@ class StrategyEvaluator:
                 raise e
 
         rs_cfg = self.strategy_config["rs_config"]
-        if self.strategy_config["strategy_config"]["Relative_Strength_Comparison"] and index_data is not None:
+        rs_indicator = self.strategy_config["strategy_config"].get("Relative_Strength_Comparison")
+        if rs_indicator and rs_indicator.get("enabled", False) and index_data is not None:
             combined = pd.DataFrame({"s": df["Close"], "i": index_data["Close"]}).dropna()
             if not combined.empty:
                 r = (combined["s"] / combined["i"]) * 100
