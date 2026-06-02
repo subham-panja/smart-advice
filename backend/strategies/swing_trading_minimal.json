@@ -1,6 +1,6 @@
 {
   "name": "Swing_Trading_Minimal",
-  "enabled": true,
+  "enabled": false,
   "description": "Minimal swing trading strategy: 2 entry patterns, 2 hard indicators, TREND_GATE only. No overfitting gates or filters.",
   "version": "1.0-minimal",
   "analysis_config": {
