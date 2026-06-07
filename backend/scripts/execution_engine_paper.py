@@ -8,12 +8,13 @@ to ensure consistency with portfolio backtesting.
 """
 
 import logging
-from datetime import datetime, timezone
+from datetime import timezone
 
 import pandas as pd
 
 import config
 from database import close_position, get_open_positions, insert_position, update_position
+from utils.trading_clock import trading_now
 
 logger = logging.getLogger(__name__)
 
@@ -55,10 +56,7 @@ class ExecutionEngine:
 
             detector = MarketRegimeDetection()
             regime_config = self.strategy_config.get("market_regime_config", {})
-            result = detector.get_simple_regime_check(
-                index=regime_config.get("index", "^NSEI"),
-                rule=regime_config.get("bull_market_rule", "latest close > sma(200)"),
-            )
+            result = detector.get_simple_regime_check(regime_config)
             # In bear regime, check if pyramiding is allowed
             regime_adaptive = self.strategy_config.get("exit_rules", {}).get("regime_adaptive_exits", {})
             regime = result.get("status", "BULL").lower()
@@ -142,7 +140,7 @@ class ExecutionEngine:
                     "total_investment": round(new_total_inv, 2),
                     "adds_count": adds + 1,
                     "last_add_price": price,
-                    "last_add_date": datetime.now(),
+                    "last_add_date": trading_now(),
                 }
                 update_position(symbol, update_data)
                 msg = f"✅ PYRAMID {step_obj['name']}: {symbol} | Added {pyramid_qty} shares ({int(add_pct*100)}%). New Avg: {new_avg_price:.2f}"
@@ -161,7 +159,7 @@ class ExecutionEngine:
 
                     hist = get_historical_data(symbol, period="5d", fresh=True)
                     if hist is not None and not hist.empty:
-                        entry_date_obj = datetime.now(timezone.utc).replace(tzinfo=None).date()
+                        entry_date_obj = trading_now(timezone.utc).replace(tzinfo=None).date()
                         day_row = hist[hist.index.date == entry_date_obj]
                         if not day_row.empty:
                             exec_price = round(day_row["Open"].iloc[0], 2)
@@ -193,7 +191,7 @@ class ExecutionEngine:
                     "current_target": round(target, 2),
                     "recomm_id": recomm_id,
                     "strategy_name": strategy_name,
-                    "entry_date": datetime.now(timezone.utc).replace(tzinfo=None),
+                    "entry_date": trading_now(timezone.utc).replace(tzinfo=None),
                     "status": "OPEN",
                     "trade_type": "LONG_BUY",
                     "is_paper": self.is_paper_trading,
@@ -273,11 +271,11 @@ class ExecutionEngine:
             current_stop_loss = pos.get("current_stop_loss", pos.get("stop_loss"))
             entry_date = pos.get("entry_date")
             quantity = pos["quantity"]
-            targets_hit = pos.get("targets_hit", 0)
+            targets_hit = max(pos.get("targets_hit", 0), pos.get("current_target_idx", 0))
 
             # Calculate days/weeks held
             if entry_date:
-                days_held = (datetime.now(timezone.utc).replace(tzinfo=None) - entry_date).days
+                days_held = (trading_now(timezone.utc).replace(tzinfo=None) - entry_date).days
             else:
                 days_held = 0
             weeks_held = days_held / 7.0
@@ -346,6 +344,7 @@ class ExecutionEngine:
                             update_data = {
                                 "quantity": new_qty,
                                 "targets_hit": targets_hit + 1,
+                                "current_target_idx": targets_hit + 1,
                                 "is_scaled_out": True,
                             }
                             if targets_hit == 0 and exit_cfg.get("breakeven_at_target_1"):
@@ -399,10 +398,7 @@ class ExecutionEngine:
             from scripts.market_regime_detection import MarketRegimeDetection
 
             detector = MarketRegimeDetection()
-            result = detector.get_simple_regime_check(
-                index=regime_config.get("index", "^NSEI"),
-                rule=regime_config.get("bull_market_rule", "latest close > sma(200)"),
-            )
+            result = detector.get_simple_regime_check(regime_config)
             return result.get("status", "BULL").lower()
         except Exception as e:
             raise RuntimeError(
@@ -428,7 +424,7 @@ class ExecutionEngine:
 
             db = get_mongodb()
             today_start = (
-                datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).replace(tzinfo=None)
+                trading_now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).replace(tzinfo=None)
             )
 
             # Get all stocks that were recently analyzed (last 7 days)
@@ -508,7 +504,7 @@ class ExecutionEngine:
                                     "partial_exits": pos.get("partial_exits", [])
                                     + [
                                         {
-                                            "date": datetime.now(timezone.utc).replace(tzinfo=None),
+                                            "date": trading_now(timezone.utc).replace(tzinfo=None),
                                             "quantity": quantity,
                                             "price": net_price,
                                             "gross_price": price,

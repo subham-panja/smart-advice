@@ -243,16 +243,65 @@ def view_positions(m):
         status_emoji = "🟢" if pnl_pct >= 0 else "🔴"
         allocation = p.get("allocation_pct", (total_cost / initial_cap) * 100)
 
+        # Use current (trailed) SL, fall back to original
+        active_sl = p.get("current_stop_loss", p.get("stop_loss", 0))
+        original_sl = p.get("stop_loss", 0)
+        sl_trailed = active_sl > original_sl
+
+        active_target = p.get("current_target", p.get("target", 0))
+
+        sl_line = f"🛑 <b>SL</b>: ₹{active_sl:.2f}"
+        if sl_trailed:
+            sl_line += f" <i>(trailed from ₹{original_sl:.2f})</i>"
+
         msg = (
-            f"{status_emoji} <b>{p['symbol']}</b> | {p.get('strategy_name', 'Delayed_EP')}\n"
+            f"{status_emoji} <b>{p['symbol']}</b> | {p.get('strategy_name', 'Swing_Trading')}\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
             f"📅 <b>Entered</b>: {p['entry_date'].strftime('%Y-%m-%d %H:%M')}\n"
             f"🔢 <b>Quantity</b>: {p['quantity']} @ ₹{p['entry_price']:.2f}\n"
             f"💰 <b>Total Cost</b>: ₹{total_cost:,.2f} (<b>{allocation:.1f}% Cap</b>)\n"
-            f"🎯 <b>Target</b>: ₹{p['target']:.2f} | 🛑 <b>SL</b>: ₹{p['stop_loss']:.2f}\n"
+            f"🎯 <b>Target</b>: ₹{active_target:.2f} | {sl_line}\n"
             f"💸 <b>Unrealized PnL</b>: ₹{pnl_val:+,.2f} ({pnl_pct:+.2f}%)\n"
-            f"🆔 <b>Ref</b>: <code>{str(p.get('recomm_id', 'N/A'))[-8:]}</code>"
         )
+
+        # Pyramiding info
+        adds = p.get("adds_count", 0)
+        if adds > 0:
+            last_add_price = p.get("last_add_price", 0)
+            msg += f"🔺 <b>Pyramid</b>: {adds} add(s) (last at ₹{last_add_price:.2f})\n"
+
+        # Partial exits info
+        partial_exits = p.get("partial_exits", [])
+        if partial_exits:
+            for pe in partial_exits:
+                pe_qty = pe.get("quantity", 0)
+                pe_price = pe.get("price", 0)
+                pe_reason = pe.get("reason", "")
+                msg += f"📤 <b>Sold</b> {pe_qty} @ ₹{pe_price:.2f} ({pe_reason})\n"
+
+        # Recent updates from history (last 3)
+        updates = p.get("updates", [])
+        recent = updates[-3:] if updates else []
+        if recent:
+            msg += "📋 <b>Recent Updates</b>:\n"
+            for u in recent:
+                utype = u.get("type", "")
+                udate = u.get("date")
+                date_str = udate.strftime("%m/%d") if udate else "?"
+                if utype == "TRAIL_SL":
+                    prev = u.get("prev_sl", 0)
+                    curr = u.get("current_sl", 0)
+                    msg += f"  • {date_str} Trail: ₹{prev:.2f} → ₹{curr:.2f}\n"
+                elif utype == "PYRAMID":
+                    msg += f"  • {date_str} Pyramid add\n"
+                elif utype == "TARGET_HIT":
+                    msg += f"  • {date_str} Target hit\n"
+                elif utype == "PARTIAL_SELL":
+                    msg += f"  • {date_str} Partial sell\n"
+                elif utype == "ENTRY_CORRECTION":
+                    msg += f"  • {date_str} Entry corrected\n"
+
+        msg += f"🆔 <b>Ref</b>: <code>{str(p.get('recomm_id', 'N/A'))[-8:]}</code>"
 
         bot.send_message(m.chat.id, msg, parse_mode="HTML")
 

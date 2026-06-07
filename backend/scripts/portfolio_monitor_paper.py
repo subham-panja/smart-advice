@@ -10,11 +10,12 @@ Responsible for:
 """
 
 import logging
-from datetime import datetime, timezone
+from datetime import timezone
 
 from database import get_open_positions, update_position
 from scripts.data_fetcher import get_historical_data
 from utils.strategy_loader import StrategyLoader
+from utils.trading_clock import trading_now
 
 logger = logging.getLogger(__name__)
 
@@ -38,17 +39,24 @@ class PortfolioMonitor:
     def _process_single_position(self, pos):
         symbol = pos["symbol"]
         strat_name = pos["strategy_name"]
-        strategy = StrategyLoader.get_strategy_by_name(strat_name)
-        exit_rules = strategy.get("exit_rules", {})
-        trading_cfg = strategy.get("trading_config", {})
-        # Canonical source: exit_rules.time_stop_bars (matches backtest).
-        # Fallback: trading_config.time_stop_days (legacy). Then default 15.
-        time_stop_days = exit_rules.get(
-            "time_stop_bars",
-            trading_cfg.get("time_stop_days", self.default_time_stop_days),
-        )
 
         try:
+            try:
+                strategy = StrategyLoader.get_strategy_by_name(strat_name)
+            except ValueError:
+                logger.warning(
+                    f"Strategy '{strat_name}' not found/disabled for {symbol}. Using Swing_Trading fallback."
+                )
+                strategy = StrategyLoader.get_strategy_by_name("Swing_Trading")
+
+            exit_rules = strategy.get("exit_rules", {})
+            trading_cfg = strategy.get("trading_config", {})
+            # Canonical source: exit_rules.time_stop_bars (matches backtest).
+            # Fallback: trading_config.time_stop_days (legacy). Then default 15.
+            time_stop_days = exit_rules.get(
+                "time_stop_bars",
+                trading_cfg.get("time_stop_days", self.default_time_stop_days),
+            )
             # 1. Fetch latest data (Live Price Sync)
             data = get_historical_data(symbol, period="1mo", fresh=True)
             if data.empty:
@@ -61,7 +69,7 @@ class PortfolioMonitor:
 
             # Correct entry price to opening price if position is from a previous day
             entry_date_obj = entry_date.date() if hasattr(entry_date, "date") else entry_date
-            today_date = datetime.now().date()
+            today_date = trading_now().date()
             if entry_date_obj < today_date:
                 entry_row = data[data.index.date == entry_date_obj]
                 if not entry_row.empty:
@@ -100,7 +108,7 @@ class PortfolioMonitor:
 
             from scripts.execution_engine_paper import ExecutionEngine
 
-            engine = ExecutionEngine()
+            engine = ExecutionEngine(strategy_config=strategy)
 
             # 2. Check for Hard Exit: Stop Loss Hit
             if current_price <= current_sl:
@@ -135,6 +143,7 @@ class PortfolioMonitor:
                             update_data = {
                                 "quantity": rem_qty,
                                 "current_target_idx": current_target_idx + 1,
+                                "targets_hit": current_target_idx + 1,
                                 "is_scaled_out": True,
                             }
                             # Auto-Breakeven if enabled and this is Target 1
@@ -164,7 +173,7 @@ class PortfolioMonitor:
                 current_sl = new_sl
 
             # 8. Time Stop (Sideways)
-            days_held = (datetime.now(timezone.utc).replace(tzinfo=None) - entry_date).days
+            days_held = (trading_now(timezone.utc).replace(tzinfo=None) - entry_date).days
             if days_held >= time_stop_days:
                 pnl_pct = ((current_price - entry_price) / entry_price) * 100
                 if pnl_pct < 2.0:

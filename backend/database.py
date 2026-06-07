@@ -1,10 +1,11 @@
 import logging
-from datetime import datetime, timezone
+from datetime import timezone
 
 from flask import current_app, g
 from pymongo import MongoClient
 
 import config
+from utils.trading_clock import trading_now
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +33,7 @@ def _get_db_internal():
 
 def insert_recommended_share(doc: dict):
     db = _get_db_internal()
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    now = trading_now(timezone.utc).replace(tzinfo=None)
     doc["created_at"] = doc.get("created_at", now)
     doc["updated_at"] = now
     col_name = config.MONGODB_COLLECTIONS["recommended_shares"]
@@ -46,7 +47,7 @@ def get_open_positions():
 
 def insert_position(doc: dict):
     db = _get_db_internal()
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    now = trading_now(timezone.utc).replace(tzinfo=None)
     doc["created_at"] = now
     doc["updated_at"] = now
     doc["status"] = "OPEN"
@@ -56,20 +57,71 @@ def insert_position(doc: dict):
 
 def update_position(symbol: str, update_data: dict):
     db = _get_db_internal()
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    now = trading_now(timezone.utc).replace(tzinfo=None)
     update_data["updated_at"] = now
     col_name = config.MONGODB_COLLECTIONS["positions"]
-    return db[col_name].update_one({"symbol": symbol, "status": "OPEN"}, {"$set": update_data})
+
+    routine_keys = {"current_price", "days_held", "updated_at"}
+    significant_keys = set(update_data.keys()) - routine_keys
+
+    update_op = {"$set": update_data}
+
+    if significant_keys:
+        if "adds_count" in update_data:
+            update_type = "PYRAMID"
+        elif "partial_exits" in update_data:
+            update_type = "PARTIAL_SELL"
+        elif "current_target_idx" in update_data or "targets_hit" in update_data:
+            update_type = "TARGET_HIT"
+        elif "entry_price" in update_data and "total_investment" in update_data:
+            update_type = "ENTRY_CORRECTION"
+        elif "current_stop_loss" in update_data:
+            update_type = "TRAIL_SL"
+        elif "quantity" in update_data and "total_investment" not in update_data:
+            update_type = "QUANTITY_CHANGE"
+        else:
+            update_type = "UPDATE"
+
+        pos = db[col_name].find_one(
+            {"symbol": symbol, "status": "OPEN"}, {"current_price": 1, "current_stop_loss": 1, "stop_loss": 1}
+        )
+        prev_sl = (pos or {}).get("current_stop_loss", (pos or {}).get("stop_loss"))
+
+        entry = {
+            "date": now,
+            "type": update_type,
+            "current_sl": update_data.get("current_stop_loss", prev_sl),
+            "prev_sl": prev_sl,
+            "quantity": update_data.get("quantity"),
+            "entry_price": update_data.get("entry_price"),
+            "total_investment": update_data.get("total_investment"),
+            "targets_hit": update_data.get("targets_hit", update_data.get("current_target_idx")),
+            "adds_count": update_data.get("adds_count"),
+            "reason": update_data.get("exit_reason", update_data.get("reason", "")),
+        }
+        entry = {k: v for k, v in entry.items() if v is not None}
+        update_op["$push"] = {"updates": entry}
+
+    return db[col_name].update_one({"symbol": symbol, "status": "OPEN"}, update_op)
 
 
 def close_position(symbol: str, exit_price: float, reason: str):
     db = _get_db_internal()
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    now = trading_now(timezone.utc).replace(tzinfo=None)
     col_name = config.MONGODB_COLLECTIONS["positions"]
     pos = db[col_name].find_one({"symbol": symbol, "status": "OPEN"})
     if not pos:
         return None
     pnl = ((exit_price - pos["entry_price"]) / pos["entry_price"]) * 100
+    close_entry = {
+        "date": now,
+        "type": "CLOSED",
+        "exit_price": exit_price,
+        "exit_reason": reason,
+        "pnl_pct": round(pnl, 2),
+        "quantity": pos.get("quantity"),
+        "current_sl": pos.get("current_stop_loss", pos.get("stop_loss")),
+    }
     return db[col_name].update_one(
         {"_id": pos["_id"]},
         {
@@ -80,14 +132,15 @@ def close_position(symbol: str, exit_price: float, reason: str):
                 "pnl_pct": pnl,
                 "exit_date": now,
                 "updated_at": now,
-            }
+            },
+            "$push": {"updates": close_entry},
         },
     )
 
 
 def insert_backtest_result(doc: dict):
     db = _get_db_internal()
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    now = trading_now(timezone.utc).replace(tzinfo=None)
     doc["created_at"] = now
     doc["updated_at"] = now
     col_name = config.MONGODB_COLLECTIONS["backtest_results"]
@@ -142,7 +195,7 @@ def query_mongodb(collection_name, query_filter=None, projection=None, sort=None
 
 def insert_backtest_session(doc: dict):
     db = _get_db_internal()
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    now = trading_now(timezone.utc).replace(tzinfo=None)
     doc["created_at"] = doc.get("created_at", now)
     doc["updated_at"] = now
     col_name = config.MONGODB_COLLECTIONS["backtest_sessions"]
@@ -159,7 +212,7 @@ def get_backtest_session(session_id: str):
 
 def update_backtest_session(session_id: str, update_data: dict):
     db = _get_db_internal()
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    now = trading_now(timezone.utc).replace(tzinfo=None)
     update_data["updated_at"] = now
     from bson.objectid import ObjectId
 
@@ -185,7 +238,7 @@ def get_backtest_sessions(filters=None, sort=None, limit=None):
 
 def insert_portfolio_backtest_trade(doc: dict):
     db = _get_db_internal()
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    now = trading_now(timezone.utc).replace(tzinfo=None)
     doc["created_at"] = doc.get("created_at", now)
     doc["updated_at"] = now
     col_name = config.MONGODB_COLLECTIONS["portfolio_backtest_trades"]
@@ -196,7 +249,7 @@ def insert_many_portfolio_backtest_trades(docs: list):
     if not docs:
         return None
     db = _get_db_internal()
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    now = trading_now(timezone.utc).replace(tzinfo=None)
     for d in docs:
         d["created_at"] = d.get("created_at", now)
         d["updated_at"] = now
@@ -222,7 +275,7 @@ def get_portfolio_backtest_trades(session_id: str, symbol=None):
 
 def insert_portfolio_backtest_snapshot(doc: dict):
     db = _get_db_internal()
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    now = trading_now(timezone.utc).replace(tzinfo=None)
     doc["created_at"] = doc.get("created_at", now)
     doc["updated_at"] = now
     col_name = config.MONGODB_COLLECTIONS["portfolio_backtest_daily_snapshots"]
@@ -233,7 +286,7 @@ def insert_many_portfolio_backtest_snapshots(docs: list):
     if not docs:
         return None
     db = _get_db_internal()
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    now = trading_now(timezone.utc).replace(tzinfo=None)
     for d in docs:
         d["created_at"] = d.get("created_at", now)
         d["updated_at"] = now

@@ -1,8 +1,9 @@
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta, timezone
 from typing import Any, Dict
 
 from database import get_mongodb
+from utils.trading_clock import trading_now
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +21,7 @@ class PersistenceHandler:
             days = DATA_PURGE_DAYS
         try:
             db = get_mongodb()
-            cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+            cutoff = trading_now(timezone.utc) - timedelta(days=days)
             db.recommended_shares.delete_many({"recommendation_date": {"$lt": cutoff}})
             db.backtest_results.delete_many({"created_at": {"$lt": cutoff}})
         except Exception as e:
@@ -54,11 +55,11 @@ class PersistenceHandler:
                 "allocation_pct": res["risk_management"]["allocation_pct"],
                 "rr_ratio": res["risk_management"]["rr_ratio"],
                 "strategy_name": res["strategy_name"],
-                "recommendation_date": datetime.now(timezone.utc)
+                "recommendation_date": trading_now(timezone.utc)
                 .replace(hour=0, minute=0, second=0, microsecond=0)
                 .replace(tzinfo=None),
-                "created_at": datetime.now(timezone.utc).replace(tzinfo=None),
-                "updated_at": datetime.now(timezone.utc).replace(tzinfo=None),
+                "created_at": trading_now(timezone.utc).replace(tzinfo=None),
+                "updated_at": trading_now(timezone.utc).replace(tzinfo=None),
             }
             db.recommended_shares.update_one({"symbol": res["symbol"]}, {"$set": doc}, upsert=True)
             return True
@@ -77,7 +78,7 @@ class PersistenceHandler:
             fs_id = fs["_id"] if fs else None
 
             m = bt["combined_metrics"]
-            now = datetime.now(timezone.utc).replace(tzinfo=None)
+            now = trading_now(timezone.utc).replace(tzinfo=None)
 
             # Prepare Granular Trades
             trades = bt.get("trades", [])
@@ -112,7 +113,7 @@ class PersistenceHandler:
         """Saves a stock that passed initial filters and returns its ID."""
         try:
             db = get_mongodb()
-            now = datetime.now(timezone.utc).replace(tzinfo=None)
+            now = trading_now(timezone.utc).replace(tzinfo=None)
             res = db.filtered_stocks.insert_one(
                 {
                     "symbol": symbol,
@@ -132,7 +133,7 @@ class PersistenceHandler:
         try:
             return (
                 get_mongodb()
-                .scan_runs.insert_one({"started_at": datetime.now(timezone.utc), "macro": macro})
+                .scan_runs.insert_one({"started_at": trading_now(timezone.utc), "macro": macro})
                 .inserted_id
             )
         except Exception as e:
@@ -142,7 +143,7 @@ class PersistenceHandler:
     def complete_scan_run(self, rid, summary):
         try:
             get_mongodb().scan_runs.update_one(
-                {"_id": rid}, {"$set": {"completed_at": datetime.now(timezone.utc), "summary": summary}}
+                {"_id": rid}, {"$set": {"completed_at": trading_now(timezone.utc), "summary": summary}}
             )
         except Exception as e:
             logger.error(f"Scan run completion error: {e}")
@@ -158,7 +159,7 @@ class PersistenceHandler:
         """Creates a portfolio backtest session and returns its ID."""
         try:
             db = get_mongodb()
-            now = datetime.now(timezone.utc).replace(tzinfo=None)
+            now = trading_now(timezone.utc).replace(tzinfo=None)
             doc = {
                 "session_type": "portfolio",
                 "session_name": f"{strategy_name}_Portfolio_{now.strftime('%Y_%m_%d_%H%M')}",
@@ -187,7 +188,7 @@ class PersistenceHandler:
                 return False
 
             m = bt.get("combined_metrics", {})
-            now = datetime.now(timezone.utc).replace(tzinfo=None)
+            now = trading_now(timezone.utc).replace(tzinfo=None)
 
             doc = {
                 "session_id": session_id,
@@ -215,7 +216,7 @@ class PersistenceHandler:
             return True
         try:
             db = get_mongodb()
-            now = datetime.now(timezone.utc).replace(tzinfo=None)
+            now = trading_now(timezone.utc).replace(tzinfo=None)
             trade_docs = []
             for t in trades:
                 # Convert dataclass objects to dicts if needed
@@ -243,7 +244,7 @@ class PersistenceHandler:
             return True
         try:
             db = get_mongodb()
-            now = datetime.now(timezone.utc).replace(tzinfo=None)
+            now = trading_now(timezone.utc).replace(tzinfo=None)
             for s in snapshots:
                 s["session_id"] = session_id
                 s.setdefault("created_at", now)
@@ -258,7 +259,7 @@ class PersistenceHandler:
         """Marks a backtest session as completed with summary metrics."""
         try:
             db = get_mongodb()
-            now = datetime.now(timezone.utc).replace(tzinfo=None)
+            now = trading_now(timezone.utc).replace(tzinfo=None)
             update = {
                 "status": "completed",
                 "completed_at": now,
@@ -286,7 +287,7 @@ class PersistenceHandler:
         """Creates a walk-forward backtest session and returns its ID."""
         try:
             db = get_mongodb()
-            now = datetime.now(timezone.utc).replace(tzinfo=None)
+            now = trading_now(timezone.utc).replace(tzinfo=None)
             total_runs = len(windows) * mc_iterations
             doc = {
                 "session_type": "walk_forward",
@@ -332,7 +333,7 @@ class PersistenceHandler:
         """Saves an individual MC run result to walk_forward_results collection."""
         try:
             db = get_mongodb()
-            now = datetime.now(timezone.utc).replace(tzinfo=None)
+            now = trading_now(timezone.utc).replace(tzinfo=None)
             doc = {
                 "session_id": session_id,
                 "window": window,
@@ -377,7 +378,7 @@ class PersistenceHandler:
                 "progress.pct_complete": pct_complete,
                 "progress.elapsed_seconds": round(elapsed, 1),
                 "progress.current_cagr_mean": cagr_mean,
-                "updated_at": datetime.now(timezone.utc).replace(tzinfo=None),
+                "updated_at": trading_now(timezone.utc).replace(tzinfo=None),
             }
 
             if completed_runs > 0 and elapsed > 0:
@@ -399,7 +400,7 @@ class PersistenceHandler:
         """Marks walk-forward session as completed with aggregated metrics."""
         try:
             db = get_mongodb()
-            now = datetime.now(timezone.utc).replace(tzinfo=None)
+            now = trading_now(timezone.utc).replace(tzinfo=None)
             update = {
                 "status": "completed",
                 "completed_at": now,
