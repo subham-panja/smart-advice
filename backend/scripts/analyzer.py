@@ -30,11 +30,11 @@ logger = logging.getLogger(__name__)
 class StockAnalyzer:
     """Combines technical, fundamental, and market analysis for stock selection."""
 
-    def __init__(self):
+    def __init__(self, account_balance: float = None):
         # Instances will be updated per call with the correct strategy config
         self.strategy_evaluator = None
         self.fundamental_analyzer = FundamentalAnalysis()
-        self.risk_manager = RiskManager()
+        self.risk_manager = RiskManager(account_balance=account_balance)
         self.trade_logic = TradeLogic()
         self.swing_analyzer = SwingTradingSignalAnalyzer()
         self.backtest_utils = BacktestUtils()

@@ -48,3 +48,23 @@ class StrategyLoader:
             if s["name"] == name:
                 return s
         raise ValueError(f"Strategy '{name}' not found or not enabled.")
+
+    @staticmethod
+    def load_all_strategies_including_disabled() -> List[Dict[str, Any]]:
+        """Returns all strategies (enabled and disabled) with metadata."""
+        strategies = []
+        if not os.path.exists(STRATEGIES_DIR):
+            return strategies
+
+        for filename in os.listdir(STRATEGIES_DIR):
+            if filename.endswith(".json"):
+                path = os.path.join(STRATEGIES_DIR, filename)
+                try:
+                    with open(path, "r") as f:
+                        strat = json.load(f)
+                        strat["_file_name"] = filename
+                        strategies.append(strat)
+                except Exception as e:
+                    logger.error(f"Error loading strategy from {filename}: {e}")
+
+        return strategies

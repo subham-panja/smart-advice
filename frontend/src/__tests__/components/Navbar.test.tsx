@@ -36,7 +36,7 @@ describe('Navbar', () => {
 
   it('renders ThemeToggle component', () => {
     renderWithThemeProvider(<Navbar />);
-    const themeToggle = screen.getByRole('button', { name: /toggle theme/i });
+    const themeToggle = screen.getByRole('button', { name: /switch to.*mode/i });
     expect(themeToggle).toBeInTheDocument();
   });
 

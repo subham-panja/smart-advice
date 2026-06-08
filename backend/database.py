@@ -45,14 +45,65 @@ def get_open_positions():
     return list(_get_db_internal()[col_name].find({"status": "OPEN"}))
 
 
+def get_all_positions(status_filter=None):
+    col_name = config.MONGODB_COLLECTIONS["positions"]
+    query = {"status": status_filter} if status_filter else {}
+    return list(_get_db_internal()[col_name].find(query).sort("created_at", -1))
+
+
+def get_position_by_symbol(symbol, status="OPEN"):
+    col_name = config.MONGODB_COLLECTIONS["positions"]
+    return _get_db_internal()[col_name].find_one({"symbol": symbol, "status": status})
+
+
 def insert_position(doc: dict):
     db = _get_db_internal()
     now = trading_now(timezone.utc).replace(tzinfo=None)
+    col_name = config.MONGODB_COLLECTIONS["positions"]
+
+    existing = db[col_name].find_one({"symbol": doc["symbol"], "status": "OPEN"})
+    if existing:
+        logger.warning(f"Duplicate prevented: OPEN position for {doc['symbol']} already exists. Updating instead.")
+        update_data = {k: v for k, v in doc.items() if k not in ("_id", "created_at", "status")}
+        update_data["updated_at"] = now
+        update_position(doc["symbol"], update_data)
+        return None
+
     doc["created_at"] = now
     doc["updated_at"] = now
     doc["status"] = "OPEN"
-    col_name = config.MONGODB_COLLECTIONS["positions"]
-    return db[col_name].insert_one(doc)
+    result = db[col_name].insert_one(doc)
+
+    _insert_activity_log(
+        symbol=doc["symbol"],
+        action="POSITION_OPENED",
+        details={
+            "entry_price": doc.get("entry_price"),
+            "quantity": doc.get("quantity"),
+            "stop_loss": doc.get("stop_loss"),
+            "target": doc.get("target"),
+            "strategy_name": doc.get("strategy_name"),
+        },
+        timestamp=now,
+    )
+
+    return result
+
+
+def _insert_activity_log(symbol: str, action: str, details: dict, timestamp=None):
+    db = _get_db_internal()
+    now = timestamp or trading_now(timezone.utc).replace(tzinfo=None)
+    col_name = config.MONGODB_COLLECTIONS["activity_logs"]
+    entry = {
+        "symbol": symbol,
+        "action": action,
+        "details": {k: v for k, v in details.items() if v is not None},
+        "timestamp": now,
+    }
+    try:
+        db[col_name].insert_one(entry)
+    except Exception as e:
+        logger.error(f"Activity log insert error for {symbol}/{action}: {e}")
 
 
 def update_position(symbol: str, update_data: dict):
@@ -100,7 +151,18 @@ def update_position(symbol: str, update_data: dict):
             "reason": update_data.get("exit_reason", update_data.get("reason", "")),
         }
         entry = {k: v for k, v in entry.items() if v is not None}
+
+        if update_type == "TRAIL_SL" and entry.get("current_sl") == entry.get("prev_sl"):
+            return db[col_name].update_one({"symbol": symbol, "status": "OPEN"}, {"$set": update_data})
+
         update_op["$push"] = {"updates": entry}
+
+        _insert_activity_log(
+            symbol=symbol,
+            action=update_type,
+            details=entry,
+            timestamp=now,
+        )
 
     return db[col_name].update_one({"symbol": symbol, "status": "OPEN"}, update_op)
 
@@ -122,6 +184,14 @@ def close_position(symbol: str, exit_price: float, reason: str):
         "quantity": pos.get("quantity"),
         "current_sl": pos.get("current_stop_loss", pos.get("stop_loss")),
     }
+
+    _insert_activity_log(
+        symbol=symbol,
+        action="CLOSED",
+        details=close_entry,
+        timestamp=now,
+    )
+
     return db[col_name].update_one(
         {"_id": pos["_id"]},
         {

@@ -73,6 +73,19 @@ class AutomatedStockAnalysis:
                 except Exception:
                     pass
 
+        from utils.trading_clock import is_replay, trading_now
+
+        if is_replay():
+            sim_date = trading_now().replace(tzinfo=None).date()
+            for s in list(fetched.keys()):
+                df = fetched[s]
+                truncated = df[df.index.date <= sim_date]
+                if not truncated.empty:
+                    fetched[s] = truncated
+                else:
+                    del fetched[s]
+            logger.info(f"Replay mode: truncated data to <= {sim_date}")
+
         logger.info(f"Phase 1 Complete. Fetched {len(fetched)} stocks.")
         if not fetched:
             return
@@ -104,8 +117,9 @@ class AutomatedStockAnalysis:
         results = []
         if config.USE_MULTIPROCESSING_PIPELINE:
             logger.info(f"Phase 2: Analyzing {len(fetched)} stocks using {config.NUM_WORKER_PROCESSES} processes...")
+            account_balance = config.TRADING_OPTIONS.get("initial_capital", 100000.0)
             with multiprocessing.get_context("spawn").Pool(
-                config.NUM_WORKER_PROCESSES, init_worker, (self.verbose,)
+                config.NUM_WORKER_PROCESSES, init_worker, (self.verbose, account_balance)
             ) as pool:
                 for i, res in enumerate(pool.imap_unordered(analyze_stock_worker, items)):
                     if res["success"]:
@@ -126,7 +140,8 @@ class AutomatedStockAnalysis:
             return results
         else:
             logger.info(f"Phase 2: Analyzing {len(fetched)} stocks serially (Multiprocessing Disabled)...")
-            init_worker()
+            account_balance = config.TRADING_OPTIONS.get("initial_capital", 100000.0)
+            init_worker(account_balance=account_balance)
             for i, item in enumerate(items):
                 res = analyze_stock_worker(item)
                 results.append(res)

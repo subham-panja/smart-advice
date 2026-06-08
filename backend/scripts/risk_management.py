@@ -159,6 +159,13 @@ class RiskManager:
         # Final Size: Smallest of Risk-Limit or Capital-Limit
         size = min(size, size_based_on_capital)
 
+        # Ensure position cost doesn't exceed total account balance
+        if entry > 0 and size * entry > self.balance:
+            size = int(self.balance / entry)
+
+        if size <= 0 and entry > 0 and entry <= self.balance:
+            size = 1
+
         # 4. Targets (Strictly from List)
         target_list = exit_rules["targets"]
         # Handle swing_structure targets - these are computed in the backtest engine,

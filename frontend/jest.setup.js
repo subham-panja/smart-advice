@@ -1,5 +1,16 @@
 import '@testing-library/jest-dom'
 
+// Mock EventSource for SSE (used by Terminal component)
+global.EventSource = jest.fn(() => ({
+  onmessage: null,
+  onerror: null,
+  close: jest.fn(),
+  readyState: 0,
+  addEventListener: jest.fn(),
+  removeEventListener: jest.fn(),
+  dispatchEvent: jest.fn(),
+}));
+
 // Mock localStorage
 const localStorageMock = {
   getItem: jest.fn(),

@@ -4,10 +4,11 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState } from 'react';
 import { useSidebar } from '../contexts/SidebarContext';
-import { 
-  ChartBarIcon, 
-  PlayIcon, 
-  CogIcon, 
+import ThemeToggle from './ThemeToggle';
+import {
+  ChartBarIcon,
+  PlayIcon,
+  CogIcon,
   Bars3Icon,
   XMarkIcon,
   HomeIcon,
@@ -15,10 +16,9 @@ import {
   ChevronRightIcon,
   ChevronDownIcon,
   ChevronUpIcon,
-  InformationCircleIcon
+  InformationCircleIcon,
+  ClockIcon
 } from '@heroicons/react/24/outline';
-import ThemeToggle from './ThemeToggle';
-
 const Sidebar = () => {
   const pathname = usePathname();
   const { isCollapsed, toggleSidebar } = useSidebar();
@@ -37,10 +37,10 @@ const Sidebar = () => {
       description: 'Stock market analysis tools',
       submenu: [
         {
-          name: 'Generate Analysis',
+          name: 'Trading Cycle',
           href: '/analysis',
           icon: PlayIcon,
-          description: 'Create new stock analysis'
+          description: 'Run trading cycle'
         },
         {
           name: 'View Recommendations',
@@ -51,24 +51,37 @@ const Sidebar = () => {
       ]
     },
     {
-      name: 'F&O Analysis',
-      icon: PlayIcon,
-      description: 'Futures & Options analysis',
-      submenu: [
-        {
-          name: 'F&O Analysis',
-          href: '/fo-analysis',
-          icon: PlayIcon,
-          description: 'Create F&O analysis'
-        },
-        {
-          name: 'View F&O Recommendations',
-          href: '/fo-recommendations',
-          icon: ChartBarIcon,
-          description: 'Browse F&O recommendations'
-        }
-      ]
+      name: 'Positions',
+      href: '/positions',
+      icon: ChartBarIcon,
+      description: 'View and manage positions'
     },
+    {
+      name: 'Activity Log',
+      href: '/activity-log',
+      icon: ClockIcon,
+      description: 'Position history and updates'
+    },
+    // F&O Analysis — disabled
+    // {
+    //   name: 'F&O Analysis',
+    //   icon: PlayIcon,
+    //   description: 'Futures & Options analysis',
+    //   submenu: [
+    //     {
+    //       name: 'F&O Analysis',
+    //       href: '/fo-analysis',
+    //       icon: PlayIcon,
+    //       description: 'Create F&O analysis'
+    //     },
+    //     {
+    //       name: 'View F&O Recommendations',
+    //       href: '/fo-recommendations',
+    //       icon: ChartBarIcon,
+    //       description: 'Browse F&O recommendations'
+    //     }
+    //   ]
+    // },
   ];
 
   const settingsItem = {

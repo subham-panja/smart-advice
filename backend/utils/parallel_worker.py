@@ -11,14 +11,14 @@ _worker_analyzer = None
 _persistence = None
 
 
-def init_worker(verbose=False):
+def init_worker(verbose=False, account_balance=None):
     """Initializer called once per worker process."""
     global _worker_analyzer, _persistence
     from utils.logger import setup_logging
     from utils.persistence_handler import PersistenceHandler
 
     setup_logging(verbose=verbose)
-    _worker_analyzer = StockAnalyzer()
+    _worker_analyzer = StockAnalyzer(account_balance=account_balance)
     _persistence = PersistenceHandler()
 
     local_logger = logging.getLogger("WorkerInit")

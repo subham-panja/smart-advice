@@ -61,7 +61,12 @@ class PersistenceHandler:
                 "created_at": trading_now(timezone.utc).replace(tzinfo=None),
                 "updated_at": trading_now(timezone.utc).replace(tzinfo=None),
             }
-            db.recommended_shares.update_one({"symbol": res["symbol"]}, {"$set": doc}, upsert=True)
+            rec_date = doc["recommendation_date"]
+            db.recommended_shares.update_one(
+                {"symbol": res["symbol"], "recommendation_date": rec_date},
+                {"$set": doc},
+                upsert=True,
+            )
             return True
         except Exception as e:
             logger.error(f"Save error for {res.get('symbol')}: {e}")

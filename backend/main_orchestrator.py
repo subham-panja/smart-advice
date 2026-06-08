@@ -42,7 +42,15 @@ def _send_telegram(message: str):
 
 def run_trading_cycle():
     """Main entry point for the unified trading cycle."""
-    sim = trading_now().strftime("%Y-%m-%d") if is_replay() else "LIVE"
+    trading_opts = config.TRADING_OPTIONS
+
+    if is_replay():
+        sim = trading_now().strftime("%Y-%m-%d")
+    elif trading_opts.get("is_paper_trading", True):
+        sim = "PAPER"
+    else:
+        sim = "LIVE"
+
     print("")
     print("=" * 50)
     print(f"STARTING TRADING CYCLE [{sim}]")
@@ -50,8 +58,6 @@ def run_trading_cycle():
     logger.warning(f"=== STARTING TRADING CYCLE [{sim}] ===")
 
     _send_telegram(f"🔄 <b>Trading Cycle Started [{sim}]</b>\nRunning analysis and execution...")
-
-    trading_opts = config.TRADING_OPTIONS
 
     if trading_opts.get("circuit_breaker"):
         logger.warning("CIRCUIT BREAKER ACTIVE. Stopping.")
@@ -77,6 +83,16 @@ def run_trading_cycle():
     total_executed = 0
     total_exits = 0
     analysis_failed = False
+
+    positions_before = get_open_positions()
+
+    for pos in positions_before:
+        if pos.get("quantity", 0) <= 0:
+            from database import close_position as db_close
+
+            cp = pos.get("current_price", pos["entry_price"])
+            db_close(pos["symbol"], cp, "ZERO_QUANTITY_CLEANUP")
+            logger.info(f"Auto-closed {pos['symbol']}: quantity was 0")
 
     positions_before = get_open_positions()
     symbols_before = {p["symbol"] for p in positions_before}
@@ -159,6 +175,11 @@ def run_trading_cycle():
                 break
 
             symbol = r["symbol"]
+
+            if r.get("suggested_quantity", 0) <= 0:
+                logger.info(f"Skipping {symbol}: suggested_quantity is 0")
+                continue
+
             trade_cost = r["buy_price"] * r["suggested_quantity"]
 
             if trade_cost > remaining_capital:
@@ -196,7 +217,13 @@ def run_trading_cycle():
     initial_cap = trading_opts.get("initial_capital", 100000.0)
     total_mkt_val = sum(p.get("current_price", p["entry_price"]) * p["quantity"] for p in final_positions)
     total_invested = sum(p.get("total_investment", p["quantity"] * p["entry_price"]) for p in final_positions)
-    cash_left = initial_cap - total_invested
+
+    realized_pnl = sum(
+        (p.get("exit_price", 0) - p.get("entry_price", 0)) * p.get("quantity", 0)
+        for p in db.positions.find({"status": "CLOSED"})
+    )
+
+    cash_left = initial_cap + realized_pnl - total_invested
     total_equity = total_mkt_val + cash_left
 
     cycle_stats = {

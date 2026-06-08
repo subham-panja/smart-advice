@@ -17,17 +17,14 @@ const Terminal: React.FC<TerminalProps> = ({ isOpen, onClose, apiHost }) => {
     useEffect(() => {
         if (isOpen) {
             const url = `${apiHost}/stream-logs`;
-            console.log('Connecting to SSE:', url);
             const eventSource = new EventSource(url);
 
             eventSource.onmessage = (event) => {
-                // Handle heartbeat/keep-alive
                 if (event.data === ': keep-alive' || !event.data) return;
                 setLogs((prev) => [...prev, event.data]);
             };
 
-            eventSource.onerror = (error) => {
-                console.error('SSE Error:', error);
+            eventSource.onerror = () => {
                 eventSource.close();
             };
 
@@ -37,6 +34,7 @@ const Terminal: React.FC<TerminalProps> = ({ isOpen, onClose, apiHost }) => {
                 eventSourceRef.current.close();
                 eventSourceRef.current = null;
             }
+            setLogs([]);
         }
 
         return () => {
@@ -52,30 +50,28 @@ const Terminal: React.FC<TerminalProps> = ({ isOpen, onClose, apiHost }) => {
         }
     }, [logs]);
 
-    const clearLogs = () => setLogs([]);
-
     if (!isOpen) return null;
 
     return (
-        <div className="fixed bottom-4 right-4 w-full max-w-2xl z-50 animate-in slide-in-from-bottom-5 duration-300 px-4 sm:px-0">
-            <div className="bg-gray-900 rounded-lg shadow-2xl border border-gray-700 overflow-hidden flex flex-col h-96">
-                {/* Terminal Header */}
-                <div className="bg-gray-800 px-4 py-2 flex items-center justify-between border-b border-gray-700">
-                    <div className="flex items-center space-x-2">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+            <div className="bg-gray-900 rounded-xl shadow-2xl border border-gray-700 overflow-hidden flex flex-col w-full max-w-4xl h-[70vh] mx-4">
+                <div className="bg-gray-800 px-6 py-3 flex items-center justify-between border-b border-gray-700">
+                    <div className="flex items-center space-x-3">
                         <CommandLineIcon className="h-5 w-5 text-green-400" />
-                        <span className="text-sm font-mono text-gray-300">Analysis Console</span>
+                        <span className="text-sm font-mono text-gray-300">Trading Cycle Console</span>
+                        <span className="text-xs text-gray-500 font-mono">{logs.length} lines</span>
                     </div>
                     <div className="flex items-center space-x-3">
                         <button
-                            onClick={clearLogs}
-                            className="text-gray-400 hover:text-white p-1 rounded hover:bg-gray-700 transition"
-                            title="Clear Logs"
+                            onClick={() => setLogs([])}
+                            className="text-gray-400 hover:text-white p-1.5 rounded hover:bg-gray-700 transition"
+                            title="Clear"
                         >
                             <TrashIcon className="h-4 w-4" />
                         </button>
                         <button
                             onClick={onClose}
-                            className="text-gray-400 hover:text-white p-1 rounded hover:bg-gray-700 transition"
+                            className="text-gray-400 hover:text-white p-1.5 rounded hover:bg-gray-700 transition"
                             title="Close"
                         >
                             <XMarkIcon className="h-5 w-5" />
@@ -83,40 +79,26 @@ const Terminal: React.FC<TerminalProps> = ({ isOpen, onClose, apiHost }) => {
                     </div>
                 </div>
 
-                {/* Terminal Content */}
                 <div
                     ref={scrollRef}
-                    className="flex-1 p-4 font-mono text-[10px] sm:text-xs text-green-400 bg-black overflow-y-auto custom-scrollbar"
+                    className="flex-1 p-4 font-mono text-xs text-green-400 bg-black overflow-y-auto"
+                    style={{
+                        scrollbarWidth: 'thin',
+                        scrollbarColor: '#333 #000',
+                    }}
                 >
                     {logs.length === 0 ? (
-                        <div className="text-gray-600 italic">Waiting for analysis logs...</div>
+                        <div className="text-gray-600 italic">Waiting for logs...</div>
                     ) : (
                         logs.map((log, index) => (
-                            <div key={index} className="mb-1 break-words">
-                                <span className="text-gray-600 mr-2 opacity-50select-none">[{index + 1}]</span>
+                            <div key={index} className="mb-1 break-words leading-relaxed">
+                                <span className="text-gray-600 mr-2 select-none">[{index + 1}]</span>
                                 {log}
                             </div>
                         ))
                     )}
                 </div>
             </div>
-
-            {/* Scrollbar Styling */}
-            <style jsx>{`
-        .custom-scrollbar::-webkit-scrollbar {
-          width: 8px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-track {
-          background: #000;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb {
-          background: #333;
-          border-radius: 4px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-          background: #444;
-        }
-      `}</style>
         </div>
     );
 };

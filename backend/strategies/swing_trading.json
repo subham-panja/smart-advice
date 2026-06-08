@@ -322,8 +322,8 @@
   "risk_management": {
     "risk_per_trade_pct": 2.0,
     "max_risk_per_trade_pct": 2.0,
-    "max_position_pct": 10.0,
-    "max_positions": 8,
+    "max_position_pct": 30.0,
+    "max_positions": 4,
     "stop_loss_type": "ATR",
     "position_sizing": "risk_based",
     "volatility_scaling": {

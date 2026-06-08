@@ -156,13 +156,19 @@ class ExecutionEngine:
                 # Fetch Open price for entry date if available (realistic next-day execution)
                 try:
                     from scripts.data_fetcher import get_historical_data
+                    from utils.trading_clock import is_replay
 
-                    hist = get_historical_data(symbol, period="5d", fresh=True)
+                    entry_date_obj = trading_now(timezone.utc).replace(tzinfo=None).date()
+                    fetch_period = "60d" if is_replay() else "5d"
+                    hist = get_historical_data(symbol, period=fetch_period, fresh=True)
                     if hist is not None and not hist.empty:
-                        entry_date_obj = trading_now(timezone.utc).replace(tzinfo=None).date()
+                        if is_replay():
+                            hist = hist[hist.index.date <= entry_date_obj]
                         day_row = hist[hist.index.date == entry_date_obj]
                         if not day_row.empty:
                             exec_price = round(day_row["Open"].iloc[0], 2)
+                        elif not hist.empty:
+                            exec_price = round(hist["Close"].iloc[-1], 2)
                         else:
                             exec_price = round(exec_price, 2)
                     else:
@@ -336,7 +342,7 @@ class ExecutionEngine:
                         sell_pct = target_cfg["sell_percentage"]
                         sell_qty = int(quantity * sell_pct)
 
-                        if sell_qty > 0 and sell_pct < 1.0:
+                        if sell_qty > 0 and sell_pct < 1.0 and (quantity - sell_qty) > 0:
                             # Partial sell
                             self.execute_sell(symbol, current_price, f"{target_cfg['name']}", quantity=sell_qty)
                             # Update position: reduce quantity, increment targets_hit
