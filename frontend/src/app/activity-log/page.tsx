@@ -194,7 +194,6 @@ function ActivityLogContent() {
     }
   }, [urlSymbol]);
 
-  // Unique symbols from positions + logs
   const uniqueSymbols = useMemo(() => {
     const symbolSet = new Set<string>();
     allPositions.forEach((p) => symbolSet.add(p.symbol));
@@ -202,19 +201,16 @@ function ActivityLogContent() {
     return Array.from(symbolSet).sort();
   }, [allPositions, allLogs]);
 
-  // All positions for selected symbol (open + closed)
   const symbolPositions = useMemo(() => {
     return allPositions.filter((p) => p.symbol === selectedSymbol);
   }, [allPositions, selectedSymbol]);
 
-  // All logs for selected symbol, sorted chronologically
   const symbolLogs = useMemo(() => {
     return allLogs
       .filter((l) => l.symbol === selectedSymbol)
       .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
   }, [allLogs, selectedSymbol]);
 
-  // Combined timeline: merge position data + activity logs
   const timeline = useMemo(() => {
     if (!selectedSymbol) return [];
 
@@ -225,7 +221,6 @@ function ActivityLogContent() {
       data: Record<string, any>;
     }> = [];
 
-    // Add position open events from positions
     symbolPositions.forEach((pos) => {
       events.push({
         id: `open-${pos._id}`,
@@ -241,7 +236,6 @@ function ActivityLogContent() {
         },
       });
 
-      // Add updates from position.updates array
       pos.updates?.forEach((u: any, idx: number) => {
         events.push({
           id: `update-${pos._id}-${idx}`,
@@ -251,7 +245,6 @@ function ActivityLogContent() {
         });
       });
 
-      // Add close event if closed
       if (pos.status === 'CLOSED') {
         events.push({
           id: `close-${pos._id}`,
@@ -266,7 +259,6 @@ function ActivityLogContent() {
       }
     });
 
-    // Add activity logs (avoid duplicates by checking timestamp proximity)
     symbolLogs.forEach((log) => {
       const existing = events.find(
         (e) =>
@@ -287,6 +279,78 @@ function ActivityLogContent() {
   }, [selectedSymbol, symbolPositions, symbolLogs]);
 
   const currentPos = symbolPositions.find((p) => p.status === 'OPEN') || symbolPositions[0];
+
+  if (loading) {
+    return (
+      <div className="w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div>
+            <div className="h-8 w-64 bg-gray-200 dark:bg-gray-700 rounded-lg animate-pulse" />
+            <div className="h-4 w-80 bg-gray-200 dark:bg-gray-700 rounded mt-2 animate-pulse" />
+          </div>
+          <div className="h-10 w-28 bg-gray-200 dark:bg-gray-700 rounded-lg animate-pulse" />
+        </div>
+
+        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+          <div className="h-3 w-24 bg-gray-200 dark:bg-gray-700 rounded animate-pulse mb-3" />
+          <div className="h-12 w-full max-w-md bg-gray-200 dark:bg-gray-700 rounded-xl animate-pulse" />
+        </div>
+
+        {selectedSymbol && (
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+            <div className="px-6 py-5 border-b border-gray-100 dark:border-gray-700">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="h-6 w-32 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
+                  <div className="h-4 w-48 bg-gray-200 dark:bg-gray-700 rounded mt-2 animate-pulse" />
+                </div>
+                <div className="flex gap-4">
+                  {[...Array(5)].map((_, i) => (
+                    <div key={i} className="text-center">
+                      <div className="h-3 w-10 bg-gray-200 dark:bg-gray-700 rounded animate-pulse mb-1" />
+                      <div className="h-5 w-16 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="p-6">
+              <div className="relative">
+                <div className="absolute left-5 top-5 bottom-5 w-px bg-gray-200 dark:bg-gray-700" />
+                <div className="space-y-6">
+                  {[...Array(4)].map((_, i) => (
+                    <div key={i} className="relative flex gap-5 pb-6 last:pb-0">
+                      <div className="relative z-10 flex-shrink-0 w-10 h-10 rounded-full bg-gray-200 dark:bg-gray-700 animate-pulse border-2 border-white dark:border-gray-800" />
+                      <div className="flex-1">
+                        <div className="flex items-baseline justify-between gap-3 mb-1.5">
+                          <div className="h-4 w-32 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
+                          <div className="h-3 w-24 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
+                        </div>
+                        <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-3.5 border border-gray-100 dark:border-gray-700/50 space-y-2">
+                          <div className="flex justify-between">
+                            <div className="h-3 w-20 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
+                            <div className="h-3 w-16 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
+                          </div>
+                          <div className="flex justify-between">
+                            <div className="h-3 w-24 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
+                            <div className="h-3 w-16 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
+                          </div>
+                          <div className="flex justify-between">
+                            <div className="h-3 w-16 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
+                            <div className="h-3 w-16 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">

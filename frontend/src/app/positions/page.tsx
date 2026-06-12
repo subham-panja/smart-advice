@@ -232,9 +232,23 @@ export default function PositionsPage() {
         </div>
 
         {loading ? (
-          <div className="p-16 text-center">
-            <ArrowPathIcon className="h-8 w-8 mx-auto text-gray-300 dark:text-gray-600 animate-spin mb-3" />
-            <p className="text-gray-500 dark:text-gray-400 text-sm">Loading positions...</p>
+          <div className="p-4 space-y-3">
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="flex items-center gap-4 p-4 bg-gray-50 dark:bg-gray-900/50 rounded-lg animate-pulse">
+                <div className="h-5 w-20 bg-gray-200 dark:bg-gray-700 rounded" />
+                <div className="h-5 w-12 bg-gray-200 dark:bg-gray-700 rounded ml-auto" />
+                <div className="h-5 w-16 bg-gray-200 dark:bg-gray-700 rounded" />
+                <div className="h-5 w-16 bg-gray-200 dark:bg-gray-700 rounded" />
+                <div className="h-5 w-16 bg-gray-200 dark:bg-gray-700 rounded" />
+                <div className="h-5 w-20 bg-gray-200 dark:bg-gray-700 rounded" />
+                <div className="h-5 w-24 bg-gray-200 dark:bg-gray-700 rounded" />
+                <div className="flex gap-2">
+                  <div className="h-8 w-8 bg-gray-200 dark:bg-gray-700 rounded-lg" />
+                  <div className="h-8 w-8 bg-gray-200 dark:bg-gray-700 rounded-lg" />
+                  <div className="h-8 w-8 bg-gray-200 dark:bg-gray-700 rounded-lg" />
+                </div>
+              </div>
+            ))}
           </div>
         ) : positions.length === 0 ? (
           <div className="p-16 text-center">
