@@ -1,243 +1,621 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { ChevronDownIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
+import { useState, useEffect, useMemo, Suspense } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
+import {
+  ArrowPathIcon,
+  ArrowTrendingUpIcon,
+  ShieldCheckIcon,
+  BanknotesIcon,
+  FlagIcon,
+  XCircleIcon,
+  PlusCircleIcon,
+  PencilSquareIcon,
+  ClockIcon,
+  ChevronDownIcon,
+} from '@heroicons/react/24/outline';
 import { getPositions, getActivityLogs, Position } from '@/lib/api';
 
+type LogAction =
+  | 'POSITION_OPENED'
+  | 'TRAIL_SL'
+  | 'PYRAMID'
+  | 'PARTIAL_SELL'
+  | 'TARGET_HIT'
+  | 'ENTRY_CORRECTION'
+  | 'CLOSED';
+
+interface ActivityLog {
+  _id: string;
+  symbol: string;
+  action: LogAction;
+  timestamp: string;
+  details?: Record<string, any>;
+}
+
+const ACTION_CONFIG: Record<
+  string,
+  { label: string; icon: any; color: string; bgLight: string; bgDark: string; textLight: string; textDark: string }
+> = {
+  POSITION_OPENED: {
+    label: 'Position Opened',
+    icon: ArrowTrendingUpIcon,
+    color: 'emerald',
+    bgLight: 'bg-emerald-50',
+    bgDark: 'dark:bg-emerald-900/20',
+    textLight: 'text-emerald-700',
+    textDark: 'dark:text-emerald-400',
+  },
+  TRAIL_SL: {
+    label: 'Stop Loss Trailed',
+    icon: ShieldCheckIcon,
+    color: 'amber',
+    bgLight: 'bg-amber-50',
+    bgDark: 'dark:bg-amber-900/20',
+    textLight: 'text-amber-700',
+    textDark: 'dark:text-amber-400',
+  },
+  PYRAMID: {
+    label: 'Pyramid Added',
+    icon: PlusCircleIcon,
+    color: 'blue',
+    bgLight: 'bg-blue-50',
+    bgDark: 'dark:bg-blue-900/20',
+    textLight: 'text-blue-700',
+    textDark: 'dark:text-blue-400',
+  },
+  PARTIAL_SELL: {
+    label: 'Partial Exit',
+    icon: BanknotesIcon,
+    color: 'violet',
+    bgLight: 'bg-violet-50',
+    bgDark: 'dark:bg-violet-900/20',
+    textLight: 'text-violet-700',
+    textDark: 'dark:text-violet-400',
+  },
+  TARGET_HIT: {
+    label: 'Target Hit',
+    icon: FlagIcon,
+    color: 'green',
+    bgLight: 'bg-green-50',
+    bgDark: 'dark:bg-green-900/20',
+    textLight: 'text-green-700',
+    textDark: 'dark:text-green-400',
+  },
+  ENTRY_CORRECTION: {
+    label: 'Entry Corrected',
+    icon: PencilSquareIcon,
+    color: 'yellow',
+    bgLight: 'bg-yellow-50',
+    bgDark: 'dark:bg-yellow-900/20',
+    textLight: 'text-yellow-700',
+    textDark: 'dark:text-yellow-400',
+  },
+  CLOSED: {
+    label: 'Position Closed',
+    icon: XCircleIcon,
+    color: 'red',
+    bgLight: 'bg-red-50',
+    bgDark: 'dark:bg-red-900/20',
+    textLight: 'text-red-700',
+    textDark: 'dark:text-red-400',
+  },
+};
+
+const formatDateTime = (d: string) => {
+  if (!d) return '—';
+  try {
+    return new Date(d).toLocaleString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true,
+    });
+  } catch {
+    return d;
+  }
+};
+
+const formatDate = (d: string) => {
+  if (!d) return '—';
+  try {
+    return new Date(d).toLocaleDateString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    });
+  } catch {
+    return d;
+  }
+};
+
+const formatTime = (d: string) => {
+  if (!d) return '';
+  try {
+    return new Date(d).toLocaleTimeString('en-IN', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    });
+  } catch {
+    return '';
+  }
+};
+
 export default function ActivityLogPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <div className="animate-pulse space-y-8">
+            <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded-lg w-64" />
+            <div className="h-48 bg-gray-200 dark:bg-gray-700 rounded-2xl" />
+            <div className="h-96 bg-gray-200 dark:bg-gray-700 rounded-2xl" />
+          </div>
+        </div>
+      }
+    >
+      <ActivityLogContent />
+    </Suspense>
+  );
+}
+
+function ActivityLogContent() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const urlSymbol = searchParams.get('symbol') || '';
+
   const [allPositions, setAllPositions] = useState<Position[]>([]);
-  const [selectedId, setSelectedId] = useState<string>('');
-  const [globalLogs, setGlobalLogs] = useState<any[]>([]);
+  const [allLogs, setAllLogs] = useState<ActivityLog[]>([]);
+  const [selectedSymbol, setSelectedSymbol] = useState<string>(urlSymbol);
   const [loading, setLoading] = useState(true);
 
   const fetchData = async () => {
     setLoading(true);
-    const [posRes, logsRes] = await Promise.all([getPositions(), getActivityLogs()]);
+    const [posRes, logsRes] = await Promise.all([
+      getPositions(),
+      getActivityLogs(undefined, 500),
+    ]);
     if (posRes.status === 'success') setAllPositions(posRes.positions);
-    if (logsRes.status === 'success') setGlobalLogs(logsRes.logs);
+    if (logsRes.status === 'success') setAllLogs(logsRes.logs as ActivityLog[]);
     setLoading(false);
   };
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => {
+    fetchData();
+  }, []);
 
-  const selectedPos = allPositions.find(p => p._id === selectedId);
+  useEffect(() => {
+    if (urlSymbol && urlSymbol !== selectedSymbol) {
+      setSelectedSymbol(urlSymbol);
+    }
+  }, [urlSymbol]);
 
-  const formatDate = (d: string) => {
-    if (!d) return '—';
-    try {
-      return new Date(d).toLocaleString('en-IN', {
-        day: '2-digit', month: 'short', year: 'numeric',
-        hour: '2-digit', minute: '2-digit',
+  // Unique symbols from positions + logs
+  const uniqueSymbols = useMemo(() => {
+    const symbolSet = new Set<string>();
+    allPositions.forEach((p) => symbolSet.add(p.symbol));
+    allLogs.forEach((l) => symbolSet.add(l.symbol));
+    return Array.from(symbolSet).sort();
+  }, [allPositions, allLogs]);
+
+  // All positions for selected symbol (open + closed)
+  const symbolPositions = useMemo(() => {
+    return allPositions.filter((p) => p.symbol === selectedSymbol);
+  }, [allPositions, selectedSymbol]);
+
+  // All logs for selected symbol, sorted chronologically
+  const symbolLogs = useMemo(() => {
+    return allLogs
+      .filter((l) => l.symbol === selectedSymbol)
+      .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+  }, [allLogs, selectedSymbol]);
+
+  // Combined timeline: merge position data + activity logs
+  const timeline = useMemo(() => {
+    if (!selectedSymbol) return [];
+
+    const events: Array<{
+      id: string;
+      type: string;
+      timestamp: string;
+      data: Record<string, any>;
+    }> = [];
+
+    // Add position open events from positions
+    symbolPositions.forEach((pos) => {
+      events.push({
+        id: `open-${pos._id}`,
+        type: 'POSITION_OPENED',
+        timestamp: pos.entry_date || pos.created_at,
+        data: {
+          entry_price: pos.entry_price,
+          quantity: pos.initial_quantity || pos.quantity,
+          stop_loss: pos.stop_loss,
+          target: pos.target,
+          total_investment: pos.total_investment,
+          strategy: pos.strategy_name,
+        },
       });
-    } catch {
-      return d;
-    }
-  };
 
-  const getUpdateStyle = (type: string) => {
-    switch (type) {
-      case 'POSITION_OPENED':
-      case 'PYRAMID': return { bg: 'bg-blue-100 dark:bg-blue-900/30', text: 'text-blue-700 dark:text-blue-300', label: type === 'POSITION_OPENED' ? 'Position Opened' : 'Pyramid Buy' };
-      case 'TRAIL_SL': return { bg: 'bg-orange-100 dark:bg-orange-900/30', text: 'text-orange-700 dark:text-orange-300', label: 'SL Trail' };
-      case 'PARTIAL_SELL': return { bg: 'bg-purple-100 dark:bg-purple-900/30', text: 'text-purple-700 dark:text-purple-300', label: 'Partial Sell' };
-      case 'TARGET_HIT': return { bg: 'bg-green-100 dark:bg-green-900/30', text: 'text-green-700 dark:text-green-300', label: 'Target Hit' };
-      case 'ENTRY_CORRECTION': return { bg: 'bg-yellow-100 dark:bg-yellow-900/30', text: 'text-yellow-700 dark:text-yellow-300', label: 'Entry Correction' };
-      case 'CLOSED': return { bg: 'bg-red-100 dark:bg-red-900/30', text: 'text-red-700 dark:text-red-300', label: 'Closed' };
-      default: return { bg: 'bg-gray-100 dark:bg-gray-700', text: 'text-gray-700 dark:text-gray-300', label: type };
-    }
-  };
+      // Add updates from position.updates array
+      pos.updates?.forEach((u: any, idx: number) => {
+        events.push({
+          id: `update-${pos._id}-${idx}`,
+          type: u.type || 'UNKNOWN',
+          timestamp: u.date || u.created_at || pos.created_at,
+          data: u,
+        });
+      });
+
+      // Add close event if closed
+      if (pos.status === 'CLOSED') {
+        events.push({
+          id: `close-${pos._id}`,
+          type: 'CLOSED',
+          timestamp: pos.exit_date || pos.updated_at,
+          data: {
+            exit_price: pos.exit_price,
+            exit_reason: pos.exit_reason,
+            pnl_pct: pos.pnl_pct,
+          },
+        });
+      }
+    });
+
+    // Add activity logs (avoid duplicates by checking timestamp proximity)
+    symbolLogs.forEach((log) => {
+      const existing = events.find(
+        (e) =>
+          e.type === log.action &&
+          Math.abs(new Date(e.timestamp).getTime() - new Date(log.timestamp).getTime()) < 5000
+      );
+      if (!existing) {
+        events.push({
+          id: `log-${log._id}`,
+          type: log.action,
+          timestamp: log.timestamp,
+          data: log.details || {},
+        });
+      }
+    });
+
+    return events.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+  }, [selectedSymbol, symbolPositions, symbolLogs]);
+
+  const currentPos = symbolPositions.find((p) => p.status === 'OPEN') || symbolPositions[0];
 
   return (
-    <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8">
+    <div className="w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
       {/* Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">Position Activity Log</h1>
-          <p className="text-gray-600 dark:text-gray-400 mt-1">Global timeline and per-position update history</p>
+          <h1 className="text-2xl font-bold tracking-tight text-gray-900 dark:text-gray-100">
+            Activity Timeline
+          </h1>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+            Track position lifecycle — from entry to exit
+          </p>
         </div>
-        <button onClick={fetchData} className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
-          <ArrowPathIcon className="h-5 w-5" />
-          <span>Refresh</span>
+        <button
+          onClick={fetchData}
+          disabled={loading}
+          className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition disabled:opacity-50"
+        >
+          <ArrowPathIcon className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+          Refresh
         </button>
       </div>
 
-      {/* Global Timeline */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 p-6">
-        <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-4">Global Activity Timeline</h2>
-        {globalLogs.length === 0 ? (
-          <p className="text-gray-500 dark:text-gray-400 text-sm">
-            {loading ? 'Loading...' : 'No activity logs yet. Run a trading cycle to generate logs.'}
-          </p>
-        ) : (
-          <div className="space-y-2 max-h-96 overflow-y-auto">
-            {globalLogs.map((log: any, idx: number) => {
-              const style = getUpdateStyle(log.action);
-              return (
-                <div key={log._id || idx} className={`flex items-center gap-3 px-4 py-3 rounded-lg ${style.bg}`}>
-                  <span className={`px-2.5 py-1 rounded text-xs font-semibold ${style.text} bg-white/60 dark:bg-gray-800/60 whitespace-nowrap`}>
-                    {style.label}
-                  </span>
-                  <span className="font-semibold text-gray-900 dark:text-gray-100 text-sm">{log.symbol}</span>
-                  <span className="text-xs text-gray-500 dark:text-gray-400 ml-auto whitespace-nowrap">
-                    {formatDate(log.timestamp)}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* Position Selector */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 p-6">
-        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Select Position (detailed view)</label>
-        <div className="relative">
+      {/* Symbol Selector */}
+      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+        <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-3">
+          Select Stock
+        </label>
+        <div className="relative max-w-md">
           <select
-            value={selectedId}
-            onChange={(e) => setSelectedId(e.target.value)}
+            value={selectedSymbol}
+            onChange={(e) => {
+              setSelectedSymbol(e.target.value);
+              router.replace('/activity-log', { scroll: false });
+            }}
             disabled={loading}
-            className="w-full md:w-96 px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 appearance-none cursor-pointer disabled:opacity-50"
+            className="w-full px-4 py-3 pr-10 border border-gray-200 dark:border-gray-600 rounded-xl bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-base font-medium appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 transition"
           >
             <option value="">
-              {loading ? 'Loading positions...' : (allPositions.length === 0 ? 'No positions found' : 'Choose a position...')}
+              {loading
+                ? 'Loading...'
+                : uniqueSymbols.length === 0
+                ? 'No stocks found'
+                : 'Choose a stock...'}
             </option>
-            {allPositions.map((p) => (
-              <option key={p._id} value={p._id}>
-                {p.symbol} [{p.status}] — Entry: ₹{p.entry_price?.toFixed(2)} | Qty: {p.quantity} | {p.entry_date ? new Date(p.entry_date).toLocaleDateString('en-IN') : ''}
-              </option>
-            ))}
+            {uniqueSymbols.map((sym) => {
+              const openPos = allPositions.find((p) => p.symbol === sym && p.status === 'OPEN');
+              const closedPos = allPositions.filter((p) => p.symbol === sym && p.status === 'CLOSED').length;
+              let label = sym;
+              if (openPos) label += ' — Open';
+              else if (closedPos > 0) label += ` — Closed (${closedPos})`;
+              return (
+                <option key={sym} value={sym}>
+                  {label}
+                </option>
+              );
+            })}
           </select>
           <ChevronDownIcon className="absolute right-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400 pointer-events-none" />
         </div>
       </div>
 
-      {/* Per-Position Timeline */}
-      {selectedPos ? (
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 p-6">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">{selectedPos.symbol}</h2>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                {selectedPos.status} — {selectedPos.strategy_name} — {selectedPos.quantity} qty @ ₹{selectedPos.entry_price?.toFixed(2)}
-              </p>
-            </div>
-            <span className={`px-3 py-1.5 rounded-full text-sm font-semibold ${
-              selectedPos.status === 'OPEN'
-                ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
-                : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300'
-            }`}>
-              {selectedPos.status}
-            </span>
-          </div>
-
-          <div className="space-y-0">
-            {/* Step 1: Initial Buy */}
-            <div className="flex gap-4">
-              <div className="flex flex-col items-center">
-                <div className="w-10 h-10 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center flex-shrink-0">
-                  <span className="text-green-600 dark:text-green-400 text-sm font-bold">1</span>
+      {/* Timeline */}
+      {selectedSymbol ? (
+        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+          {/* Position Summary Header */}
+          {currentPos && (
+            <div className="px-6 py-5 border-b border-gray-100 dark:border-gray-700 bg-gradient-to-r from-gray-50 to-white dark:from-gray-900 dark:to-gray-800">
+              <div className="flex items-center justify-between flex-wrap gap-4">
+                <div>
+                  <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">
+                    {selectedSymbol}
+                  </h2>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+                    {currentPos.strategy_name} · Entry {formatDate(currentPos.entry_date || currentPos.created_at)}
+                  </p>
                 </div>
-                <div className="w-0.5 flex-1 bg-gray-200 dark:bg-gray-700 my-1" />
-              </div>
-              <div className="pb-6 flex-1">
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="px-2.5 py-1 rounded text-xs font-semibold bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300">Initial Buy</span>
-                  <span className="text-xs text-gray-500 dark:text-gray-400">{formatDate(selectedPos.created_at)}</span>
-                </div>
-                <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-4 text-sm space-y-1.5">
-                  <p className="text-gray-700 dark:text-gray-300">Entry: <span className="font-semibold text-gray-900 dark:text-gray-100">₹{selectedPos.entry_price?.toFixed(2)}</span></p>
-                  <p className="text-gray-700 dark:text-gray-300">Quantity: <span className="font-semibold">{selectedPos.quantity}</span></p>
-                  <p className="text-gray-700 dark:text-gray-300">Stop Loss: <span className="font-semibold text-red-600">₹{selectedPos.stop_loss?.toFixed(2)}</span></p>
-                  <p className="text-gray-700 dark:text-gray-300">Target: <span className="font-semibold text-green-600">₹{selectedPos.target?.toFixed(2)}</span></p>
-                  <p className="text-gray-700 dark:text-gray-300">Investment: <span className="font-semibold">₹{selectedPos.total_investment?.toLocaleString()}</span></p>
-                  <p className="text-gray-700 dark:text-gray-300">Strategy: {selectedPos.strategy_name}</p>
-                </div>
-              </div>
-            </div>
-
-            {/* Updates */}
-            {selectedPos.updates && selectedPos.updates.length > 0 ? (
-              selectedPos.updates.map((update: any, idx: number) => {
-                const style = getUpdateStyle(update.type);
-                const isLast = idx === (selectedPos.updates?.length || 0) - 1 && selectedPos.status !== 'CLOSED';
-                return (
-                  <div key={idx} className="flex gap-4">
-                    <div className="flex flex-col items-center">
-                      <div className={`w-10 h-10 rounded-full ${style.bg} flex items-center justify-center flex-shrink-0`}>
-                        <span className={`${style.text} text-sm font-bold`}>{idx + 2}</span>
-                      </div>
-                      {!isLast && <div className="w-0.5 flex-1 bg-gray-200 dark:bg-gray-700 my-1" />}
-                    </div>
-                    <div className="pb-6 flex-1">
-                      <div className="flex items-center gap-2 mb-2">
-                        <span className={`px-2.5 py-1 rounded text-xs font-semibold ${style.bg} ${style.text}`}>{style.label}</span>
-                        <span className="text-xs text-gray-500 dark:text-gray-400">{formatDate(update.date)}</span>
-                      </div>
-                      <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-4 text-sm space-y-1.5">
-                        {update.entry_price && <p className="text-gray-700 dark:text-gray-300">Entry Price: ₹{update.entry_price?.toFixed(2)}</p>}
-                        {update.prev_sl !== undefined && <p className="text-gray-700 dark:text-gray-300">Previous SL: ₹{update.prev_sl?.toFixed(2)}</p>}
-                        {update.current_sl !== undefined && <p className="text-gray-700 dark:text-gray-300">New SL: <span className="font-semibold text-orange-600">₹{update.current_sl?.toFixed(2)}</span></p>}
-                        {update.quantity !== undefined && update.type !== 'CLOSED' && <p className="text-gray-700 dark:text-gray-300">Quantity: {update.quantity}</p>}
-                        {update.exit_price !== undefined && <p className="text-gray-700 dark:text-gray-300">Exit Price: ₹{update.exit_price?.toFixed(2)}</p>}
-                        {update.exit_reason && <p className="text-gray-700 dark:text-gray-300">Reason: {update.exit_reason}</p>}
-                        {update.pnl_pct !== undefined && (
-                          <p className="text-gray-700 dark:text-gray-300">
-                            PnL: <span className={`font-semibold ${update.pnl_pct >= 0 ? 'text-green-600' : 'text-red-600'}`}>{update.pnl_pct?.toFixed(2)}%</span>
-                          </p>
-                        )}
-                        {update.reason && <p className="text-gray-700 dark:text-gray-300">Note: {update.reason}</p>}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })
-            ) : (
-              <div className="flex gap-4">
-                <div className="flex flex-col items-center">
-                  <div className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center flex-shrink-0">
-                    <span className="text-gray-400 text-xs">--</span>
-                  </div>
-                </div>
-                <div className="pb-6">
-                  <p className="text-gray-500 dark:text-gray-400 text-sm">No updates recorded yet for this position.</p>
-                </div>
-              </div>
-            )}
-
-            {/* Closed status */}
-            {selectedPos.status === 'CLOSED' && (
-              <div className="flex gap-4">
-                <div className="flex flex-col items-center">
-                  <div className="w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center flex-shrink-0">
-                    <span className="text-red-600 dark:text-red-400 text-sm font-bold">X</span>
-                  </div>
-                </div>
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="px-2.5 py-1 rounded text-xs font-semibold bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300">Position Closed</span>
-                    <span className="text-xs text-gray-500 dark:text-gray-400">{formatDate(selectedPos.exit_date || '')}</span>
-                  </div>
-                  <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-4 text-sm space-y-1.5">
-                    <p className="text-gray-700 dark:text-gray-300">Exit Price: ₹{selectedPos.exit_price?.toFixed(2)}</p>
-                    <p className="text-gray-700 dark:text-gray-300">Exit Reason: {selectedPos.exit_reason}</p>
-                    <p className="text-gray-700 dark:text-gray-300">
-                      Final PnL: <span className={`font-bold text-lg ${(selectedPos.pnl_pct || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>{selectedPos.pnl_pct?.toFixed(2)}%</span>
+                <div className="flex items-center gap-4 text-sm">
+                  <div className="text-center">
+                    <p className="text-xs text-gray-500 dark:text-gray-400">Entry</p>
+                    <p className="font-semibold text-gray-900 dark:text-gray-100">
+                      ₹{currentPos.entry_price?.toFixed(2)}
                     </p>
                   </div>
+                  <div className="text-center">
+                    <p className="text-xs text-gray-500 dark:text-gray-400">Qty</p>
+                    <p className="font-semibold text-gray-900 dark:text-gray-100">
+                      {currentPos.quantity}
+                    </p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-xs text-gray-500 dark:text-gray-400">SL</p>
+                    <p className="font-semibold text-red-600 dark:text-red-400">
+                      ₹{(currentPos.current_stop_loss || currentPos.stop_loss)?.toFixed(2)}
+                    </p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-xs text-gray-500 dark:text-gray-400">Target</p>
+                    <p className="font-semibold text-green-600 dark:text-green-400">
+                      ₹{(currentPos.current_target || currentPos.target)?.toFixed(2)}
+                    </p>
+                  </div>
+                  <span
+                    className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                      currentPos.status === 'OPEN'
+                        ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'
+                        : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+                    }`}
+                  >
+                    {currentPos.status}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Timeline Events */}
+          <div className="p-6">
+            {timeline.length === 0 ? (
+              <div className="text-center py-12">
+                <ClockIcon className="h-12 w-12 mx-auto text-gray-300 dark:text-gray-600 mb-3" />
+                <p className="text-gray-500 dark:text-gray-400 text-sm">
+                  No activity recorded for {selectedSymbol} yet.
+                </p>
+              </div>
+            ) : (
+              <div className="relative">
+                {/* Vertical line */}
+                <div className="absolute left-5 top-5 bottom-5 w-px bg-gray-200 dark:bg-gray-700" />
+
+                <div className="space-y-0">
+                  {timeline.map((event, idx) => {
+                    const config = ACTION_CONFIG[event.type] || {
+                      label: event.type,
+                      icon: ClockIcon,
+                      color: 'gray',
+                      bgLight: 'bg-gray-50',
+                      bgDark: 'dark:bg-gray-700',
+                      textLight: 'text-gray-700',
+                      textDark: 'dark:text-gray-300',
+                    };
+                    const Icon = config.icon;
+
+                    return (
+                      <div key={event.id} className="relative flex gap-5 pb-6 last:pb-0">
+                        {/* Icon */}
+                        <div
+                          className={`relative z-10 flex-shrink-0 w-10 h-10 rounded-full ${config.bgLight} ${config.bgDark} flex items-center justify-center border-2 border-white dark:border-gray-800`}
+                        >
+                          <Icon className={`h-5 w-5 ${config.textLight} ${config.textDark}`} />
+                        </div>
+
+                        {/* Content */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-baseline justify-between gap-3 mb-1.5">
+                            <h3
+                              className={`text-sm font-semibold ${config.textLight} ${config.textDark}`}
+                            >
+                              {config.label}
+                            </h3>
+                            <span className="text-xs text-gray-400 dark:text-gray-500 whitespace-nowrap">
+                              {formatDateTime(event.timestamp)}
+                            </span>
+                          </div>
+
+                          {/* Event Details */}
+                          <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-3.5 text-sm space-y-1 border border-gray-100 dark:border-gray-700/50">
+                            {event.type === 'POSITION_OPENED' && (
+                              <>
+                                <DetailRow label="Entry Price" value={`₹${event.data.entry_price?.toFixed(2)}`} />
+                                <DetailRow label="Quantity" value={String(event.data.quantity)} />
+                                <DetailRow
+                                  label="Stop Loss"
+                                  value={`₹${event.data.stop_loss?.toFixed(2)}`}
+                                  valueClass="text-red-600 dark:text-red-400"
+                                />
+                                <DetailRow
+                                  label="Target"
+                                  value={`₹${event.data.target?.toFixed(2)}`}
+                                  valueClass="text-green-600 dark:text-green-400"
+                                />
+                                <DetailRow
+                                  label="Investment"
+                                  value={`₹${event.data.total_investment?.toLocaleString('en-IN')}`}
+                                />
+                                {event.data.strategy && (
+                                  <DetailRow label="Strategy" value={event.data.strategy} />
+                                )}
+                              </>
+                            )}
+                            {event.type === 'TRAIL_SL' && (
+                              <>
+                                {event.data.prev_sl != null && (
+                                  <DetailRow label="Previous SL" value={`₹${event.data.prev_sl?.toFixed(2)}`} />
+                                )}
+                                {event.data.current_sl != null && (
+                                  <DetailRow
+                                    label="New SL"
+                                    value={`₹${event.data.current_sl?.toFixed(2)}`}
+                                    valueClass="font-semibold text-amber-600 dark:text-amber-400"
+                                  />
+                                )}
+                                {event.data.prev_sl != null && event.data.current_sl != null && (
+                                  <DetailRow
+                                    label="Change"
+                                    value={`+₹${(event.data.current_sl - event.data.prev_sl).toFixed(2)}`}
+                                    valueClass="text-emerald-600 dark:text-emerald-400"
+                                  />
+                                )}
+                              </>
+                            )}
+                            {event.type === 'PYRAMID' && (
+                              <>
+                                {event.data.entry_price != null && (
+                                  <DetailRow label="Pyramid Price" value={`₹${event.data.entry_price?.toFixed(2)}`} />
+                                )}
+                                {event.data.quantity != null && (
+                                  <DetailRow label="Added Qty" value={String(event.data.quantity)} />
+                                )}
+                                {event.data.adds_count != null && (
+                                  <DetailRow label="Total Adds" value={String(event.data.adds_count)} />
+                                )}
+                              </>
+                            )}
+                            {event.type === 'PARTIAL_SELL' && (
+                              <>
+                                {event.data.exit_price != null && (
+                                  <DetailRow label="Sell Price" value={`₹${event.data.exit_price?.toFixed(2)}`} />
+                                )}
+                                {event.data.quantity != null && (
+                                  <DetailRow label="Sold Qty" value={String(event.data.quantity)} />
+                                )}
+                                {event.data.pnl_pct != null && (
+                                  <DetailRow
+                                    label="PnL"
+                                    value={`${event.data.pnl_pct?.toFixed(2)}%`}
+                                    valueClass={event.data.pnl_pct >= 0 ? 'text-green-600' : 'text-red-600'}
+                                  />
+                                )}
+                              </>
+                            )}
+                            {event.type === 'TARGET_HIT' && (
+                              <>
+                                {event.data.target_price != null && (
+                                  <DetailRow label="Target Price" value={`₹${event.data.target_price?.toFixed(2)}`} />
+                                )}
+                                {event.data.target_name && (
+                                  <DetailRow label="Target" value={event.data.target_name} />
+                                )}
+                              </>
+                            )}
+                            {event.type === 'ENTRY_CORRECTION' && (
+                              <>
+                                {event.data.old_entry != null && (
+                                  <DetailRow label="Old Entry" value={`₹${event.data.old_entry?.toFixed(2)}`} />
+                                )}
+                                {event.data.entry_price != null && (
+                                  <DetailRow
+                                    label="New Entry"
+                                    value={`₹${event.data.entry_price?.toFixed(2)}`}
+                                    valueClass="font-semibold"
+                                  />
+                                )}
+                                {event.data.reason && <DetailRow label="Reason" value={event.data.reason} />}
+                              </>
+                            )}
+                            {event.type === 'CLOSED' && (
+                              <>
+                                {event.data.exit_price != null && (
+                                  <DetailRow label="Exit Price" value={`₹${event.data.exit_price?.toFixed(2)}`} />
+                                )}
+                                {event.data.exit_reason && (
+                                  <DetailRow label="Reason" value={event.data.exit_reason} />
+                                )}
+                                {event.data.pnl_pct != null && (
+                                  <DetailRow
+                                    label="Final PnL"
+                                    value={`${event.data.pnl_pct?.toFixed(2)}%`}
+                                    valueClass={`text-base font-bold ${
+                                      event.data.pnl_pct >= 0 ? 'text-green-600' : 'text-red-600'
+                                    }`}
+                                  />
+                                )}
+                              </>
+                            )}
+                            {/* Fallback for unknown types */}
+                            {!['POSITION_OPENED', 'TRAIL_SL', 'PYRAMID', 'PARTIAL_SELL', 'TARGET_HIT', 'ENTRY_CORRECTION', 'CLOSED'].includes(event.type) && (
+                              <pre className="text-xs text-gray-600 dark:text-gray-400 whitespace-pre-wrap">
+                                {JSON.stringify(event.data, null, 2)}
+                              </pre>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}
           </div>
         </div>
       ) : (
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 p-12 text-center">
-          <p className="text-gray-500 dark:text-gray-400 text-lg">
-            {allPositions.length === 0
-              ? 'No positions found. Run a trading cycle to generate positions.'
-              : 'Select a position from the dropdown above to view its full activity history.'}
+        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-16 text-center">
+          <ClockIcon className="h-16 w-16 mx-auto text-gray-200 dark:text-gray-700 mb-4" />
+          <p className="text-gray-500 dark:text-gray-400 text-base font-medium">
+            Select a stock to view its complete activity timeline
+          </p>
+          <p className="text-gray-400 dark:text-gray-500 text-sm mt-1">
+            Includes entries, trailing stops, pyramiding, and exits
           </p>
         </div>
       )}
+    </div>
+  );
+}
+
+function DetailRow({
+  label,
+  value,
+  valueClass = 'text-gray-900 dark:text-gray-100',
+}: {
+  label: string;
+  value: string;
+  valueClass?: string;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <span className="text-gray-500 dark:text-gray-400 text-xs">{label}</span>
+      <span className={`font-medium text-xs ${valueClass}`}>{value}</span>
     </div>
   );
 }
