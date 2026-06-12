@@ -28,6 +28,8 @@ export default function PositionsPage() {
   const [loading, setLoading] = useState(true);
   const [editModalPos, setEditModalPos] = useState<Position | null>(null);
   const [entryPrice, setEntryPrice] = useState('');
+  const [pyramidModalPos, setPyramidModalPos] = useState<Position | null>(null);
+  const [pyramidEdits, setPyramidEdits] = useState<Array<{ qty: number; price: string }>>([]);
   const [actionMsg, setActionMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const fetchData = async () => {
@@ -82,6 +84,60 @@ export default function PositionsPage() {
 
   const viewTimeline = (symbol: string) => {
     router.push(`/activity-log?symbol=${encodeURIComponent(symbol)}`);
+  };
+
+  const openPyramidModal = (pos: Position) => {
+    const pyramidUpdates = (pos.updates || []).filter((u: any) => u.type === 'PYRAMID');
+    const edits = pyramidUpdates.map((u: any) => ({
+      qty: u.quantity || 0,
+      price: String(u.entry_price || ''),
+    }));
+    setPyramidModalPos(pos);
+    setPyramidEdits(edits);
+  };
+
+  const handleSavePyramids = async () => {
+    if (!pyramidModalPos) return;
+
+    // Calculate original position investment (before pyramids)
+    const initialQty = pyramidModalPos.initial_quantity || pyramidModalPos.quantity;
+    const currentPyramids = (pyramidModalPos.updates || []).filter((u: any) => u.type === 'PYRAMID');
+    
+    // Get the original entry price (first buy)
+    const openUpdate = (pyramidModalPos.updates || []).find((u: any) => u.type === 'POSITION_OPENED');
+    const originalPrice = openUpdate?.entry_price || pyramidModalPos.entry_price;
+    const originalQty = initialQty - currentPyramids.reduce((sum, u: any) => sum + (u.quantity || 0), 0);
+    
+    let totalInvestment = originalQty * originalPrice;
+    
+    // Add each pyramid's investment
+    pyramidEdits.forEach((edit) => {
+      const qty = edit.qty;
+      const price = parseFloat(edit.price);
+      if (!isNaN(price) && qty > 0) {
+        totalInvestment += qty * price;
+      }
+    });
+
+    // Calculate new average entry price
+    const newAvgPrice = totalInvestment / pyramidModalPos.quantity;
+
+    const res = await updatePosition(pyramidModalPos.symbol, {
+      entry_price: parseFloat(newAvgPrice.toFixed(2)),
+      total_investment: parseFloat(totalInvestment.toFixed(2)),
+    });
+
+    if (res.status === 'success') {
+      setActionMsg({
+        type: 'success',
+        text: `${pyramidModalPos.symbol} pyramid prices updated. New avg: ₹${newAvgPrice.toFixed(2)}`,
+      });
+      setPyramidModalPos(null);
+      setPyramidEdits([]);
+      fetchData();
+    } else {
+      setActionMsg({ type: 'error', text: res.error || 'Update failed' });
+    }
   };
 
   const totalInvested = positions.reduce((sum, p) => sum + (p.total_investment || 0), 0);
@@ -291,6 +347,15 @@ export default function PositionsPage() {
                           >
                             <PencilIcon className="h-4 w-4" />
                           </button>
+                          {pos.adds_count && pos.adds_count > 0 && (
+                            <button
+                              onClick={() => openPyramidModal(pos)}
+                              className="p-2 text-gray-500 hover:text-violet-600 hover:bg-violet-50 dark:hover:text-violet-400 dark:hover:bg-violet-900/30 rounded-lg transition"
+                              title={`Manage ${pos.adds_count} Pyramid(s)`}
+                            >
+                              <ArrowTrendingUpIcon className="h-4 w-4" />
+                            </button>
+                          )}
                           <button
                             onClick={() => handleClose(pos.symbol)}
                             className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 dark:hover:text-red-400 dark:hover:bg-red-900/30 rounded-lg transition"
@@ -380,6 +445,100 @@ export default function PositionsPage() {
                   onClick={() => {
                     setEditModalPos(null);
                     setEntryPrice('');
+                  }}
+                  className="px-6 py-3 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-xl hover:bg-gray-200 dark:hover:bg-gray-600 font-medium transition"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Pyramid Management Modal */}
+      {pyramidModalPos && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 w-full max-w-lg">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-gray-700">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                  Manage Pyramid Prices
+                </h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+                  {pyramidModalPos.symbol} · {pyramidModalPos.quantity} total shares
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setPyramidModalPos(null);
+                  setPyramidEdits([]);
+                }}
+                className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition"
+              >
+                <XMarkIcon className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="p-3 bg-violet-50 dark:bg-violet-900/20 rounded-lg border border-violet-200 dark:border-violet-800">
+                <p className="text-xs text-violet-700 dark:text-violet-300">
+                  <span className="font-semibold">How it works:</span> Edit each pyramid's actual execution price from your broker. The system will recalculate the weighted average entry price.
+                </p>
+              </div>
+
+              <div className="space-y-3">
+                {pyramidEdits.map((edit, idx) => {
+                  const pyramidUpdate = (pyramidModalPos.updates || []).filter((u: any) => u.type === 'PYRAMID')[idx];
+                  const date = pyramidUpdate?.date ? new Date(pyramidUpdate.date).toLocaleDateString('en-IN') : 'Unknown';
+                  
+                  return (
+                    <div key={idx} className="p-4 bg-gray-50 dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700">
+                      <div className="flex items-center justify-between mb-3">
+                        <div>
+                          <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                            Pyramid #{idx + 1}
+                          </p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">{date}</p>
+                        </div>
+                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                          {edit.qty} shares
+                        </span>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1.5">
+                          Execution Price (₹)
+                        </label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={edit.price}
+                          onChange={(e) => {
+                            const newEdits = [...pyramidEdits];
+                            newEdits[idx] = { ...newEdits[idx], price: e.target.value };
+                            setPyramidEdits(newEdits);
+                          }}
+                          className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 font-semibold focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent transition"
+                          placeholder="0.00"
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="pt-2 flex gap-3">
+                <button
+                  onClick={handleSavePyramids}
+                  className="flex-1 inline-flex items-center justify-center gap-2 px-6 py-3 bg-violet-600 text-white rounded-xl hover:bg-violet-700 font-medium transition"
+                >
+                  <CheckIcon className="h-4 w-4" />
+                  Recalculate & Save
+                </button>
+                <button
+                  onClick={() => {
+                    setPyramidModalPos(null);
+                    setPyramidEdits([]);
                   }}
                   className="px-6 py-3 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-xl hover:bg-gray-200 dark:hover:bg-gray-600 font-medium transition"
                 >
