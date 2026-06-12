@@ -359,7 +359,7 @@
         "add_size_pct": 0.3
       }
     ],
-    "regime_controlled": false
+    "regime_controlled": true
   },
   "fundamental_config": {
     "min_roce": 18.0,
