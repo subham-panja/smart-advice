@@ -28,3 +28,13 @@ def cycle_stats():
     except Exception as e:
         current_app.logger.error(f"Cycle stats error: {e}")
         return jsonify({"status": "error", "error": str(e)}), 500
+
+
+@config_bp.route("/dashboard-stats", methods=["GET"])
+def dashboard_stats():
+    try:
+        stats = config_handler.get_dashboard_stats()
+        return jsonify({"status": "success", **stats})
+    except Exception as e:
+        current_app.logger.error(f"Dashboard stats error: {e}")
+        return jsonify({"status": "error", "error": str(e)}), 500
