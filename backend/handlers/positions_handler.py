@@ -58,6 +58,16 @@ def update_position(symbol: str, data: dict):
     existing = get_position_by_symbol(symbol)
     if not existing:
         return None
+
+    if "entry_price" in data and "total_investment" not in data:
+        qty = existing.get("quantity", 0)
+        data["total_investment"] = round(qty * data["entry_price"], 2)
+        logger.info(
+            f"Entry correction for {symbol}: "
+            f"₹{existing.get('entry_price', 0):.2f} → ₹{data['entry_price']:.2f}, "
+            f"new investment: ₹{data['total_investment']:.2f}"
+        )
+
     db_update(symbol, data)
     return True
 

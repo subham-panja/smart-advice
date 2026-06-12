@@ -134,7 +134,8 @@ def update_position(symbol: str, update_data: dict):
             update_type = "UPDATE"
 
         pos = db[col_name].find_one(
-            {"symbol": symbol, "status": "OPEN"}, {"current_price": 1, "current_stop_loss": 1, "stop_loss": 1}
+            {"symbol": symbol, "status": "OPEN"},
+            {"current_price": 1, "current_stop_loss": 1, "stop_loss": 1, "entry_price": 1},
         )
         prev_sl = (pos or {}).get("current_stop_loss", (pos or {}).get("stop_loss"))
 
@@ -145,6 +146,7 @@ def update_position(symbol: str, update_data: dict):
             "prev_sl": prev_sl,
             "quantity": update_data.get("quantity"),
             "entry_price": update_data.get("entry_price"),
+            "old_entry": (pos or {}).get("entry_price"),
             "total_investment": update_data.get("total_investment"),
             "targets_hit": update_data.get("targets_hit", update_data.get("current_target_idx")),
             "adds_count": update_data.get("adds_count"),
