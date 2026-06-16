@@ -37,7 +37,6 @@ from scripts.run_portfolio_backtest import (
 )
 from utils.logger import setup_logging
 from utils.persistence_handler import PersistenceHandler
-from utils.stock_scanner import StockScanner
 from utils.strategy_loader import StrategyLoader
 
 
@@ -116,9 +115,7 @@ def run_historical_with_realistic_costs(
     strategy_name: str,
     end_date: str,
     months: int,
-    max_stocks: int = 50,
     period: str = "5y",
-    excluded_date_ranges: list = None,
 ) -> dict:
     """Phase 1: Historical backtest with execution realism.
 
@@ -142,16 +139,13 @@ def run_historical_with_realistic_costs(
     # Enable market regime detection (bull/bear/sideways filter)
     strategy.setdefault("analysis_config", {})["market_regime_detection"] = True
 
-    # Scan stocks via Chartink API based on strategy screening rules
-    # Use NSE fallback if Chartink returns too few symbols
-    print("[2/6] Scanning stocks (Chartink + NSE fallback)...")
-    symbols = StockScanner.get_symbols_with_fallback(
-        strategy_config=strategy,
-        min_symbols=50,
-        max_stocks=max_stocks,
-        source="both",
-    )
-    print(f"  → Selected {len(symbols)} stocks (max {max_stocks})")
+    # Use full NSE universe (realistic universe, no artificial cap)
+    print("[2/6] Loading full NSE universe...")
+    from scripts.data_fetcher import get_all_nse_symbols
+
+    all_nse = get_all_nse_symbols()
+    symbols = {s: s for s in all_nse} if isinstance(all_nse, list) else dict(all_nse)
+    print(f"  → Using full NSE universe: {len(symbols)} stocks")
 
     # Scanned symbols returned in results["_scanned_symbols"] for reuse
 
@@ -205,9 +199,17 @@ def run_historical_with_realistic_costs(
         f"  → Pre-computed {len(indicators.symbols)} stocks × {len(indicators.dates)} dates = {len(indicators.symbols) * len(indicators.dates):,} indicator values"
     )
 
+    # Compute per-date stock prefilter
+    from scripts.vectorbt_signal_generator import compute_stock_prefilter
+
+    stock_prefilter = compute_stock_prefilter(indicators, strategy)
+    n_pass = int(stock_prefilter.iloc[-1].sum()) if len(stock_prefilter) > 0 else 0
+    print(f"  → Stock prefilter: {n_pass} stocks pass on latest date")
+
     # Create simulation engine with vectorbt store and index data override
     engine = PortfolioBacktestSession(strategy_config=strategy)
-    engine.set_indicator_store(store)  # Enable O(1) indicator lookups during simulation
+    engine.set_indicator_store(store)
+    engine._stock_prefilter = stock_prefilter
     if index_data is not None:
         engine._index_data_override = index_data
 
@@ -221,7 +223,9 @@ def run_historical_with_realistic_costs(
         num_days = "?"
     print(f"\n▶ Running day-by-day simulation ({num_days} trading days)...")
     results = engine.run(
-        symbols_data, sim_start_date=sim_start, sim_end_date=sim_end, excluded_date_ranges=excluded_date_ranges
+        symbols_data,
+        sim_start_date=sim_start,
+        sim_end_date=sim_end,
     )
     print(f"  → Simulation done ({time.time() - t_phase:.1f}s total for Phase 1)")
 
@@ -243,6 +247,7 @@ def run_historical_with_realistic_costs(
     print(f"{'='*60}\n")
 
     results["_scanned_symbols"] = symbols
+    results["_symbols_data"] = symbols_data
     return results
 
 
@@ -296,75 +301,50 @@ def run_validation_phase(daily_snapshots: list) -> dict:
 def main():
     parser = argparse.ArgumentParser(description="Ultimate Backtest Runner")
     parser.add_argument("--strategy", type=str, default="Swing_Trading", help="Strategy name")
-    parser.add_argument("--end-date", type=str, default=datetime.now().strftime("%Y-%m-%d"), help="End date")
     parser.add_argument("--months", type=int, default=120, help="Lookback months (default 120 = 10y)")
-    parser.add_argument("--max-stocks", type=int, default=50, help="Max stocks")
     parser.add_argument("--telegram", action="store_true", help="Send summary to Telegram")
-    parser.add_argument("--skip-wf", action="store_true", help="Skip walk-forward analysis")
-    parser.add_argument("--skip-stress", action="store_true", help="Skip stress tests")
-    parser.add_argument("--mc-iterations", type=int, default=8, help="WF MC iterations per window (default 8)")
     parser.add_argument(
-        "--symbol-source",
-        type=str,
-        default="both",
-        choices=["chartink", "nse_universe", "both"],
-        help="Symbol source: chartink (live scan), nse_universe (NSE list), both (Chartink + NSE fill)",
-    )
-    parser.add_argument(
-        "--min-symbols", type=int, default=50, help="Min symbols before expanding from NSE universe (default 50)"
-    )
-    parser.add_argument(
-        "--exclude-dates", type=str, default="", help="Date ranges to exclude, e.g. '2020-01-01:2020-12-31'"
+        "--mc-iterations",
+        type=int,
+        default=None,
+        help="Walk-forward MC iterations per window. Pass this flag to enable walk-forward (e.g. --mc-iterations 8)",
     )
     args = parser.parse_args()
 
     setup_logging(verbose=False)
     timer = Timer()
+    end_date = datetime.now().strftime("%Y-%m-%d")
+    run_wf = args.mc_iterations is not None
 
-    # Calculate total phases for ETA estimation
-    total_phases = 6  # 1:Historical, 1b:DB save, 2:Validation, 3:WF, 4:Stress, 5:Diagnostics, 6:Confidence
-    if args.skip_wf:
-        total_phases -= 1
-    if args.skip_stress:
-        total_phases -= 1
+    total_phases = 5  # 1:Historical, 1b:DB save, 2:Validation, 4:Stress, 5:Diagnostics, 6:Confidence
+    if run_wf:
+        total_phases += 1
     phases_done = 0
 
     print(f"\n{'='*70}")
     print(f"ULTIMATE BACKTEST — {args.strategy}")
     print(f"{'='*70}")
     print("Configuration:")
-    print(f"  Stocks: {args.max_stocks} | Lookback: {args.months} months ({args.months//12}y)")
-    print(f"  End date: {args.end_date}")
-    print(f"  Skip Walk-Forward: {args.skip_wf}")
-    print(f"  Skip Stress Tests: {args.skip_stress}")
+    print(f"  Lookback: {args.months} months ({args.months//12}y)")
+    print(f"  End date: {end_date} (today)")
+    print(f"  Walk-Forward: {'YES' if run_wf else 'SKIPPED (pass --mc-iterations to enable)'}")
+    print("  Stress Tests: YES")
     print(f"  Send Telegram: {args.telegram}")
     print(f"  Total phases to run: {total_phases}")
     print(f"{'='*70}")
-
-    # Parse excluded date ranges (e.g. '2020-01-01:2020-12-31')
-    excluded_date_ranges = []
-    if args.exclude_dates:
-        for range_str in args.exclude_dates.split(","):
-            range_str = range_str.strip()
-            if ":" in range_str:
-                start, end = range_str.split(":", 1)
-                excluded_date_ranges.append((start.strip(), end.strip()))
-        if excluded_date_ranges:
-            print(f"  Excluded date ranges: {excluded_date_ranges}")
 
     # ─── PHASE 1: Historical Backtest ───
     # Runs the strategy over real historical data with realistic execution costs
     timer.phase_start("Phase 1: Historical Backtest (Realistic Costs)")
     # Calculate fetch period from --months + 1 year buffer for warmup
-    # Fetch max available data; sim range controlled by --months
-    period = "max"
+    # e.g. 120 months → 10y + 1y buffer = "11y"
+    years = (args.months + 11) // 12  # ceiling division
+    period = f"{years + 1}y"
     historical = run_historical_with_realistic_costs(
         args.strategy,
-        args.end_date,
+        end_date,
         args.months,
-        args.max_stocks,
         period=period,
-        excluded_date_ranges=excluded_date_ranges if excluded_date_ranges else None,
     )
     timer.phase_end()
     phases_done += 1
@@ -379,7 +359,7 @@ def main():
         print("  → Creating backtest session...")
         session_id = persister.create_backtest_session(
             strategy_name=args.strategy,
-            strategy_config={"months": args.months, "max_stocks": args.max_stocks},
+            strategy_config={"months": args.months},
             capital_config={"initial_capital": 100000},
             symbols=[],
         )
@@ -428,17 +408,17 @@ def main():
     # Splits data into rolling windows, runs 8 parallel backtest simulations
     # Tests whether the strategy works across different time periods
     wf_results = None
-    if not args.skip_wf:
-        timer.phase_start("Phase 3: Walk-Forward Monte Carlo (8 windows, parallel)")
+    if run_wf:
+        timer.phase_start(f"Phase 3: Walk-Forward Monte Carlo ({args.mc_iterations} iterations per window)")
         try:
             wf_results = run_walk_forward_backtest(
                 strategy_name=args.strategy,
                 period=period,
                 symbols=historical.get("_scanned_symbols"),
-                max_stocks=args.max_stocks,
                 mc_iterations=args.mc_iterations,
                 verbose=False,
                 save_to_db=False,
+                symbols_data=historical.get("_symbols_data"),
             )
         except Exception as e:
             print(f"  ❌ Walk-forward failed: {e}")
@@ -453,22 +433,19 @@ def main():
     #   4b. Parameter sensitivity: +/-20% on 6 key parameters (13 runs)
     #   4c. Cost sensitivity: 4 brokerage/slippage scenarios
     stress_results = None
-    if not args.skip_stress:
-        timer.phase_start("Phase 4: Stress Tests (Regime + Param Sensitivity + Cost Sensitivity)")
-        from scripts.stress_tests import run_all_stress_tests
+    timer.phase_start("Phase 4: Stress Tests (Regime + Param Sensitivity + Cost Sensitivity)")
+    from scripts.stress_tests import run_all_stress_tests
 
-        print("  → 4a: Running regime-specific backtests (5 periods)...")
-        # Reuse symbols and data from Phase 1 instead of re-scanning/re-fetching
-        stress_results = run_all_stress_tests(
-            args.strategy,
-            args.max_stocks,
-            symbols=historical.get("_scanned_symbols"),
-            symbols_data=None,  # Stress tests need 10y data, will fetch internally
-            index_data=None,
-        )
-        timer.phase_end()
-        phases_done += 1
-        print(f"   ⏳ {timer.estimate_remaining(phases_done, total_phases)}")
+    print("  → 4a: Running regime-specific backtests (5 periods)...")
+    stress_results = run_all_stress_tests(
+        args.strategy,
+        symbols=historical.get("_scanned_symbols"),
+        symbols_data=historical.get("_symbols_data"),
+        index_data=None,
+    )
+    timer.phase_end()
+    phases_done += 1
+    print(f"   ⏳ {timer.estimate_remaining(phases_done, total_phases)}")
 
     # ─── PHASE 5: Trade Diagnostics ───
     # Analyzes individual trade characteristics:

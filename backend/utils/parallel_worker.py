@@ -44,7 +44,6 @@ def analyze_stock_worker(args: Tuple) -> Dict[str, Any]:
         # Direct persistence from worker using pre-initialized handler
         if res["is_recommended"]:
             _persistence.save_recommendation(res)
-            _persistence.save_backtest_results(res)
 
         return {
             "success": True,

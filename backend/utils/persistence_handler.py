@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 
 class PersistenceHandler:
-    """Handles database persistence for recommendations and backtests."""
+    """Handles database persistence for recommendations and portfolio backtest sessions."""
 
     def __init__(self, app=None):
         self.app = app
@@ -23,7 +23,6 @@ class PersistenceHandler:
             db = get_mongodb()
             cutoff = trading_now(timezone.utc) - timedelta(days=days)
             db.recommended_shares.delete_many({"recommendation_date": {"$lt": cutoff}})
-            db.backtest_results.delete_many({"created_at": {"$lt": cutoff}})
         except Exception as e:
             logger.error(f"Clear error: {e}")
 
@@ -50,7 +49,6 @@ class PersistenceHandler:
                 "buy_price": res["trade_plan"]["buy_price"],
                 "sell_price": res["trade_plan"]["sell_price"],
                 "stop_loss": res["trade_plan"]["stop_loss"],
-                "backtest_metrics": res["backtest"]["combined_metrics"],
                 "suggested_quantity": res["risk_management"]["position_size"],
                 "allocation_pct": res["risk_management"]["allocation_pct"],
                 "rr_ratio": res["risk_management"]["rr_ratio"],
@@ -70,48 +68,6 @@ class PersistenceHandler:
             return True
         except Exception as e:
             logger.error(f"Save error for {res.get('symbol')}: {e}")
-            raise e
-
-    def save_backtest_results(self, res: Dict[str, Any]) -> bool:
-        bt = res["backtest"]
-        if bt["status"] != "completed":
-            return False
-        try:
-            db = get_mongodb()
-            # Fetch the filtered_stock_id
-            fs = db.filtered_stocks.find_one({"symbol": res["symbol"]}, sort=[("detected_at", -1)])
-            fs_id = fs["_id"] if fs else None
-
-            m = bt["combined_metrics"]
-            now = trading_now(timezone.utc).replace(tzinfo=None)
-
-            # Prepare Granular Trades
-            trades = bt.get("trades", [])
-            for t in trades:
-                t["filtered_stock_id"] = fs_id
-                t["strategy_name"] = res["strategy_name"]
-                t["created_at"] = now
-                t["updated_at"] = now
-
-            # Save Summary with Nested Details
-            db.backtest_results.insert_one(
-                {
-                    "symbol": res["symbol"],
-                    "filtered_stock_id": fs_id,
-                    "strategy_name": res["strategy_name"],
-                    "period": "Overall",
-                    "cagr": m["avg_cagr"],
-                    "win_rate": m["avg_win_rate"],
-                    "total_trades": m["total_trades"],
-                    "backtest_details": trades,
-                    "created_at": now,
-                    "updated_at": now,
-                }
-            )
-
-            return True
-        except Exception as e:
-            logger.error(f"BT Save error for {res.get('symbol')}: {e}")
             raise e
 
     def save_filtered_stock(self, symbol: str, strategy_name: str, scan_id: Any = None) -> Any:
@@ -182,37 +138,6 @@ class PersistenceHandler:
             return db.backtest_sessions.insert_one(doc).inserted_id
         except Exception as e:
             logger.error(f"Backtest session creation error: {e}")
-            raise e
-
-    def save_backtest_result_with_session(self, session_id: Any, res: dict) -> bool:
-        """Saves a per-stock backtest result linked to a portfolio session."""
-        try:
-            db = get_mongodb()
-            bt = res.get("backtest", {})
-            if bt.get("status") != "completed":
-                return False
-
-            m = bt.get("combined_metrics", {})
-            now = trading_now(timezone.utc).replace(tzinfo=None)
-
-            doc = {
-                "session_id": session_id,
-                "symbol": res["symbol"],
-                "strategy_name": res.get("strategy_name", "UNKNOWN"),
-                "period": "Overall",
-                "cagr": m.get("avg_cagr", 0),
-                "win_rate": m.get("avg_win_rate", 0),
-                "total_trades": m.get("total_trades", 0),
-                "expectancy": m.get("avg_expectancy", 0),
-                "profit_factor": m.get("avg_profit_factor", 0),
-                "backtest_details": bt.get("trades", []),
-                "created_at": now,
-                "updated_at": now,
-            }
-            db.backtest_results.insert_one(doc)
-            return True
-        except Exception as e:
-            logger.error(f"Session backtest save error: {e}")
             raise e
 
     def save_portfolio_backtest_trades(self, session_id: Any, trades: list) -> bool:

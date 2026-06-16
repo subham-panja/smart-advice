@@ -51,9 +51,28 @@ def run_date_range(strategy_name, start_date, end_date, max_stocks=50):
 
     index_data = _prepare_index_data(strategy, mask, period)
 
+    # Pre-compute indicators and per-day stock prefilter
+    try:
+        from scripts.vectorbt_indicator_batch import IndicatorStore, compute_all_indicators
+
+        indicators = compute_all_indicators(mask, strategy)
+        store = IndicatorStore(indicators)
+
+        from scripts.vectorbt_signal_generator import compute_stock_prefilter
+
+        prefilter = compute_stock_prefilter(indicators, strategy)
+    except Exception as e:
+        print(f"  WARNING: Indicator pre-computation failed ({e}), falling back to TA-Lib")
+        store = None
+        prefilter = None
+
     engine = PortfolioBacktestSession(strategy_config=strategy)
     if index_data is not None:
         engine._index_data_override = index_data
+    if store is not None:
+        engine.set_indicator_store(store)
+    if prefilter is not None:
+        engine._stock_prefilter = prefilter
 
     tracker = FilterTracker()
     tracker.scanner_total = len(symbols_list)

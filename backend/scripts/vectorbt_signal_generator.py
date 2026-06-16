@@ -12,6 +12,115 @@ import pandas as pd
 from .vectorbt_indicator_batch import ComputedIndicators
 
 
+def compute_stock_prefilter(
+    indicators: ComputedIndicators,
+    strategy_config: Dict[str, Any],
+) -> pd.DataFrame:
+    """Apply stock_filters as vectorbt boolean masks.
+
+    Returns a bool DataFrame (dates x symbols) — True if stock passes ALL pre-filters on that date.
+    """
+    filters = strategy_config.get("stock_filters", [])
+
+    c = indicators.close
+    v = indicators.volume
+
+    symbols = indicators.symbols
+    dates = indicators.dates
+
+    passed = pd.DataFrame(True, index=dates, columns=symbols, dtype=bool)
+
+    for f in filters:
+        f_type = f["type"]
+
+        if f_type == "price":
+            op = f["op"]
+            passed = passed & ~c.isna()
+            if op == "between":
+                passed = passed & (c > f["min"]) & (c < f["max"])
+            elif op == ">":
+                passed = passed & (c > f["value"])
+            elif op == "<":
+                passed = passed & (c < f["value"])
+
+        elif f_type == "volume":
+            passed = passed & ~v.isna() & (v > f["value"])
+
+        elif f_type == "rsi":
+            op = f["op"]
+            rsi_val = indicators.rsi_14
+            passed = passed & ~rsi_val.isna()
+            if op == ">":
+                passed = passed & (rsi_val > f["value"])
+            elif op == "<":
+                passed = passed & (rsi_val < f["value"])
+
+        elif f_type == "moving_average":
+            kind = f["kind"].lower()
+            period = f["period"]
+            target = f["target"].lower()
+            op = f["op"]
+
+            if kind == "hma" or op == "monitor":
+                continue
+
+            if target == "close":
+                if period == 20:
+                    sma = indicators.sma_20
+                elif period == 50:
+                    sma = indicators.sma_50
+                elif period == 150:
+                    sma = indicators.sma_150
+                elif period == 200:
+                    sma = indicators.sma_200
+                else:
+                    import vectorbt as vbt
+
+                    sma = vbt.talib("SMA").run(c, timeperiod=period).real
+                    sma.columns = symbols
+
+                if op == ">":
+                    passed = passed & ~sma.isna() & (c > sma)
+                elif op == "<":
+                    passed = passed & ~sma.isna() & (c < sma)
+
+        elif f_type == "volume_spike_lookup":
+            lookback = f["lookback_days"]
+            multiplier = f["multiplier"]
+            ma_period = f["ma_period"]
+
+            import vectorbt as vbt
+
+            vol_sma = vbt.talib("SMA").run(v, timeperiod=ma_period).real
+            vol_sma.columns = symbols
+
+            spike_any = pd.DataFrame(False, index=dates, columns=symbols, dtype=bool)
+            for i in range(1, lookback + 1):
+                past_vol = v.shift(i)
+                past_sma = vol_sma.shift(i)
+                spike_any = spike_any | (past_vol > past_sma * multiplier)
+
+            passed = passed & spike_any
+            passed = passed & ~v.isna() & ~vol_sma.isna()
+
+        elif f_type == "market_cap":
+            try:
+                from scripts.data_fetcher import get_market_caps
+
+                mc_cache = get_market_caps(symbols)
+                min_cap = f.get("value", 0)
+                mc_mask = pd.DataFrame(False, index=dates, columns=symbols, dtype=bool)
+                for sym in symbols:
+                    cap = mc_cache.get(sym, None)
+                    if cap is not None and cap > min_cap:
+                        mc_mask[sym] = True
+                passed = passed & mc_mask
+            except Exception:
+                pass
+
+    return passed
+
+
 def compute_signal_matrix(
     indicators: ComputedIndicators,
     strategy_config: Dict[str, Any],
@@ -131,16 +240,20 @@ def compute_signal_matrix(
     # --- COMBINED GATES ---
     all_gates = trend_ok & vol_ok & vol_gate_ok & mtf_ok & proximity_ok
 
-    # --- INDICATOR SIGNALS ---
+    # --- INDICATOR SIGNALS (StrategyEvaluator scoring) ---
     signal_count = pd.DataFrame(0, index=dates, columns=symbols, dtype=int)
     signal_hits = pd.DataFrame(0, index=dates, columns=symbols, dtype=int)
+    strategy_count = pd.DataFrame(0, index=dates, columns=symbols, dtype=int)
+    strategy_hits = pd.DataFrame(0, index=dates, columns=symbols, dtype=int)
 
     # MACD
     if strat_cfg.get("MACD_Signal_Crossover", {}).get("enabled", False):
         macd_hit = indicators.macd > indicators.macd_signal
         is_bonus = strat_cfg["MACD_Signal_Crossover"].get("is_bonus", False)
         signal_count += 1
+        strategy_count += 1
         signal_hits += macd_hit.astype(int)
+        strategy_hits += macd_hit.astype(int)
         if not is_bonus:
             all_gates = all_gates & macd_hit
 
@@ -149,7 +262,9 @@ def compute_signal_matrix(
         rsi_hit = indicators.rsi_14 > 50
         is_bonus = strat_cfg["RSI_Overbought_Oversold"].get("is_bonus", False)
         signal_count += 1
+        strategy_count += 1
         signal_hits += rsi_hit.astype(int)
+        strategy_hits += rsi_hit.astype(int)
         if not is_bonus:
             all_gates = all_gates & rsi_hit
 
@@ -158,7 +273,9 @@ def compute_signal_matrix(
         bb_hit = c > indicators.bb_middle
         is_bonus = strat_cfg["Bollinger_Band_Squeeze"].get("is_bonus", False)
         signal_count += 1
+        strategy_count += 1
         signal_hits += bb_hit.astype(int)
+        strategy_hits += bb_hit.astype(int)
         if not is_bonus:
             all_gates = all_gates & bb_hit
 
@@ -167,9 +284,80 @@ def compute_signal_matrix(
         adx_hit = indicators.adx > strat_cfg["ADX_Trend_Strength"]["threshold"]
         is_bonus = strat_cfg["ADX_Trend_Strength"].get("is_bonus", False)
         signal_count += 1
+        strategy_count += 1
         signal_hits += adx_hit.astype(int)
+        strategy_hits += adx_hit.astype(int)
         if not is_bonus:
             all_gates = all_gates & adx_hit
+
+    # On Balance Volume (OBV) — mirrors strategies/on_balance_volume.py
+    # Scoring-only signal (StrategyEvaluator), NOT a hard gate
+    if strat_cfg.get("On_Balance_Volume", {}).get("enabled", False):
+        obv_lookback = strat_cfg["On_Balance_Volume"].get("lookback_period", 3)
+        obv = indicators.obv
+        obv_trend = obv - obv.shift(obv_lookback)
+        price_trend = c - c.shift(obv_lookback)
+        obv_hit = (obv_trend > 0) & (price_trend > 0)
+        obv_hit = obv_hit | ((obv_trend > 0) & (price_trend <= 0))
+        signal_count += 1
+        strategy_count += 1
+        signal_hits += obv_hit.astype(int)
+        strategy_hits += obv_hit.astype(int)
+
+    # Pocket Pivot Entry — mirrors strategies/pocket_pivot_entry.py
+    # Scoring-only signal (StrategyEvaluator), NOT a hard gate
+    if strat_cfg.get("Pocket_Pivot_Entry", {}).get("enabled", False):
+        pp_lookback = strat_cfg["Pocket_Pivot_Entry"].get("lookback", 10)
+        pp_sma_fast = strat_cfg["Pocket_Pivot_Entry"].get("sma_fast", 10)
+        pp_sma_slow = strat_cfg["Pocket_Pivot_Entry"].get("sma_slow", 50)
+
+        if pp_sma_fast == 20:
+            sma_fast = indicators.sma_20
+        elif pp_sma_fast == 50:
+            sma_fast = indicators.sma_50
+        else:
+            import vectorbt as vbt
+
+            sma_fast = vbt.talib("SMA").run(c, timeperiod=pp_sma_fast).real
+            sma_fast.columns = symbols
+
+        if pp_sma_slow == 50:
+            sma_slow = indicators.sma_50
+        elif pp_sma_slow == 150:
+            sma_slow = indicators.sma_150
+        else:
+            import vectorbt as vbt
+
+            sma_slow = vbt.talib("SMA").run(c, timeperiod=pp_sma_slow).real
+            sma_slow.columns = symbols
+
+        above_mas = (c > sma_fast) & (c > sma_slow)
+
+        down_day = c < c.shift(1)
+        down_vol = v.where(down_day, 0)
+        max_down_vol = down_vol.rolling(pp_lookback, min_periods=1).max().shift(1)
+        pp_hit = above_mas & (v > max_down_vol)
+
+        signal_count += 1
+        strategy_count += 1
+        signal_hits += pp_hit.astype(int)
+        strategy_hits += pp_hit.astype(int)
+
+    # Volume Breakout — mirrors strategies/volume_breakout.py
+    # Scoring-only signal (StrategyEvaluator), NOT a hard gate
+    if strat_cfg.get("Volume_Breakout", {}).get("enabled", False):
+        vb_threshold = strat_cfg["Volume_Breakout"].get("threshold", 2.0)
+        vol_ma20 = v.rolling(20, min_periods=10).mean()
+        resistance_20 = h.rolling(20, min_periods=10).max().shift(1)
+        daily_range = h - low
+        close_position = (c - low) / daily_range.replace(0, pd.NA)
+        volume_spike = v >= (vol_ma20 * vb_threshold)
+        vb_hit = (c > resistance_20) & (close_position >= 0.75) & volume_spike
+
+        signal_count += 1
+        strategy_count += 1
+        signal_hits += vb_hit.astype(int)
+        strategy_hits += vb_hit.astype(int)
 
     # --- ENTRY PATTERNS ---
     for pat in entry_patterns:
@@ -252,9 +440,10 @@ def compute_signal_matrix(
         signal_hits = signal_hits.where(rsi_ok, 0)
 
     # --- TECHNICAL SCORE ---
-    # Avoid division by zero
-    total_signals = signal_count.replace(0, 1)
-    technical_score = signal_hits / total_signals
+    # Use strategy-only scoring to match live StrategyEvaluator (pos/total_strategies)
+    # Entry patterns contribute to signal_hits (informational) but NOT to the BUY score
+    total_strats = strategy_count.replace(0, 1)
+    technical_score = strategy_hits / total_strats
 
     # --- BUY RECOMMENDATION ---
     tech_min = thresholds.get("technical_minimum", 0.35)

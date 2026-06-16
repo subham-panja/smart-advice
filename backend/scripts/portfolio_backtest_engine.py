@@ -162,6 +162,11 @@ class PortfolioBacktestSession:
         # Pre-computed indicator store (optional, for vectorbt acceleration)
         self._indicator_store: Any = None
 
+        # Per-date stock prefilter (optional)
+        # Boolean DataFrame (dates x symbols) — only stocks passing this on a
+        # given date are considered for entry signals.
+        self._stock_prefilter: Any = None
+
     def set_indicator_store(self, store: Any) -> None:
         """Set a pre-computed indicator store for accelerated signal generation."""
         self._indicator_store = store
@@ -747,6 +752,13 @@ class PortfolioBacktestSession:
                 continue
             if date not in df.index:
                 continue
+
+            if self._stock_prefilter is not None:
+                pf = self._stock_prefilter
+                if date not in pf.index or symbol not in pf.columns:
+                    continue
+                if not pf.loc[date, symbol]:
+                    continue
 
             # Truncate data up to current date (no look-ahead)
             hist = df.loc[:date]

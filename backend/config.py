@@ -43,12 +43,10 @@ USE_MULTIPROCESSING_PIPELINE = True  # Re-enabled for high-volume EP scans
 NUM_WORKER_PROCESSES = 8  # Using 8 cores for parallel analysis
 
 # External Integrations
-USE_CHARTINK = True  # Use Chartink for rapid stock screening
-USE_SCREENER = False  # Fallback screener integration
+USE_SCREENER = True  # Use screener API for rapid stock screening
 
 MONGODB_COLLECTIONS = {
     "recommended_shares": "recommended_shares",
-    "backtest_results": "backtest_results",
     "trade_signals": "trade_signals",
     "scan_runs": "scan_runs",
     "analysis_snapshots": "analysis_snapshots",

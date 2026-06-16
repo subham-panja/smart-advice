@@ -261,9 +261,28 @@ def run_historical_test(
     print("Running simulation: %s -> %s (%d months)" % (sim_start.date(), sim_end.date(), months))
     print("")
 
+    # Pre-compute indicators and per-day stock prefilter
+    try:
+        from scripts.vectorbt_indicator_batch import IndicatorStore, compute_all_indicators
+
+        indicators = compute_all_indicators(symbols_data, strategy)
+        store = IndicatorStore(indicators)
+
+        from scripts.vectorbt_signal_generator import compute_stock_prefilter
+
+        prefilter = compute_stock_prefilter(indicators, strategy)
+    except Exception as e:
+        print("  WARNING: Indicator pre-computation failed (%s), falling back to TA-Lib" % e)
+        store = None
+        prefilter = None
+
     engine = PortfolioBacktestSession(strategy_config=strategy)
     if index_data is not None:
         engine._index_data_override = index_data
+    if store is not None:
+        engine.set_indicator_store(store)
+    if prefilter is not None:
+        engine._stock_prefilter = prefilter
 
     results = engine.run(symbols_data, sim_start_date=sim_start, sim_end_date=sim_end)
 

@@ -160,7 +160,7 @@ class ExecutionEngine:
 
                     entry_date_obj = trading_now(timezone.utc).replace(tzinfo=None).date()
                     fetch_period = "60d" if is_replay() else "5d"
-                    hist = get_historical_data(symbol, period=fetch_period, fresh=True)
+                    hist = get_historical_data(symbol, period=fetch_period)
                     if hist is not None and not hist.empty:
                         if is_replay():
                             hist = hist[hist.index.date <= entry_date_obj]

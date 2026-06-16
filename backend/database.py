@@ -210,15 +210,6 @@ def close_position(symbol: str, exit_price: float, reason: str):
     )
 
 
-def insert_backtest_result(doc: dict):
-    db = _get_db_internal()
-    now = trading_now(timezone.utc).replace(tzinfo=None)
-    doc["created_at"] = now
-    doc["updated_at"] = now
-    col_name = config.MONGODB_COLLECTIONS["backtest_results"]
-    return db[col_name].insert_one(doc)
-
-
 def init_app(app):
     """Placeholder for Flask app initialization."""
     pass
@@ -234,17 +225,6 @@ def screen_stocks(filters=None):
 def get_recommended_shares_with_analytics():
     col_name = config.MONGODB_COLLECTIONS["recommended_shares"]
     return list(_get_db_internal()[col_name].find().sort("created_at", -1))
-
-
-def get_backtest_results(symbol=None, period=None):
-    db = _get_db_internal()
-    q = {}
-    if symbol:
-        q["symbol"] = symbol
-    if period:
-        q["period"] = period
-    col_name = config.MONGODB_COLLECTIONS["backtest_results"]
-    return list(db[col_name].find(q).sort("created_at", -1))
 
 
 def query_mongodb(collection_name, query_filter=None, projection=None, sort=None, limit=None, one=False):
@@ -375,13 +355,3 @@ def get_portfolio_backtest_snapshots(session_id: str):
 
 
 # ---------------------------------------------------------------------------
-# Backtest Results with Session Link
-# ---------------------------------------------------------------------------
-
-
-def get_backtest_results_by_session(session_id: str):
-    db = _get_db_internal()
-    from bson.objectid import ObjectId
-
-    col_name = config.MONGODB_COLLECTIONS["backtest_results"]
-    return list(db[col_name].find({"session_id": ObjectId(session_id)}).sort("cagr", -1))

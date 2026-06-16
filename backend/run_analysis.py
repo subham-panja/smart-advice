@@ -21,12 +21,11 @@ logger = None
 class AutomatedStockAnalysis:
     """Orchestrates the two-phase stock analysis pipeline."""
 
-    def __init__(self, verbose=False, fresh=False):
+    def __init__(self, verbose=False):
         global logger
         logger = setup_logging(verbose=verbose)
         self.persistence = PersistenceHandler()
         self.verbose = verbose
-        self.fresh = fresh
         self.start_time = datetime.now()
         self.scanned_symbols_count = 0
 
@@ -50,7 +49,7 @@ class AutomatedStockAnalysis:
         thresholds = strategy_config.get("recommendation_thresholds", {})
         backtest_period = thresholds.get("backtest_period", config.DATA_CACHE_CONFIG["periods"].get("backtest", "2y"))
 
-        symbols = StockScanner.get_symbols(strategy_config=strategy_config)
+        symbols = StockScanner.get_symbols(strategy_config=strategy_config, use_all_symbols=use_all_symbols)
         symbols_list = list(symbols.keys())
         self.scanned_symbols_count = len(symbols_list)
 
@@ -63,7 +62,7 @@ class AutomatedStockAnalysis:
 
         fetched = {}
         with ThreadPoolExecutor(max_workers=config.DATA_FETCH_THREADS) as ex:
-            f_map = {ex.submit(get_historical_data, s, backtest_period, fresh=self.fresh): s for s in symbols_list}
+            f_map = {ex.submit(get_historical_data, s, backtest_period): s for s in symbols_list}
             for f in as_completed(f_map):
                 s = f_map[f]
                 try:
@@ -124,7 +123,6 @@ class AutomatedStockAnalysis:
                 for i, res in enumerate(pool.imap_unordered(analyze_stock_worker, items)):
                     if res["success"]:
                         self.persistence.save_recommendation(res["result"])
-                        self.persistence.save_backtest_results(res["result"])
                         results.append(res["result"])
 
                     if not self.verbose:
@@ -159,7 +157,7 @@ class AutomatedStockAnalysis:
         )
 
 
-def _run_portfolio_backtest_if_enabled(strategy_config: dict, max_stocks: int = 50):
+def _run_portfolio_backtest_if_enabled(strategy_config: dict):
     """Run portfolio backtest if the strategy has backtesting enabled."""
     bt_cfg = config.PORTFOLIO_BACKTEST_CONFIG
     if not bt_cfg.get("enabled"):
@@ -178,7 +176,6 @@ def _run_portfolio_backtest_if_enabled(strategy_config: dict, max_stocks: int = 
         )
         results = run_portfolio_backtest(
             strategy_name=strat_name,
-            max_stocks=max_stocks,
             period=period,
             save_to_db=True,
             verbose=False,
@@ -198,7 +195,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run stock analysis pipeline")
     parser.add_argument("--strategy", type=str, default=None, help="Run one specific strategy")
     parser.add_argument("--all", action="store_true", help="Run all enabled strategies")
-    parser.add_argument("--max-stocks", type=int, default=50, help="Max stocks per strategy")
     args = parser.parse_args()
 
     from utils.strategy_loader import StrategyLoader
@@ -221,4 +217,4 @@ if __name__ == "__main__":
 
         analyzer = AutomatedStockAnalysis(verbose=True)
         analyzer.run(strategy_config=strategy)
-        _run_portfolio_backtest_if_enabled(strategy, max_stocks=args.max_stocks)
+        _run_portfolio_backtest_if_enabled(strategy)

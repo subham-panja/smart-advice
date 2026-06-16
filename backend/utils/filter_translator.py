@@ -5,11 +5,11 @@ logger = logging.getLogger(__name__)
 
 
 class FilterTranslator:
-    """Translates generic stock_filters into Chartink scan clauses and local evaluators."""
+    """Translates generic stock_filters into screener scan clauses and local evaluators."""
 
     @staticmethod
-    def translate_to_chartink(filters: List[Dict[str, Any]]) -> str:
-        """Converts a list of stock_filters into a Chartink query string."""
+    def translate_to_scan_clause(filters: List[Dict[str, Any]]) -> str:
+        """Converts a list of stock_filters into a screener query string."""
         clauses = []
 
         for f in filters:
@@ -41,13 +41,13 @@ class FilterTranslator:
                 target = f["target"].lower()
                 op = f["op"]
 
-                # Skip HMA (Hull Moving Average) - Chartink doesn't support it
+                # Skip HMA (Hull Moving Average) - screener doesn't support it
                 # These are local evaluation filters only
                 if kind == "hma":
-                    logger.debug(f"Skipping HMA filter (op={op}) - not supported by Chartink, evaluated locally")
+                    logger.debug(f"Skipping HMA filter (op={op}) - not supported by screener, evaluated locally")
                     continue
 
-                # Skip 'monitor' op - this is a local monitoring filter, not a Chartink scan filter
+                # Skip 'monitor' op - this is a local monitoring filter, not a screener scan filter
                 if op == "monitor":
                     logger.debug("Skipping moving_average monitor filter - evaluated locally in swing signals")
                     continue
@@ -69,7 +69,7 @@ class FilterTranslator:
         if not clauses:
             # All filters were local-only (HMA, monitor, etc.)
             # Return a minimal valid query that passes all cash stocks
-            logger.warning("No Chartink-compatible filters found. Using minimal scan clause.")
+            logger.warning("No screener-compatible filters found. Using minimal scan clause.")
             return "( {cash} ( latest close > 0 ) )"
 
         return f"( {{cash}} ( {' and '.join(clauses)} ) )"

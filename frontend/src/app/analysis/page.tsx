@@ -83,7 +83,7 @@ export default function TradingCyclePage() {
               <ArrowTrendingUpIcon className="h-5 w-5 text-green-200" />
               <span className="text-sm font-medium text-green-100">Phase 2: Analyze</span>
             </div>
-            <p className="text-xs text-green-200 mt-1">Scan 200+ stocks via Chartink</p>
+            <p className="text-xs text-green-200 mt-1">Scan 200+ stocks via screener</p>
           </div>
           <div className="bg-white/10 rounded-lg p-4">
             <div className="flex items-center space-x-2">

@@ -112,12 +112,12 @@ def run_trading_cycle():
         exit_engine = ExecutionEngine(strategy_config=strategy)
         exit_engine.manage_exits()
 
-        # Phase 2: Analysis
+        # Phase 2: Analysis (use all NSE symbols in replay mode for per-date local filtering)
         print(f"Phase 2: Running analysis for {strat_name}...")
         logger.info(f"Phase 2: Running analysis for {strat_name}...")
         try:
             analyzer = AutomatedStockAnalysis(verbose=True)
-            analyzer.run(strategy_config=strategy)
+            analyzer.run(strategy_config=strategy, use_all_symbols=is_replay())
             if not analyzer.scanned_symbols_count:
                 logger.warning("Analysis scan produced 0 candidates for %s" % strat_name)
                 analysis_failed = True
@@ -242,7 +242,7 @@ def run_trading_cycle():
     if not analysis_failed:
         _build_and_send_telegram_summary(final_positions, total_executed, initial_cap, is_paper)
     else:
-        _send_telegram("⚠️ <b>Trading Cycle — Scan Failed</b>\nChartink API was unreachable.")
+        _send_telegram("⚠️ <b>Trading Cycle — Scan Failed</b>\nScreener API was unreachable.")
 
     print(f"\n{'=' * 50}")
     print(

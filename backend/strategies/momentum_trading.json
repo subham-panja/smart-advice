@@ -9,7 +9,6 @@
     "sentiment_analysis": false,
     "sector_analysis": true,
     "market_regime_detection": true,
-    "backtesting": true,
     "risk_management": true,
     "options_oi": true
   },

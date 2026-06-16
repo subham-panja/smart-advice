@@ -9,8 +9,6 @@
     "sentiment_analysis": false,
     "sector_analysis": true,
     "market_regime_detection": false,
-    "backtesting": false,
-    "individual_stock_backtest": false,
     "risk_management": true,
     "options_oi": true
   },

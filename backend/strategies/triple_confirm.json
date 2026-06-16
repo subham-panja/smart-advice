@@ -7,7 +7,6 @@
     "sentiment_analysis": false,
     "sector_analysis": true,
     "market_regime_detection": true,
-    "individual_stock_backtest": false,
     "options_oi": false
   },
   "analysis_weights": {

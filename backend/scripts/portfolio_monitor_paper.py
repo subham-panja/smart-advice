@@ -58,7 +58,7 @@ class PortfolioMonitor:
                 trading_cfg.get("time_stop_days", self.default_time_stop_days),
             )
             # 1. Fetch latest data (Live Price Sync)
-            data = get_historical_data(symbol, period="1mo", fresh=True)
+            data = get_historical_data(symbol, period="1mo")
             if data.empty:
                 raise ValueError(f"Could not fetch data for {symbol}")
 

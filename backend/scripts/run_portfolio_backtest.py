@@ -3,17 +3,18 @@
 Portfolio Backtest Runner
 =========================
 
-CLI script to run a portfolio-level backtest across multiple stocks.
+CLI script to run a portfolio-level backtest across all NSE stocks.
 
 Usage:
     cd backend
-    python scripts/run_portfolio_backtest.py --strategy Swing_Trading --max-stocks 50
-    python scripts/run_portfolio_backtest.py --strategy Swing_Trading --symbols RELIANCE,INFY,TCS
-    python scripts/run_portfolio_backtest.py --strategy Swing_Trading --walk-forward --mc-iterations 10
+    python scripts/run_portfolio_backtest.py --strategy Swing_Trading
     python scripts/run_portfolio_backtest.py --strategy Swing_Trading --period 10y --track-filters
+    python scripts/run_portfolio_backtest.py --strategy Swing_Trading --walk-forward --mc-iterations 10
 
 The backtest uses a shared capital pool and parquet-cached historical data
 and compounds returns across all stocks simultaneously.
+Per-date stock filtering ensures only stocks that would have passed
+the screener on each historical date are considered for entry.
 """
 
 import argparse
@@ -24,7 +25,7 @@ import re
 import sys
 from collections import defaultdict
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 
 import pandas as pd
 
@@ -35,7 +36,6 @@ from scripts.portfolio_backtest_engine import PortfolioBacktestSession
 from utils.data_cache import fetch_multiple_symbols_cached
 from utils.logger import setup_logging
 from utils.persistence_handler import PersistenceHandler
-from utils.stock_scanner import StockScanner
 from utils.strategy_loader import StrategyLoader
 
 logger = logging.getLogger(__name__)
@@ -327,6 +327,7 @@ def _walk_forward_mc_worker_sequential(
     sim_start_date,
     sim_end_date,
     indicator_store=None,
+    stock_prefilter=None,
 ):
     """Sequential worker using IndicatorStore for O(1) indicator lookups.
 
@@ -339,6 +340,9 @@ def _walk_forward_mc_worker_sequential(
 
     if indicator_store is not None:
         engine.set_indicator_store(indicator_store)
+
+    if stock_prefilter is not None:
+        engine._stock_prefilter = stock_prefilter
 
     try:
         result = engine.run(sampled_data, sim_start_date=sim_start_date, sim_end_date=sim_end_date)
@@ -372,8 +376,6 @@ def _walk_forward_mc_worker_sequential(
 
 def run_portfolio_backtest(
     strategy_name: str,
-    max_stocks: int = 50,
-    symbol_list: List[str] = None,
     period: str = "5y",
     save_to_db: bool = True,
     verbose: bool = False,
@@ -391,14 +393,12 @@ def run_portfolio_backtest(
     strategy = StrategyLoader.get_strategy_by_name(strategy_name)
     logger.info(f"Strategy: {strategy['name']}")
 
-    # 2. Get Symbols
-    if symbol_list:
-        symbols = {s: s for s in symbol_list}
-        logger.info(f"Using {len(symbols)} provided symbols")
-    else:
-        symbols = StockScanner.get_symbols(strategy_config=strategy)
-        symbols = dict(list(symbols.items())[:max_stocks])
-        logger.info(f"Scanner returned {len(symbols)} symbols (limited to {max_stocks})")
+    # 2. Get Symbols — load ALL NSE symbols (realistic universe, no artificial cap)
+    from scripts.data_fetcher import get_all_nse_symbols
+
+    all_nse = get_all_nse_symbols()
+    symbols = {s: s for s in all_nse} if isinstance(all_nse, list) else dict(all_nse)
+    logger.info(f"Using full NSE universe: {len(symbols)} symbols")
 
     if not symbols:
         raise RuntimeError("No symbols to backtest")
@@ -429,6 +429,18 @@ def run_portfolio_backtest(
     except Exception as e:
         logger.warning(f"  Indicator pre-computation failed ({e}), falling back to TA-Lib")
         store = None
+        indicators = None
+
+    prefilter_matrix = None
+    if indicators is not None:
+        try:
+            from scripts.vectorbt_signal_generator import compute_stock_prefilter
+
+            prefilter_matrix = compute_stock_prefilter(indicators, strategy)
+            n_pass = int(prefilter_matrix.iloc[-1].sum()) if len(prefilter_matrix) > 0 else 0
+            logger.info(f"  Stock prefilter computed: {n_pass} stocks pass on latest date")
+        except Exception as e:
+            logger.warning(f"  Stock prefilter computation failed ({e}), skipping per-date filtering")
 
     if save_to_db and persistence:
         capital_cfg = config.PORTFOLIO_BACKTEST_CONFIG
@@ -446,10 +458,12 @@ def run_portfolio_backtest(
     engine.session_id = session_id
     if store is not None:
         engine.set_indicator_store(store)
+    if prefilter_matrix is not None:
+        engine._stock_prefilter = prefilter_matrix
 
     if track_filters:
         tracker = FilterTracker()
-        tracker.scanner_total = len(symbols) if not symbol_list else len(symbol_list)
+        tracker.scanner_total = len(symbols)
         tracker.data_valid = len(symbols_data)
         tracker.data_rejected = tracker.scanner_total - tracker.data_valid
         sim_start = None
@@ -556,11 +570,11 @@ def run_portfolio_backtest(
 def run_walk_forward_backtest(
     strategy_name: str,
     period: str = "5y",
-    max_stocks: int = 200,
     mc_iterations: int = 10,
     verbose: bool = False,
     save_to_db: bool = True,
     symbols: dict = None,
+    symbols_data: dict = None,
 ) -> Dict:
     """Run walk-forward backtesting with Monte Carlo sampling."""
 
@@ -572,14 +586,19 @@ def run_walk_forward_backtest(
     if not strategy:
         raise RuntimeError(f"Strategy {strategy_name} not found")
 
-    if symbols is None:
-        scanner = StockScanner()
-        symbols = scanner.get_symbols(strategy_config=strategy)
-    symbols_list = list(symbols.keys())[:max_stocks]
-    logger.info(f"Using {len(symbols_list)} symbols for universe")
+    if symbols_data is None:
+        if symbols is None:
+            from scripts.data_fetcher import get_all_nse_symbols
 
-    logger.info(f"Fetching {period} historical data for {len(symbols_list)} symbols...")
-    symbols_data = fetch_symbols_data(symbols, period=period, verbose=verbose)
+            all_nse = get_all_nse_symbols()
+            symbols = {s: s for s in all_nse} if isinstance(all_nse, list) else dict(all_nse)
+        symbols_list = list(symbols.keys())
+        logger.info(f"Using full NSE universe: {len(symbols_list)} symbols")
+
+        logger.info(f"Fetching {period} historical data for {len(symbols_list)} symbols...")
+        symbols_data = fetch_symbols_data(symbols, period=period, verbose=verbose)
+    else:
+        logger.info(f"Using pre-fetched data for {len(symbols_data)} symbols")
 
     all_dates = set()
     for df in symbols_data.values():
@@ -625,6 +644,7 @@ def run_walk_forward_backtest(
 
     # Pre-compute indicators ONCE for the full dataset (shared across all windows)
     full_indicator_store = None
+    full_prefilter = None
     try:
         from scripts.vectorbt_indicator_batch import IndicatorStore, compute_all_indicators
 
@@ -632,6 +652,11 @@ def run_walk_forward_backtest(
         full_indicators = compute_all_indicators(symbols_data, strategy)
         full_indicator_store = IndicatorStore(full_indicators)
         logger.info("  Full indicators computed in one vectorized pass")
+
+        from scripts.vectorbt_signal_generator import compute_stock_prefilter
+
+        full_prefilter = compute_stock_prefilter(full_indicators, strategy)
+        logger.info("  Stock prefilter computed for walk-forward")
     except Exception as e:
         logger.warning(f"  Full indicator pre-computation failed: {e}")
 
@@ -668,6 +693,7 @@ def run_walk_forward_backtest(
                 window_start,
                 window_end,
                 full_indicator_store,
+                full_prefilter,
             )
 
             completed_count += 1
@@ -823,8 +849,6 @@ def main():
         description="Portfolio Backtest CLI — run any strategy with optional walk-forward MC"
     )
     parser.add_argument("--strategy", type=str, required=True, help="Strategy name (from strategies/*.json)")
-    parser.add_argument("--max-stocks", type=int, default=50, help="Max stocks to include")
-    parser.add_argument("--symbols", type=str, default=None, help="Comma-separated symbols (overrides scanner)")
     parser.add_argument("--period", type=str, default="5y", help="Historical data period (e.g., 5y, 10y)")
     parser.add_argument("--no-db", action="store_true", help="Skip saving to database")
     parser.add_argument("--verbose", action="store_true", help="Verbose logging")
@@ -833,13 +857,10 @@ def main():
 
     args = parser.parse_args()
 
-    symbol_list = args.symbols.split(",") if args.symbols else None
-
     if args.walk_forward:
         run_walk_forward_backtest(
             strategy_name=args.strategy,
             period=args.period,
-            max_stocks=args.max_stocks,
             mc_iterations=args.mc_iterations,
             verbose=args.verbose,
             save_to_db=not args.no_db,
@@ -847,8 +868,6 @@ def main():
     else:
         run_portfolio_backtest(
             strategy_name=args.strategy,
-            max_stocks=args.max_stocks,
-            symbol_list=symbol_list,
             period=args.period,
             save_to_db=not args.no_db,
             verbose=args.verbose,

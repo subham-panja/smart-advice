@@ -4,7 +4,6 @@ from typing import Any, Dict
 
 import pandas as pd
 
-from scripts.backtest_utils import BacktestUtils
 from scripts.data_fetcher import get_all_nse_symbols
 from scripts.fundamental_analysis import FundamentalAnalysis
 from scripts.risk_management import RiskManager
@@ -37,7 +36,6 @@ class StockAnalyzer:
         self.risk_manager = RiskManager(account_balance=account_balance)
         self.trade_logic = TradeLogic()
         self.swing_analyzer = SwingTradingSignalAnalyzer()
-        self.backtest_utils = BacktestUtils()
 
     def analyze_stock_with_data(
         self, symbol: str, name: str, hist: pd.DataFrame, app_config: Dict[str, Any], index_data: pd.DataFrame = None
@@ -150,14 +148,7 @@ class StockAnalyzer:
             res = self._combine(res, app_config)
             res["trade_plan"] = self.trade_logic.analyze(symbol, hist, app_config=app_config)
 
-            # Individual stock backtesting (optional - can be disabled for faster analysis)
-            if app_config["analysis_config"].get("individual_stock_backtest", True):
-                res["backtest"] = self.backtest_utils.perform_backtesting(symbol, hist, app_config=app_config)
-            else:
-                res["backtest"] = {"status": "skipped", "combined_metrics": {"avg_cagr": 0.0, "avg_win_rate": 0.0}}
-
             if res["is_recommended"]:
-                res = self._combine(res, app_config, consider_bt=True)
                 res["risk_management"] = self.risk_manager.calculate_risk_params(
                     hist, hist["Close"].iloc[-1], app_config=app_config
                 )
@@ -168,7 +159,7 @@ class StockAnalyzer:
             logger.error(f"Analysis error for {symbol}: {e}")
             raise e
 
-    def _combine(self, res: Dict[str, Any], app_config: Dict[str, Any], consider_bt: bool = False) -> Dict[str, Any]:
+    def _combine(self, res: Dict[str, Any], app_config: Dict[str, Any]) -> Dict[str, Any]:
         weights = app_config["analysis_weights"]
         t_w = weights["technical"]
         f_w = weights["fundamental"]
@@ -224,34 +215,8 @@ class StockAnalyzer:
         else:
             audit_log["steps"].append({"step": "Fund Floor", "status": "PASS"})
 
-        # Backtest Check
-        bt_ok = True
-        if consider_bt:
-            # Note: backtest_utils must be updated if it uses defaults
-            bt_result = res.get("backtest", {})
-            m = bt_result.get("combined_metrics")
-            if m is None:
-                bt_ok = False
-                audit_log["steps"].append(
-                    {
-                        "step": "Backtest CAGR",
-                        "status": "FAIL",
-                        "reason": "Backtest skipped (insufficient data)",
-                    }
-                )
-            else:
-                # Check for min_backtest_return in threshold, if missing it will crash as requested
-                bt_ok = m["avg_cagr"] >= rec_thresholds["min_backtest_return"]
-                audit_log["steps"].append(
-                    {
-                        "step": "Backtest CAGR",
-                        "status": "PASS" if bt_ok else "FAIL",
-                        "reason": f"CAGR {m['avg_cagr']:.2f}% (Req: {rec_thresholds['min_backtest_return']}%)",
-                    }
-                )
-
         buy_t = rec_thresholds["buy_combined"]
-        res["is_recommended"] = bool(score >= buy_t and bt_ok and passed_floors)
+        res["is_recommended"] = bool(score >= buy_t and passed_floors)
         audit_log["steps"].append(
             {
                 "step": "Final Combined Score",
@@ -263,7 +228,7 @@ class StockAnalyzer:
         res["recommendation_strength"] = "BUY" if res["is_recommended"] else "HOLD"
 
         logger.warning(
-            f"[{res['symbol']}] Result: {res['recommendation_strength']} | Score: {score:.2f} (Target: {buy_t}) | Tech: {res['technical_score']:.2f} | Fund: {res['fundamental_score']:.2f} | BT: {'Pass' if bt_ok else 'Fail'}"
+            f"[{res['symbol']}] Result: {res['recommendation_strength']} | Score: {score:.2f} (Target: {buy_t}) | Tech: {res['technical_score']:.2f} | Fund: {res['fundamental_score']:.2f}"
         )
         return res
 
