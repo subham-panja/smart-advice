@@ -2,19 +2,22 @@
 Data Cache Manager
 ==================
 
-Handles caching of historical OHLCV data in parquet format with incremental/delta fetching.
-Historical data never changes, so the cache never expires. When a longer period is requested,
-only the missing data (delta) is fetched and merged with the existing cache.
+Handles caching of historical OHLCV data in parquet format.
+Each symbol's cache file is date-stamped (e.g. RELIANCE_2026-06-16.parquet).
+If today's file exists, data is returned from cache with no API call.
+Otherwise, fresh data is fetched and saved with today's date.
 
 Cache location: backend/data/historical/
-Cache format: {symbol}.parquet (one file per symbol, grows over time)
+Cache format: {symbol}_{YYYY-MM-DD}.parquet
 """
 
 import logging
 import os
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Dict, List
+from datetime import date
+from typing import Dict, List, Optional
 
 import pandas as pd
 import yfinance as yf
@@ -23,46 +26,47 @@ import config
 
 logger = logging.getLogger(__name__)
 
-# Cache directory from config
 CACHE_DIR = config.DATA_CACHE_CONFIG.get("cache_dir", os.path.join(config.BACKEND_DIR, "data", "historical"))
 os.makedirs(CACHE_DIR, exist_ok=True)
 
 CACHE_ENABLED = config.DATA_CACHE_CONFIG.get("enabled", True)
 
+_PERIOD_APPROX_ROWS = {
+    "1d": 1,
+    "5d": 5,
+    "1mo": 22,
+    "3mo": 65,
+    "6mo": 130,
+    "1y": 252,
+    "2y": 504,
+    "5y": 1260,
+    "10y": 2520,
+    "max": 5000,
+}
+
+
+def _min_rows_for_period(period: str) -> int:
+    """Return minimum trading-day rows expected for a yfinance period string.
+
+    Handles standard periods (1y, 2y, 5y, etc.) and day-based strings (60d, 30d).
+    Applies 85% tolerance for holidays, IPOs, and market closures.
+    """
+    if period in _PERIOD_APPROX_ROWS:
+        return int(_PERIOD_APPROX_ROWS[period] * 0.85)
+    # Handle yfinance-style day/week/month strings like "60d", "2wk", "3mo"
+    import re as _re
+
+    m = _re.match(r"^(\d+)([dwmo])$", period)
+    if m:
+        n, unit = int(m.group(1)), m.group(2)
+        day_map = {"d": 1, "w": 5, "m": 22, "o": 22}  # approximate trading days
+        return int(n * day_map.get(unit, 1) * 0.7)
+    return 0  # unknown period → accept any cached data
+
 
 def _cache_path(symbol: str) -> str:
-    """Generate cache file path for a symbol (one file per symbol, no period in key)."""
-    return os.path.join(CACHE_DIR, f"{symbol}.parquet")
-
-
-def _period_to_start_date(period: str, reference_date: pd.Timestamp = None) -> pd.Timestamp:
-    """Convert a yfinance period string to a start date."""
-    if reference_date is None:
-        reference_date = pd.Timestamp.now(tz="Asia/Kolkata")
-
-    if period == "max" or period == "ytd":
-        return pd.Timestamp("1990-01-01", tz="Asia/Kolkata")
-
-    period_map = {
-        "1d": pd.Timedelta(days=1),
-        "5d": pd.Timedelta(days=5),
-        "1mo": pd.DateOffset(months=1),
-        "3mo": pd.DateOffset(months=3),
-        "6mo": pd.DateOffset(months=6),
-        "1y": pd.DateOffset(years=1),
-        "2y": pd.DateOffset(years=2),
-        "3y": pd.DateOffset(years=3),
-        "4y": pd.DateOffset(years=4),
-        "5y": pd.DateOffset(years=5),
-        "10y": pd.DateOffset(years=10),
-        "20y": pd.DateOffset(years=20),
-    }
-
-    offset = period_map.get(period.lower())
-    if offset is None:
-        raise ValueError(f"Unknown period: {period}")
-
-    return reference_date - offset
+    today = date.today().isoformat()
+    return os.path.join(CACHE_DIR, f"{symbol}_{today}.parquet")
 
 
 def _fetch_with_retry(
@@ -99,92 +103,63 @@ def fetch_historical_data_cached(
     period: str = "2y",
     interval: str = "1d",
     force_refresh: bool = False,
+    min_rows: Optional[int] = None,
 ) -> pd.DataFrame:
-    """Fetch historical OHLCV data with incremental caching.
+    """Fetch historical OHLCV data with date-stamped caching.
 
-    If cache exists and covers the requested period, returns cached data (no API call).
-    If cache exists but doesn't cover the full period, fetches only the delta and merges.
-    If no cache exists, fetches the full period and caches it.
+    One parquet file per symbol per day ({symbol}_{YYYY-MM-DD}.parquet).
+    The cache always stores the LONGEST dataset fetched so far today.
+    Shorter-period requests return a slice from cache (no API call).
+    Longer-period requests trigger a re-fetch and overwrite with more data.
     """
     cache_path = _cache_path(symbol)
     yf_sym = f"{symbol}.NS" if not symbol.startswith("^") else symbol
+    needed = min_rows if min_rows else _min_rows_for_period(period)
 
-    requested_start = _period_to_start_date(period)
-
-    # Load existing cache if available
-    cached_df = None
     if not force_refresh and os.path.exists(cache_path):
         try:
-            cached_df = pd.read_parquet(cache_path)
-            if cached_df.empty:
-                cached_df = None
+            df = pd.read_parquet(cache_path)
+            if not df.empty:
+                if len(df) >= needed:
+                    logger.debug(f"Cache hit for {symbol}: {len(df)} rows >= {needed} needed for {period}")
+                    return df
+                else:
+                    logger.info(
+                        f"Cache for {symbol} has {len(df)} rows, need {needed} for {period}. Re-fetching longer period."
+                    )
         except Exception as e:
             logger.warning(f"Cache read error for {symbol}: {e}. Fetching fresh.")
-            cached_df = None
 
-    # Determine if we need to fetch more data
-    if cached_df is not None:
-        cached_oldest = cached_df.index[0]
+    logger.info(f"Fetching {symbol} ({period})...")
+    time.sleep(config.REQUEST_DELAY)
 
-        if cached_oldest <= requested_start:
-            # Cache fully covers requested range — just trim and return
-            logger.debug(f"Cache covers full range for {symbol} ({period})")
-            df = cached_df
-        else:
-            # Need delta: fetch from requested_start to just before cached_oldest
-            delta_start = requested_start
-            delta_end = cached_oldest - pd.Timedelta(days=1)
+    df = _fetch_with_retry(yf_sym, period=period, interval=interval)
 
-            logger.info(
-                f"Delta fetch for {symbol}: {delta_start.strftime('%Y-%m-%d')} to {delta_end.strftime('%Y-%m-%d')}"
-            )
-            time.sleep(config.REQUEST_DELAY)
-
-            delta_df = _fetch_with_retry(
-                yf_sym, start=delta_start, end=delta_end + pd.Timedelta(days=1), interval=interval
-            )
-
-            if delta_df is not None and not delta_df.empty:
-                delta_df = delta_df[["Open", "High", "Low", "Close", "Volume"]].dropna()
-                delta_df.index = pd.to_datetime(delta_df.index)
-
-                # Merge: new data + cached data, deduplicate keeping newest
-                df = pd.concat([delta_df, cached_df])
-                df = df[~df.index.duplicated(keep="last")]
-                df = df.sort_index()
-            else:
-                # Delta fetch returned empty — use cached data as-is
-                logger.warning(f"Delta fetch returned no data for {symbol}, using cached data")
-                df = cached_df
-    else:
-        # No cache, full fetch using period (yfinance returns whatever data is available)
-        logger.info(f"Fetching full data for {symbol} ({period})...")
-        time.sleep(config.REQUEST_DELAY)
-
-        df = _fetch_with_retry(yf_sym, period=period, interval=interval)
-
-        if df is None or df.empty:
-            raise ValueError(f"No historical data returned for {symbol}")
-
-        df = df[["Open", "High", "Low", "Close", "Volume"]].dropna()
-        if df.empty:
-            raise ValueError(f"Data for {symbol} became empty after dropping NaNs.")
-
-        df.index = pd.to_datetime(df.index)
-
-    if df.empty:
+    if df is None or df.empty:
         raise ValueError(f"No historical data returned for {symbol}")
 
-    # Save full merged data to cache (always preserve maximum available history)
-    try:
-        df.to_parquet(cache_path, index=True)
-        logger.debug(f"Cached {symbol} -> {cache_path} ({len(df)} rows)")
-    except Exception as e:
-        logger.warning(f"Failed to cache {symbol}: {e}")
+    df = df[["Open", "High", "Low", "Close", "Volume"]].dropna()
+    if df.empty:
+        raise ValueError(f"Data for {symbol} became empty after dropping NaNs.")
 
-    # Trim to requested period for return
-    if requested_start > df.index[0]:
-        df = df[df.index >= requested_start]
+    df.index = pd.to_datetime(df.index)
+
+    # Only overwrite cache if new data has more rows than existing cache
+    existing_rows = 0
+    if os.path.exists(cache_path):
+        try:
+            existing_rows = len(pd.read_parquet(cache_path))
+        except Exception:
+            pass
+
+    if len(df) >= existing_rows:
+        try:
+            df.to_parquet(cache_path, index=True)
+            logger.debug(f"Cached {symbol} -> {cache_path} ({len(df)} rows, prev {existing_rows})")
+        except Exception as e:
+            logger.warning(f"Failed to cache {symbol}: {e}")
+    else:
+        logger.debug(f"Keeping existing cache for {symbol} ({existing_rows} rows > new {len(df)} rows)")
 
     return df
 
@@ -221,6 +196,19 @@ def fetch_multiple_symbols_cached(
     return data
 
 
+def _extract_symbol(filename: str) -> str:
+    """Extract symbol from parquet filename.
+
+    Handles both old format (RELIANCE.parquet) and
+    date-stamped format (RELIANCE_2026-06-16.parquet).
+    """
+    base = filename.replace(".parquet", "")
+    match = re.match(r"^(.+?)_\d{4}-\d{2}-\d{2}$", base)
+    if match:
+        return match.group(1)
+    return base
+
+
 def clear_cache(symbols: List[str] = None) -> int:
     """Clear cached parquet files. If symbols provided, clear only those."""
     if not os.path.exists(CACHE_DIR):
@@ -236,7 +224,7 @@ def clear_cache(symbols: List[str] = None) -> int:
             os.remove(fpath)
             count += 1
         else:
-            sym = fname.replace(".parquet", "")
+            sym = _extract_symbol(fname)
             if sym in symbols:
                 os.remove(fpath)
                 count += 1
@@ -252,10 +240,14 @@ def get_cache_stats() -> Dict:
 
     files = [f for f in os.listdir(CACHE_DIR) if f.endswith(".parquet")]
     total_size = sum(os.path.getsize(os.path.join(CACHE_DIR, f)) for f in files)
-    symbols = [f.replace(".parquet", "") for f in files]
+    symbols = [_extract_symbol(f) for f in files]
+
+    today = date.today().isoformat()
+    today_count = sum(1 for f in files if today in f)
 
     return {
         "total_files": len(files),
+        "today_cached": today_count,
         "total_size_mb": round(total_size / (1024 * 1024), 2),
         "symbols": sorted(set(symbols)),
     }

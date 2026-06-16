@@ -337,9 +337,14 @@ def main():
     # Runs the strategy over real historical data with realistic execution costs
     timer.phase_start("Phase 1: Historical Backtest (Realistic Costs)")
     # Calculate fetch period from --months + 1 year buffer for warmup
-    # e.g. 120 months → 10y + 1y buffer = "11y"
-    years = (args.months + 11) // 12  # ceiling division
-    period = f"{years + 1}y"
+    # Snap to valid yfinance periods: 1y, 2y, 5y, 10y, max
+    needed_years = (args.months + 11) // 12 + 1
+    for y in (1, 2, 5, 10):
+        if y >= needed_years:
+            period = f"{y}y"
+            break
+    else:
+        period = "max"
     historical = run_historical_with_realistic_costs(
         args.strategy,
         end_date,

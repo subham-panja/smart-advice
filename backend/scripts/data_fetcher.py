@@ -1,20 +1,14 @@
 import json
 import logging
 import os
-import time
 from typing import Dict
 
-import numpy as np
 import pandas as pd
 import yfinance as yf
 
-from config import MAX_RETRIES, NSE_CACHE_FILE, RATE_LIMIT_DELAY, REQUEST_DELAY
+from config import NSE_CACHE_FILE
 
 logger = logging.getLogger(__name__)
-
-# Use a relative data directory
-DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "historical")
-os.makedirs(DATA_DIR, exist_ok=True)
 
 
 def get_all_nse_symbols() -> Dict[str, str]:
@@ -141,87 +135,19 @@ def refresh_nse_symbols() -> Dict[str, str]:
 
 
 def get_historical_data(symbol: str, period: str = "2y", interval: str = "1d") -> pd.DataFrame:
-    """Fetches historical OHLCV data with rolling incremental cache.
+    """Fetches historical OHLCV data via the unified parquet cache.
 
-    On first call: fetches full history from yfinance and caches to disk.
-    On subsequent calls: reads cache, fetches only missing recent days, appends.
+    Delegates to data_cache.fetch_historical_data_cached which stores
+    one date-stamped parquet per symbol per day. If today's cache has
+    enough data for the requested period, returns instantly with no
+    yfinance call.
     """
-    cache_path = os.path.join(DATA_DIR, f"{symbol}_{period}_{interval}.csv")
+    from utils.data_cache import fetch_historical_data_cached
 
-    if os.path.exists(cache_path):
-        try:
-            cached_df = pd.read_csv(cache_path, index_col=0, parse_dates=True)
-            if cached_df.index.tz is not None:
-                cached_df.index = cached_df.index.tz_localize(None)
-            if not cached_df.empty:
-                last_cached = cached_df.index[-1]
-                today = pd.Timestamp.today().normalize()
-
-                if last_cached.normalize() >= today:
-                    return cached_df
-
-                next_day = last_cached.normalize() + pd.Timedelta(days=1)
-                if np.busday_count(next_day.date(), (today + pd.Timedelta(days=1)).date()) == 0:
-                    return cached_df
-
-                fetch_start = last_cached.strftime("%Y-%m-%d")
-                yf_sym = f"{symbol}.NS" if not symbol.startswith("^") else symbol
-                time.sleep(REQUEST_DELAY)
-
-                try:
-                    new_df = yf.Ticker(yf_sym).history(start=fetch_start, interval=interval)
-                    if not new_df.empty:
-                        new_df = new_df[["Open", "High", "Low", "Close", "Volume"]].dropna()
-                        new_df.index = pd.to_datetime(new_df.index)
-                        if new_df.index.tz is not None:
-                            new_df.index = new_df.index.tz_localize(None)
-
-                        new_rows = new_df[new_df.index > last_cached]
-                        if not new_rows.empty:
-                            updated = pd.concat([cached_df, new_rows])
-                            updated.to_csv(cache_path)
-                            logger.info(f"📈 {symbol}: appended {len(new_rows)} new day(s) to cache")
-                            return updated
-                except Exception as update_err:
-                    logger.warning(f"Incremental update failed for {symbol}: {update_err}, using existing cache")
-
-                return cached_df
-        except Exception as e:
-            logger.warning(f"Cache read error for {symbol}: {e}. Fetching fresh.")
-
-    time.sleep(REQUEST_DELAY)
-
-    attempts = 0
-    last_error = None
-
-    while attempts <= MAX_RETRIES:
-        try:
-            yf_sym = f"{symbol}.NS" if not symbol.startswith("^") else symbol
-            logger.info(f"🔄 Fetching data for {symbol} (Attempt {attempts + 1})...")
-
-            df = yf.Ticker(yf_sym).history(period=period, interval=interval)
-            if df.empty:
-                raise ValueError(f"No historical data returned for {symbol}")
-
-            df = df[["Open", "High", "Low", "Close", "Volume"]].dropna()
-            if df.empty:
-                raise ValueError(f"Data for {symbol} became empty after dropping NaNs.")
-
-            df.index = pd.to_datetime(df.index)
-            if df.index.tz is not None:
-                df.index = df.index.tz_localize(None)
-            df.to_csv(cache_path)
-            return df
-
-        except Exception as e:
-            last_error = e
-            attempts += 1
-            if attempts <= MAX_RETRIES:
-                logger.warning(f"Fetch failed for {symbol}: {e}. Retrying in {RATE_LIMIT_DELAY}s...")
-                time.sleep(RATE_LIMIT_DELAY)
-            else:
-                logger.error(f"Critical fetch failure for {symbol} after {attempts} attempts: {e}")
-                raise last_error
+    df = fetch_historical_data_cached(symbol, period=period, interval=interval)
+    if df.index.tz is not None:
+        df.index = df.index.tz_localize(None)
+    return df
 
 
 def get_current_price(symbol: str) -> float:
@@ -239,7 +165,7 @@ def get_benchmark_data(period: str = "1y") -> pd.DataFrame:
     return get_historical_data("^NSEI", period=period)
 
 
-MARKET_CAP_CACHE = os.path.join(DATA_DIR, "..", "market_cap_cache.json")
+MARKET_CAP_CACHE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "market_cap_cache.json")
 
 
 def get_market_caps(symbols: list = None, min_cap_cr: float = 0) -> dict:
