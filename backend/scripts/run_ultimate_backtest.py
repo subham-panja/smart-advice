@@ -453,7 +453,7 @@ def main():
     timer.phase_start("Phase 5: Trade Diagnostics")
     from scripts.trade_diagnostics import run_all_diagnostics
 
-    _ = run_all_diagnostics(strategy_name=args.strategy)
+    diagnostics = run_all_diagnostics(strategy_name=args.strategy)
     timer.phase_end()
     phases_done += 1
     print(f"   ⏳ {timer.estimate_remaining(phases_done, total_phases)}")
@@ -479,6 +479,23 @@ def main():
     print_confidence_report(confidence)
     timer.phase_end()
     phases_done += 1
+
+    # Save all Phase 2-6 results to MongoDB
+    if session_id:
+        try:
+            persister.save_ultimate_backtest_phases(
+                session_id,
+                {
+                    "validation": validation,
+                    "walk_forward": wf_results,
+                    "stress_tests": stress_results,
+                    "trade_diagnostics": diagnostics,
+                    "confidence_score": confidence,
+                },
+            )
+            print("  All phase results saved to MongoDB")
+        except Exception as e:
+            print(f"  Failed to save phase results: {e}")
 
     # ===== PRINT RESULTS IN TABLE FORMAT =====
     print(f"\n{'='*70}")

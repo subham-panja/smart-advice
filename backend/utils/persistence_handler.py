@@ -202,6 +202,24 @@ class PersistenceHandler:
             logger.error(f"Backtest session completion error: {e}")
             raise e
 
+    def save_ultimate_backtest_phases(self, session_id: Any, phases: dict) -> bool:
+        """Save validation, walk-forward, stress tests, diagnostics, and confidence score.
+
+        Stores all Phase 2-6 results as a nested 'ultimate_phases' field on the
+        backtest_sessions document so the full analysis is persisted for later review.
+        """
+        try:
+            db = get_mongodb()
+            now = trading_now(timezone.utc).replace(tzinfo=None)
+            db.backtest_sessions.update_one(
+                {"_id": session_id},
+                {"$set": {"ultimate_phases": phases, "updated_at": now}},
+            )
+            return True
+        except Exception as e:
+            logger.error(f"Ultimate phases save error: {e}")
+            return False
+
     # ------------------------------------------------------------------
     # Walk-Forward Backtest Session Persistence
     # ------------------------------------------------------------------
