@@ -26,8 +26,52 @@ Your core responsibilities:
 Whenever you receive a task, follow this precedence:
 1.  **Consult `AGENT.md`**: Always start here to understand the current project state and rules.
 2.  **Search `.agent/workflows/`**: Look for a specific procedural guide (SOP) before starting any implementation or maintenance task.
-3.  **Check `skills/`**: Use specialized skills (e.g., `data_validation`) to ensure high-quality output.
-4.  **Execute & Verify**: Always end with verification steps defined in the workflow or `AGENT.md`.
+3.  **Read relevant `skills/`**: **MANDATORY** - Before any research, analysis, or implementation work, read the relevant skill file(s) below. Skills contain domain-specific knowledge, best practices, and validation checklists that prevent costly mistakes.
+4.  **Execute & Verify**: Always end with verification steps defined in the workflow, skill, or `AGENT.md`.
+
+## Available Skills (Read Before Working)
+
+### Core Trading Skills
+- **`skills/strategy_analysis.md`**: How to analyze strategy performance, interpret confidence scores, and make data-driven improvements. **Read before**: Modifying strategy JSON, adjusting gates/entry patterns, or optimizing parameters.
+  
+- **`skills/backtest_validation.md`**: How to validate backtest results, interpret each phase, and identify red flags. **Read before**: Running ultimate backtest, analyzing results, or comparing strategies.
+
+- **`skills/entry_pattern_optimization.md`**: How to optimize entry patterns, tune gate thresholds, and add new patterns. **Read before**: Modifying entry patterns, adjusting gate parameters, or adding new technical signals.
+
+- **`skills/risk_management.md`**: How to configure position sizing, stop losses, and risk controls. **Read before**: Adjusting risk parameters, investigating high drawdown, or setting up new strategies.
+
+- **`skills/performance_debugging.md`**: How to debug slow backtests, optimize performance, and fix cache issues. **Read before**: Investigating slow backtests, high memory usage, or repeated yfinance downloads.
+
+### Data Quality Skills
+- **`skills/data_validation.md`**: How to validate stock data quality, filter noisy data, and ensure clean inputs. **Read before**: Working with stock data, adding new data sources, or investigating data quality issues.
+
+## When to Read Skills
+
+**ALWAYS read skills when:**
+- Starting a new feature or modification
+- Analyzing backtest results
+- Optimizing strategy parameters
+- Debugging performance issues
+- Making risk management changes
+- Working with stock data
+
+**Skill reading workflow:**
+1. Identify relevant skill(s) for your task
+2. Read the entire skill file (10-15 minutes)
+3. Follow the workflow/checklist in the skill
+4. Apply the best practices and validation steps
+5. Document any deviations or learnings
+
+**Example:**
+```
+Task: "Optimize swing trading entry patterns"
+→ Read: skills/entry_pattern_optimization.md
+→ Follow: Optimization Workflow (steps 1-5)
+→ Apply: Parameter Tuning Guidelines
+→ Verify: Backtesting Parameter Changes checklist
+```
+
+**Don't skip skills** - they contain hard-won knowledge about what works, what doesn't, and common pitfalls. Reading a skill upfront saves hours of trial-and-error.
 
 ## Finding Work & Understanding Tasks
 When starting work on this project, check these locations in order:
@@ -90,7 +134,13 @@ Task: "Update all strategy configs to use new volume filter"
 
 ## Key Directory Structure
 - Workflows: `.agent/workflows/`
-- Skills: `skills/`
+- Skills: `skills/` (6 specialized skill files - see "Available Skills" section above)
+  - `strategy_analysis.md` - Strategy performance analysis and improvement
+  - `backtest_validation.md` - Backtest result validation and interpretation
+  - `entry_pattern_optimization.md` - Entry pattern tuning and gate optimization
+  - `risk_management.md` - Position sizing, stops, and risk controls
+  - `performance_debugging.md` - Backtest performance debugging and optimization
+  - `data_validation.md` - Stock data quality validation
 - Strategy JSONs: `backend/strategies/` (4 strategies defined)
 - Indicator Modules: `backend/scripts/strategies/` (55+ TA-Lib based modules inheriting from `BaseStrategy`)
 - Trading Engine: `backend/scripts/execution_engine_paper.py`
@@ -208,4 +258,4 @@ Each JSON strategy defines:
 - **Realistic Costs**: Gap risk, STT, stamp duty, SEBI charges, slippage on entry/exit, brokerage
 
 ---
-*Last Updated: 2026-06-17 (Added: Finding Work, Multi-Agent Mode, Test Coverage rules)*
+*Last Updated: 2026-06-17 (Added: 6 swing trading skills, mandatory skill reading instructions)*
