@@ -29,6 +29,54 @@ Whenever you receive a task, follow this precedence:
 3.  **Check `skills/`**: Use specialized skills (e.g., `data_validation`) to ensure high-quality output.
 4.  **Execute & Verify**: Always end with verification steps defined in the workflow or `AGENT.md`.
 
+## Finding Work & Understanding Tasks
+When starting work on this project, check these locations in order:
+
+1.  **Current Git Status**: Run `git status` to see uncommitted changes or work in progress.
+2.  **Recent Commits**: Run `git log --oneline -20` to understand recent changes and context.
+3.  **Test Failures**: Run `pytest backend/tests/` to identify broken functionality that needs fixing.
+4.  **TODO Comments**: Search for `TODO`, `FIXME`, or `XXX` comments in the codebase using `grep -r "TODO\|FIXME" backend/`.
+5.  **Workflow Gaps**: Review `.agent/workflows/` to identify missing or incomplete procedures.
+6.  **Strategy Performance**: Check MongoDB `backtest_sessions` collection for strategies with low confidence scores that need improvement.
+7.  **User Requests**: Clarify the task scope with the user if the request is ambiguous (e.g., "Which strategy?", "What time period?", "Full NSE or subset?").
+
+**Task Categories:**
+- **Bug Fix**: Check test failures, logs in `backend/logs/`, and error messages.
+- **New Feature**: Check `.agent/workflows/` for relevant SOP, then implement following the workflow.
+- **Performance Optimization**: Profile with `cProfile`, check for non-vectorized operations, review backtest execution time.
+- **Strategy Improvement**: Run ultimate backtest, analyze confidence score components, adjust gates/entry patterns in JSON config.
+- **Documentation**: Update `AGENT.md` or `.agent/workflows/*.md` if processes have changed.
+
+## Multi-Agent Mode (When to Use)
+For complex tasks, use multiple agents in parallel when:
+
+**Use Multi-Agent When:**
+- Task involves **independent subtasks** (e.g., "Update all 4 strategy JSON files" - each agent handles one strategy)
+- Need to **compare approaches** (e.g., "Test 3 different entry patterns" - each agent tests one)
+- **Large-scale refactoring** across multiple files (e.g., "Update all indicator modules to use vectorbt" - parallelize by indicator type)
+- **Data processing pipelines** (e.g., "Fetch data for 500 stocks" - split into batches)
+
+**Don't Use Multi-Agent When:**
+- Tasks have **sequential dependencies** (e.g., "Run backtest then analyze results")
+- **Small, focused changes** (e.g., "Fix bug in one file")
+- **Exploration/research** tasks that need context accumulation
+
+**Multi-Agent Best Practices:**
+1.  **Clear Boundaries**: Each agent should work on independent files/data to avoid conflicts.
+2.  **Merge Strategy**: Designate one agent to merge results, or use git worktrees for isolation.
+3.  **Progress Tracking**: Use `TodoWrite` to track which agents completed which subtasks.
+4.  **Resource Awareness**: Don't spawn more than 4-6 parallel agents to avoid overwhelming the system.
+
+**Example Multi-Agent Scenarios:**
+```
+Task: "Update all strategy configs to use new volume filter"
+→ Agent 1: Update Swing_Trading.json
+→ Agent 2: Update Hybrid_Trading.json
+→ Agent 3: Update Momentum_Trading.json
+→ Agent 4: Update Nitin_Triple_Confirm.json
+→ Main Agent: Merge changes, run tests, commit
+```
+
 ## Development Rules
 - **JSON Strategies First**: New trading strategies (with gates, entry patterns, exit rules) belong as JSON files in `backend/strategies/`.
 - **Indicator Modules**: New technical indicator calculations belong in `backend/scripts/strategies/` and must inherit from `BaseStrategy`.
@@ -37,6 +85,8 @@ Whenever you receive a task, follow this precedence:
 - **Vectorized Operations**: Favor numpy/pandas/vectorbt over iterative loops to protect Apple Silicon hardware.
 - **Macro Awareness**: Never suggest or execute individual stock analysis without verifying the NIFTY 50 macro-gate first.
 - **Circuit Breaker Respect**: If `TRADING_OPTIONS["circuit_breaker"]` is True, ALL trading and analysis activity must halt immediately.
+- **Test Coverage**: When adding new features or modifying existing code, always update or add corresponding test cases in `backend/tests/`. Run `pytest backend/tests/` to verify all tests pass before committing.
+- **Documentation Updates**: If you change architecture, add new workflows, or modify key systems, update this `AGENT.md` file and relevant `.agent/workflows/*.md` files to keep documentation current.
 
 ## Key Directory Structure
 - Workflows: `.agent/workflows/`
@@ -158,4 +208,4 @@ Each JSON strategy defines:
 - **Realistic Costs**: Gap risk, STT, stamp duty, SEBI charges, slippage on entry/exit, brokerage
 
 ---
-*Last Updated: 2026-06-17*
+*Last Updated: 2026-06-17 (Added: Finding Work, Multi-Agent Mode, Test Coverage rules)*
