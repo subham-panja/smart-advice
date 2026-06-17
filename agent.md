@@ -48,6 +48,8 @@ Whenever you receive a task, follow this precedence:
 - Portfolio Backtest: `backend/scripts/portfolio_backtest_engine.py`
 - Ultimate Backtest: `backend/scripts/run_ultimate_backtest.py` (6-phase validation)
 - Vectorbt Indicators: `backend/scripts/vectorbt_indicator_batch.py` (batch pre-computation + IndicatorStore)
+- Vectorbt Signals: `backend/scripts/vectorbt_signal_generator.py` (stock prefilter computation)
+- Data Cache: `backend/data/historical/` (date-stamped parquet files: `{SYMBOL}_{YYYY-MM-DD}.parquet`)
 - Orchestrator: `backend/main_orchestrator.py`
 - Data: `backend/data/` (Includes `symbol_groups.json` and `nse_symbols.json`)
 - ML Models: `backend/ml/` (classifier_trainer, feature_extractor, secondary_ranker)
@@ -71,27 +73,55 @@ The ultimate backtest runs 6 phases to validate strategy robustness:
 
 ```bash
 cd backend
-python scripts/run_ultimate_backtest.py --strategy Swing_Trading --months 120 --max-stocks 10 --mc-iterations 8
+# Full run with walk-forward (12 MC iterations)
+python scripts/run_ultimate_backtest.py --strategy Swing_Trading --months 120 --mc-iterations 12 --telegram
+
+# Quick run without walk-forward (faster, skips Phase 3)
+python scripts/run_ultimate_backtest.py --strategy Swing_Trading --months 120 --telegram
 ```
 
-**Phase 1**: Historical backtest with realistic costs (gap risk, STT, slippage, brokerage)
-**Phase 1b**: Save results to MongoDB
+**Phase 1**: Historical backtest with realistic costs (gap risk, STT, slippage, brokerage) — uses full NSE universe
+**Phase 1b**: Save results to MongoDB (trades, daily snapshots, summary metrics)
 **Phase 2**: Statistical validation (DSR, Monte Carlo permutation, MLRS)
-**Phase 3**: Walk-Forward Monte Carlo (8 rolling windows, sequential execution)
+**Phase 3**: Walk-Forward Monte Carlo (rolling windows, only if `--mc-iterations` is passed)
 **Phase 4**: Stress tests (regime, param sensitivity +/-20%, cost sensitivity)
 **Phase 5**: Trade diagnostics (hold times, exit reasons, concurrent positions)
 **Phase 6**: Composite confidence score (0-100, realistic CAGR projection)
+
+**All phases (2-6) save to MongoDB** in the `backtest_sessions` collection under `ultimate_phases`.
 
 **Key optimizations:**
 - vectorbt indicator batch pre-computation (one-time, all symbols x all dates)
 - IndicatorStore for O(1) lookups during simulation (no TA-Lib during loop)
 - Sequential walk-forward (no multiprocessing overhead)
 - Chartink results cached across all phases
-- Data fetched once with `period="max"`, simulation range controlled by `--months`
+- **Date-stamped parquet cache**: `{symbol}_{YYYY-MM-DD}.parquet` in `backend/data/historical/` — if today's cache exists with sufficient rows, no yfinance download occurs
+- Stock prefilter computed once with vectorbt (no per-stock loops)
 
-**Performance**: ~2 minutes for 10y/10-stock/8-iter with all phases.
+**Data Caching:**
+- Cache location: `backend/data/historical/`
+- Format: `{SYMBOL}_{YYYY-MM-DD}.parquet` (e.g., `RELIANCE_2026-06-17.parquet`)
+- Cache check: Requires today's date in filename AND sufficient rows for the requested period
+- If cache is missing or insufficient, data is fetched from yfinance and cached for the day
+- Symbols with < 250 trading days are excluded from simulation
 
-**Strategy Benchmark Results (all 10y, 10 stocks, 8 iter, no skips):**
+**Performance**: ~2 minutes for Phase 1 (full NSE universe, 10y). Walk-forward adds significant compute time depending on MC iterations.
+
+**Latest Benchmark Results (Swing_Trading, 10y, full NSE universe, 2026-06-17):**
+
+| Metric | Value |
+|--------|-------|
+| CAGR | 22.92% |
+| Total Return | +686.97% |
+| Final Value | ₹78,697 (from ₹10,000) |
+| Max Drawdown | -20.16% |
+| Sharpe Ratio | 0.43 |
+| Win Rate | 37.2% |
+| Profit Factor | 2.13 |
+| Total Trades | 1,351 |
+| Expectancy | ₹76.74/trade |
+
+**Historical Benchmark Results (10y, 10 stocks, 8 iter, no skips):**
 
 | Strategy | CAGR | Final Value | Max DD | Win Rate | Profit Factor | Confidence |
 |----------|------|-------------|--------|----------|---------------|------------|
@@ -120,10 +150,12 @@ Each JSON strategy defines:
 ## Portfolio Backtest Engine
 - **Vectorbt Indicator Pre-computation**: All indicators computed once in batch before simulation
 - **IndicatorStore**: O(1) lookups during day-by-day simulation loop (no TA-Lib during loop)
+- **Stock Prefilter**: Vectorbt-based prefilter identifies candidate stocks per date (no per-stock loops)
 - **Single Simulation**: One pass with shared capital pool gives correct CAGR
+- **Full NSE Universe**: Tests against all ~2100+ NSE stocks (no artificial cap)
 - **Identical Logic**: Entry gates, exits, trailing stops, pyramiding — same across individual backtest, portfolio backtest, and live trading
 - **Risk Management**: 2% risk per trade, 10% max position, 8 max positions, ATR-based stops/targets
 - **Realistic Costs**: Gap risk, STT, stamp duty, SEBI charges, slippage on entry/exit, brokerage
 
 ---
-*Last Updated: 2026-05-17*
+*Last Updated: 2026-06-17*

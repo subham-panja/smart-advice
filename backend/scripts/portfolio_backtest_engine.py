@@ -1169,6 +1169,8 @@ class PortfolioBacktestSession:
                 from scripts.data_fetcher import get_historical_data
 
                 full_data = get_historical_data(index_symbol, period="10y")
+                if date.tzinfo is not None and full_data.index.tzinfo is None:
+                    full_data.index = full_data.index.tz_localize(date.tzinfo)
                 index_hist = full_data.loc[:date]
 
             if len(index_hist) < 250:

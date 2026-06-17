@@ -38,11 +38,17 @@ Use the "Start Full Analysis" button on `http://localhost:3000`.
 Send "Run Analysis" to the configured Telegram bot.
 
 ### Option E: Run Ultimate Backtest
-Full 6-phase strategy validation:
+Full 6-phase strategy validation (uses full NSE universe):
 ```bash
 cd backend
-python scripts/run_ultimate_backtest.py --strategy Swing_Trading --months 120 --max-stocks 10 --mc-iterations 8
+# With walk-forward (slower, more thorough)
+python scripts/run_ultimate_backtest.py --strategy Swing_Trading --months 120 --mc-iterations 12 --telegram
+
+# Without walk-forward (faster)
+python scripts/run_ultimate_backtest.py --strategy Swing_Trading --months 120 --telegram
 ```
+
+**Note**: Data is cached in `backend/data/historical/` as date-stamped parquet files. If today's cache exists, no yfinance downloads occur.
 
 ## 4. Verification
 - **Logs**: Check `backend/logs/` for any "Network Error" or "API 429" warnings.
@@ -53,8 +59,8 @@ python scripts/run_ultimate_backtest.py --strategy Swing_Trading --months 120 --
   - `swing_gate_results` - Gate pass/fail data
   - `positions` - Open paper trading positions
   - `portfolio_backtest_daily_snapshots` - Portfolio backtest equity curves
-  - `backtest_sessions` - Ultimate backtest session metadata
-  - `backtest_trades` - Individual trade records from backtests
+  - `backtest_sessions` - Ultimate backtest session metadata (includes `ultimate_phases` with validation, stress tests, confidence score)
+  - `portfolio_backtest_trades` - Individual trade records from backtests
 - **Audit Log**: Check `backend/logs/audit_log.json` for detailed per-stock analysis logs.
 - **Frontend**: Refresh `http://localhost:3000` to see the new dashboard data.
 - **Positions**: If running the full cycle, check `positions` collection for new/open trades.

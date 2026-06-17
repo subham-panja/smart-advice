@@ -71,10 +71,14 @@ python -c "from utils.strategy_loader import StrategyLoader; s = StrategyLoader.
 ### 5. Run Ultimate Backtest
 ```bash
 cd backend
-python scripts/run_ultimate_backtest.py --strategy YourStrategy --months 120 --max-stocks 10 --mc-iterations 8
+# Full validation with walk-forward
+python scripts/run_ultimate_backtest.py --strategy YourStrategy --months 120 --mc-iterations 12
+
+# Quick validation without walk-forward
+python scripts/run_ultimate_backtest.py --strategy YourStrategy --months 120
 ```
 
-This runs all 6 validation phases (historical, statistical, walk-forward, stress tests, diagnostics, confidence score) in ~2 minutes.
+This runs all 6 validation phases (historical, statistical, walk-forward, stress tests, diagnostics, confidence score). Uses full NSE universe by default. Results are saved to MongoDB.
 
 ---
 
