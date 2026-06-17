@@ -1,0 +1,19 @@
+# Cursor Instructions
+
+## Before Any Task
+Read AGENT.md first for project context, rules, and workflows.
+
+## Quick Reference
+- Project: Stock analysis platform for Indian Equity Market (NSE)
+- Backend: Python/Flask, MongoDB, Redis, TA-Lib, vectorbt
+- Frontend: Next.js 15.5, React 19, Tailwind CSS v4
+- Strategies: JSON-configured in backend/strategies/
+- Data cache: backend/data/historical/ (date-stamped parquet files)
+- Workflows: .agent/workflows/
+
+## Key Rules
+- Use vectorized operations (no Python loops over DataFrames)
+- Never bypass circuit_breaker or risk controls
+- New strategies go in backend/strategies/*.json
+- Indicator modules inherit from BaseStrategy in backend/scripts/strategies/
+- Check .agent/workflows/ before starting implementation tasks

@@ -1,4 +1,16 @@
 {
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '📋 IMPORTANT: Always read AGENT.md first before starting any task. It contains project context, rules, and workflows.'"
+          }
+        ]
+      }
+    ]
+  },
   "permissions": {
     "yolo": true,
     "allow": [
