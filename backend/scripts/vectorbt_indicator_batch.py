@@ -147,8 +147,7 @@ class IndicatorStore:
 def _align_to_common_dates(
     symbols_data: Dict[str, pd.DataFrame],
 ) -> tuple[pd.DatetimeIndex, Dict[str, pd.DataFrame]]:
-    """Align all symbols to a common date index, forward-filling gaps."""
-    # Find the union of all dates
+    """Align all symbols to a common date index, forward-filling gaps within each symbol's range."""
     all_dates = set()
     for df in symbols_data.values():
         all_dates.update(df.index)
@@ -157,7 +156,10 @@ def _align_to_common_dates(
     aligned = {}
     for sym, df in symbols_data.items():
         cols = ["Open", "High", "Low", "Close", "Volume"]
-        aligned[sym] = df[cols].reindex(common_dates).ffill()
+        reindexed = df[cols].reindex(common_dates).ffill()
+        last_real_date = df.index[-1]
+        reindexed.loc[common_dates > last_real_date] = np.nan
+        aligned[sym] = reindexed
 
     return common_dates, aligned
 
@@ -189,7 +191,7 @@ def compute_all_indicators(
     high = pd.concat({s: aligned[s]["High"] for s in symbols}, axis=1)
     low = pd.concat({s: aligned[s]["Low"] for s in symbols}, axis=1)
     open_price = pd.concat({s: aligned[s]["Open"] for s in symbols}, axis=1)
-    volume = pd.concat({s: aligned[s]["Volume"] for s in symbols}, axis=1)
+    volume = pd.concat({s: aligned[s]["Volume"] for s in symbols}, axis=1).astype(float)
 
     # Flatten column MultiIndex to single-level (symbol names)
     close.columns = symbols

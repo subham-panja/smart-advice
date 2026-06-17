@@ -3,12 +3,12 @@ Data Cache Manager
 ==================
 
 Handles caching of historical OHLCV data in parquet format.
-Each symbol's cache file is date-stamped (e.g. RELIANCE_2026-06-16.parquet).
-If today's file exists, data is returned from cache with no API call.
-Otherwise, fresh data is fetched and saved with today's date.
+Each symbol has one cache file (e.g. RELIANCE.parquet) that gets updated daily.
+If cache exists and is recent (within last trading day), data is returned from cache.
+Otherwise, fresh data is fetched and the cache file is updated.
 
 Cache location: backend/data/historical/
-Cache format: {symbol}_{YYYY-MM-DD}.parquet
+Cache format: {symbol}.parquet
 """
 
 import logging
@@ -65,8 +65,26 @@ def _min_rows_for_period(period: str) -> int:
 
 
 def _cache_path(symbol: str) -> str:
-    today = date.today().isoformat()
-    return os.path.join(CACHE_DIR, f"{symbol}_{today}.parquet")
+    """Return cache path for a symbol (one file per symbol)."""
+    return os.path.join(CACHE_DIR, f"{symbol}.parquet")
+
+
+def _is_cache_recent(df: pd.DataFrame, max_age_days: int = 1) -> bool:
+    """Check if cached data is recent enough (last row within max_age_days)."""
+    if df.empty:
+        return False
+    try:
+        last_date = df.index[-1]
+        if hasattr(last_date, "date"):
+            last_date = last_date.date()
+        elif isinstance(last_date, str):
+            last_date = pd.to_datetime(last_date).date()
+
+        today = date.today()
+        age_days = (today - last_date).days
+        return age_days <= max_age_days
+    except Exception:
+        return False
 
 
 def _fetch_with_retry(
@@ -105,31 +123,40 @@ def fetch_historical_data_cached(
     force_refresh: bool = False,
     min_rows: Optional[int] = None,
 ) -> pd.DataFrame:
-    """Fetch historical OHLCV data with date-stamped caching.
+    """Fetch historical OHLCV data with single-file caching.
 
-    One parquet file per symbol per day ({symbol}_{YYYY-MM-DD}.parquet).
-    The cache always stores the LONGEST dataset fetched so far today.
-    Shorter-period requests return a slice from cache (no API call).
-    Longer-period requests trigger a re-fetch and overwrite with more data.
+    One parquet file per symbol ({symbol}.parquet).
+    Cache is used if:
+    1. File exists
+    2. Has sufficient rows for requested period
+    3. Data is recent (last row within 1 day)
+
+    If cache is outdated or insufficient, fresh data is fetched and cache is updated.
     """
     cache_path = _cache_path(symbol)
     yf_sym = f"{symbol}.NS" if not symbol.startswith("^") else symbol
     needed = min_rows if min_rows else _min_rows_for_period(period)
 
+    # Check if cache exists and is usable
     if not force_refresh and os.path.exists(cache_path):
         try:
             df = pd.read_parquet(cache_path)
             if not df.empty:
-                if len(df) >= needed:
-                    logger.debug(f"Cache hit for {symbol}: {len(df)} rows >= {needed} needed for {period}")
+                # Check if cache has enough rows AND is recent
+                has_enough_rows = len(df) >= needed
+                is_recent = _is_cache_recent(df, max_age_days=1)
+
+                if has_enough_rows and is_recent:
+                    logger.debug(f"Cache hit for {symbol}: {len(df)} rows, recent data")
                     return df
+                elif has_enough_rows and not is_recent:
+                    logger.info(f"Cache for {symbol} has {len(df)} rows but outdated. Re-fetching...")
                 else:
-                    logger.info(
-                        f"Cache for {symbol} has {len(df)} rows, need {needed} for {period}. Re-fetching longer period."
-                    )
+                    logger.info(f"Cache for {symbol} has {len(df)} rows, need {needed} for {period}. Re-fetching...")
         except Exception as e:
             logger.warning(f"Cache read error for {symbol}: {e}. Fetching fresh.")
 
+    # Fetch fresh data
     logger.info(f"Fetching {symbol} ({period})...")
     time.sleep(config.REQUEST_DELAY)
 
@@ -144,22 +171,12 @@ def fetch_historical_data_cached(
 
     df.index = pd.to_datetime(df.index)
 
-    # Only overwrite cache if new data has more rows than existing cache
-    existing_rows = 0
-    if os.path.exists(cache_path):
-        try:
-            existing_rows = len(pd.read_parquet(cache_path))
-        except Exception:
-            pass
-
-    if len(df) >= existing_rows:
-        try:
-            df.to_parquet(cache_path, index=True)
-            logger.debug(f"Cached {symbol} -> {cache_path} ({len(df)} rows, prev {existing_rows})")
-        except Exception as e:
-            logger.warning(f"Failed to cache {symbol}: {e}")
-    else:
-        logger.debug(f"Keeping existing cache for {symbol} ({existing_rows} rows > new {len(df)} rows)")
+    # Update cache with new data
+    try:
+        df.to_parquet(cache_path, index=True)
+        logger.debug(f"Cached {symbol} -> {cache_path} ({len(df)} rows)")
+    except Exception as e:
+        logger.warning(f"Failed to cache {symbol}: {e}")
 
     return df
 
@@ -240,16 +257,38 @@ def get_cache_stats() -> Dict:
 
     files = [f for f in os.listdir(CACHE_DIR) if f.endswith(".parquet")]
     total_size = sum(os.path.getsize(os.path.join(CACHE_DIR, f)) for f in files)
-    symbols = [_extract_symbol(f) for f in files]
 
-    today = date.today().isoformat()
-    today_count = sum(1 for f in files if today in f)
+    # Count unique symbols (handle both old date-stamped and new format)
+    symbols = set()
+    recent_count = 0
+    today = date.today()
+
+    for f in files:
+        sym = _extract_symbol(f)
+        symbols.add(sym)
+
+        # Check if file is recent
+        fpath = os.path.join(CACHE_DIR, f)
+        try:
+            df = pd.read_parquet(fpath)
+            if not df.empty:
+                last_date = df.index[-1]
+                if hasattr(last_date, "date"):
+                    last_date = last_date.date()
+                elif isinstance(last_date, str):
+                    last_date = pd.to_datetime(last_date).date()
+
+                if (today - last_date).days <= 1:
+                    recent_count += 1
+        except Exception:
+            pass
 
     return {
         "total_files": len(files),
-        "today_cached": today_count,
+        "unique_symbols": len(symbols),
+        "recent_cached": recent_count,
         "total_size_mb": round(total_size / (1024 * 1024), 2),
-        "symbols": sorted(set(symbols)),
+        "symbols": sorted(symbols),
     }
 
 
@@ -310,3 +349,93 @@ def migrate_old_cache_files() -> int:
 
     logger.info(f"Migration complete: {migrated} old files processed")
     return migrated
+
+
+def migrate_date_stamped_files() -> int:
+    """Migrate date-stamped files ({symbol}_{YYYY-MM-DD}.parquet) to single file format ({symbol}.parquet).
+
+    For each symbol with multiple date-stamped files:
+    1. Find the most recent file
+    2. Save it as {symbol}.parquet
+    3. Delete all date-stamped files for that symbol
+
+    Returns the number of files deleted.
+    """
+    if not os.path.exists(CACHE_DIR):
+        return 0
+
+    files = [f for f in os.listdir(CACHE_DIR) if f.endswith(".parquet")]
+
+    # Group date-stamped files by symbol
+    symbol_files = {}
+    for f in files:
+        base = f.replace(".parquet", "")
+        match = re.match(r"^(.+?)_\d{4}-\d{2}-\d{2}$", base)
+        if match:
+            symbol = match.group(1)
+            symbol_files.setdefault(symbol, []).append(f)
+
+    deleted = 0
+    for symbol, dated_files in symbol_files.items():
+        new_path = os.path.join(CACHE_DIR, f"{symbol}.parquet")
+
+        # Find the most recent date-stamped file
+        most_recent_file = None
+        most_recent_date = None
+
+        for f in dated_files:
+            match = re.search(r"_(\d{4}-\d{2}-\d{2})\.parquet$", f)
+            if match:
+                file_date = match.group(1)
+                if most_recent_date is None or file_date > most_recent_date:
+                    most_recent_date = file_date
+                    most_recent_file = f
+
+        if most_recent_file:
+            # Copy most recent file to new format
+            old_path = os.path.join(CACHE_DIR, most_recent_file)
+            try:
+                df = pd.read_parquet(old_path)
+                if not df.empty:
+                    df.to_parquet(new_path, index=True)
+                    logger.info(f"Migrated {symbol}: {most_recent_file} -> {symbol}.parquet ({len(df)} rows)")
+            except Exception as e:
+                logger.warning(f"Failed to migrate {symbol}: {e}")
+                continue
+
+        # Delete all date-stamped files for this symbol
+        for f in dated_files:
+            try:
+                os.remove(os.path.join(CACHE_DIR, f))
+                deleted += 1
+            except Exception as e:
+                logger.warning(f"Failed to delete {f}: {e}")
+
+    logger.info(f"Date-stamped migration complete: {deleted} files deleted")
+    return deleted
+
+
+def consolidate_cache() -> Dict:
+    """Run all cache consolidation operations.
+
+    Returns summary of operations performed.
+    """
+    results = {
+        "period_migration": 0,
+        "date_stamped_migration": 0,
+    }
+
+    # First migrate old period-based files (RELIANCE_5Y.parquet)
+    results["period_migration"] = migrate_old_cache_files()
+
+    # Then migrate date-stamped files (RELIANCE_2026-06-18.parquet)
+    results["date_stamped_migration"] = migrate_date_stamped_files()
+
+    # Get final stats
+    stats = get_cache_stats()
+    results["final_files"] = stats["total_files"]
+    results["final_symbols"] = stats["unique_symbols"]
+    results["final_size_mb"] = stats["total_size_mb"]
+
+    logger.info(f"Cache consolidation complete: {results}")
+    return results

@@ -6,6 +6,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from typing import Any, Dict
 
+import pandas as pd
+
 import config
 from scripts.data_fetcher import get_benchmark_data, get_historical_data
 from scripts.market_regime_detection import MarketRegimeDetection
@@ -16,6 +18,18 @@ from utils.persistence_handler import PersistenceHandler
 from utils.stock_scanner import StockScanner
 
 logger = None
+
+_replay_indicators = None
+_replay_prefilter = None
+_replay_cache_key = None
+
+
+def clear_replay_cache():
+    """Clear the replay indicator cache to free memory."""
+    global _replay_indicators, _replay_prefilter, _replay_cache_key
+    _replay_indicators = None
+    _replay_prefilter = None
+    _replay_cache_key = None
 
 
 class AutomatedStockAnalysis:
@@ -75,7 +89,50 @@ class AutomatedStockAnalysis:
         from utils.trading_clock import is_replay, trading_now
 
         if is_replay():
+            global _replay_indicators, _replay_prefilter, _replay_cache_key
+
             sim_date = trading_now().replace(tzinfo=None).date()
+            sim_ts = pd.Timestamp(sim_date)
+
+            # Build symbols_data for indicator computation (full data, not truncated)
+            symbols_data_for_indicators = {}
+            for s, df in fetched.items():
+                clean = df[["Open", "High", "Low", "Close", "Volume"]].dropna()
+                if len(clean) > 50:
+                    if clean.index.tz is not None:
+                        clean.index = clean.index.tz_localize(None)
+                    symbols_data_for_indicators[s] = clean
+
+            # Use cached indicators if available (same symbol set), else compute
+            cache_key = frozenset(symbols_data_for_indicators.keys())
+            if _replay_cache_key != cache_key:
+                from scripts.vectorbt_indicator_batch import compute_all_indicators
+                from scripts.vectorbt_signal_generator import compute_stock_prefilter
+
+                logger.info(f"Replay: computing indicators for {len(symbols_data_for_indicators)} symbols...")
+                strat_cfg = {"stock_filters": strategy_config.get("stock_filters", []), "swing_trading_gates": {}}
+                _replay_indicators = compute_all_indicators(symbols_data_for_indicators, strat_cfg)
+                _replay_prefilter = compute_stock_prefilter(_replay_indicators, strategy_config)
+                _replay_cache_key = cache_key
+                logger.info(
+                    f"Replay: indicators cached ({len(_replay_indicators.symbols)} symbols x {len(_replay_indicators.dates)} dates)"
+                )
+
+            # Find the closest date <= sim_date in the prefilter matrix
+            pf = _replay_prefilter
+            valid_dates = pf.index[pf.index <= sim_ts]
+            if len(valid_dates) > 0:
+                target_date = valid_dates[-1]
+                passing_symbols = {s for s in pf.columns if pf.loc[target_date, s]}
+                before_count = len(fetched)
+                fetched = {s: df for s, df in fetched.items() if s in passing_symbols}
+                logger.info(
+                    f"Replay: local screener filtered {before_count} → {len(fetched)} symbols on {sim_date} (prefilter date: {target_date.date()})"
+                )
+            else:
+                logger.warning(f"Replay: no prefilter date found <= {sim_date}, using all {len(fetched)} symbols")
+
+            # Truncate data to sim_date (no look-ahead)
             for s in list(fetched.keys()):
                 df = fetched[s]
                 truncated = df[df.index.date <= sim_date]

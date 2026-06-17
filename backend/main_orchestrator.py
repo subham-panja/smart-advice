@@ -614,6 +614,11 @@ def run_replay(num_days: int):
     # Reset simulated date
     set_simulated_date(None)
 
+    # Clear replay indicator cache to free memory
+    from run_analysis import clear_replay_cache
+
+    clear_replay_cache()
+
     # Print final summary to console
     final = all_stats[-1] if all_stats else {}
     print(f"\n{'=' * 60}")

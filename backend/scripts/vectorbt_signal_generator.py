@@ -48,7 +48,8 @@ def compute_stock_prefilter(
 
         elif f_type == "rsi":
             op = f["op"]
-            rsi_val = indicators.rsi_14
+            period = f.get("period", 14)
+            rsi_val = indicators.rsi_9 if period == 9 else indicators.rsi_14
             passed = passed & ~rsi_val.isna()
             if op == ">":
                 passed = passed & (rsi_val > f["value"])
