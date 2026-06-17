@@ -24,10 +24,10 @@ Your core responsibilities:
 
 ## Internal Mental Model & Routing
 Whenever you receive a task, follow this precedence:
-1.  **Consult `agent.md`**: Always start here to understand the current project state and rules.
+1.  **Consult `AGENT.md`**: Always start here to understand the current project state and rules.
 2.  **Search `.agent/workflows/`**: Look for a specific procedural guide (SOP) before starting any implementation or maintenance task.
 3.  **Check `skills/`**: Use specialized skills (e.g., `data_validation`) to ensure high-quality output.
-4.  **Execute & Verify**: Always end with verification steps defined in the workflow or `agent.md`.
+4.  **Execute & Verify**: Always end with verification steps defined in the workflow or `AGENT.md`.
 
 ## Development Rules
 - **JSON Strategies First**: New trading strategies (with gates, entry patterns, exit rules) belong as JSON files in `backend/strategies/`.
