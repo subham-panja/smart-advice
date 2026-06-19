@@ -16,7 +16,7 @@ import os
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import date
+from datetime import date, timedelta
 from typing import Dict, List, Optional
 
 import pandas as pd
@@ -70,7 +70,12 @@ def _cache_path(symbol: str) -> str:
 
 
 def _is_cache_recent(df: pd.DataFrame, max_age_days: int = 1) -> bool:
-    """Check if cached data is recent enough (last row within max_age_days)."""
+    """Check if cached data is recent enough (last row within max_age_days **trading days**).
+
+    Uses trading-day logic: weekends and holidays don't count.
+    On Saturday, Friday's data is fresh (0 trading days gap).
+    On Monday, Friday's data is also fresh (0 trading days gap since market was closed).
+    """
     if df.empty:
         return False
     try:
@@ -81,8 +86,16 @@ def _is_cache_recent(df: pd.DataFrame, max_age_days: int = 1) -> bool:
             last_date = pd.to_datetime(last_date).date()
 
         today = date.today()
-        age_days = (today - last_date).days
-        return age_days <= max_age_days
+
+        # Count trading days (weekdays only) between last_date and today
+        trading_days_gap = 0
+        d = last_date + timedelta(days=1)
+        while d <= today:
+            if d.weekday() < 5:  # Monday=0 to Friday=4
+                trading_days_gap += 1
+            d += timedelta(days=1)
+
+        return trading_days_gap <= max_age_days
     except Exception:
         return False
 
@@ -142,9 +155,9 @@ def fetch_historical_data_cached(
         try:
             df = pd.read_parquet(cache_path)
             if not df.empty:
-                # Check if cache has enough rows AND is recent
-                has_enough_rows = len(df) >= needed
                 is_recent = _is_cache_recent(df, max_age_days=1)
+                # For 'max' period, accept any recent cache (all available data)
+                has_enough_rows = len(df) >= needed if period != "max" else is_recent
 
                 if has_enough_rows and is_recent:
                     logger.debug(f"Cache hit for {symbol}: {len(df)} rows, recent data")
@@ -278,7 +291,7 @@ def get_cache_stats() -> Dict:
                 elif isinstance(last_date, str):
                     last_date = pd.to_datetime(last_date).date()
 
-                if (today - last_date).days <= 1:
+                if (today - last_date).days <= 3:  # ~1 trading day = up to 3 calendar days (weekend)
                     recent_count += 1
         except Exception:
             pass

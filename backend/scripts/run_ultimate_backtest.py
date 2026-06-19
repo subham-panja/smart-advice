@@ -206,6 +206,13 @@ def run_historical_with_realistic_costs(
     n_pass = int(stock_prefilter.iloc[-1].sum()) if len(stock_prefilter) > 0 else 0
     print(f"  → Stock prefilter: {n_pass} stocks pass on latest date")
 
+    # Pre-compute ALL signals ONCE (Phase 1 optimization: signal pre-computation)
+    print("  → Pre-computing signals for all eligible symbols...")
+    from scripts.run_portfolio_backtest import precompute_full_signals
+
+    precomputed_signals = precompute_full_signals(symbols_data, strategy, indicators, stock_prefilter, num_workers=4)
+    print(f"  → Signals pre-computed: {len(precomputed_signals)} symbols with buy signals")
+
     # Create simulation engine with vectorbt store and index data override
     engine = PortfolioBacktestSession(strategy_config=strategy)
     engine.set_indicator_store(store)
@@ -221,9 +228,10 @@ def run_historical_with_realistic_costs(
         num_days = len([d for d in symbols_data[first_sym].index if sim_start <= d <= sim_end])
     else:
         num_days = "?"
-    print(f"\n▶ Running day-by-day simulation ({num_days} trading days)...")
-    results = engine.run(
+    print(f"\n▶ Running day-by-day simulation ({num_days} trading days) with pre-computed signals...")
+    results = engine.run_with_signals(
         symbols_data,
+        precomputed_signals,
         sim_start_date=sim_start,
         sim_end_date=sim_end,
     )
@@ -248,6 +256,9 @@ def run_historical_with_realistic_costs(
 
     results["_scanned_symbols"] = symbols
     results["_symbols_data"] = symbols_data
+    results["_precomputed_signals"] = precomputed_signals
+    results["_indicators"] = indicators
+    results["_prefilter"] = stock_prefilter
     return results
 
 
@@ -339,7 +350,7 @@ def main():
     # Calculate fetch period from --months + 1 year buffer for warmup
     # Snap to valid yfinance periods: 1y, 2y, 5y, 10y, max
     needed_years = (args.months + 11) // 12 + 1
-    for y in (1, 2, 5, 10):
+    for y in (1, 2, 5, 10, 15, 20):
         if y >= needed_years:
             period = f"{y}y"
             break
@@ -424,6 +435,9 @@ def main():
                 verbose=False,
                 save_to_db=False,
                 symbols_data=historical.get("_symbols_data"),
+                indicators=historical.get("_indicators"),
+                prefilter=historical.get("_prefilter"),
+                precomputed_signals=historical.get("_precomputed_signals"),
             )
         except Exception as e:
             print(f"  ❌ Walk-forward failed: {e}")
@@ -447,6 +461,9 @@ def main():
         symbols=historical.get("_scanned_symbols"),
         symbols_data=historical.get("_symbols_data"),
         index_data=None,
+        indicators=historical.get("_indicators"),
+        prefilter=historical.get("_prefilter"),
+        precomputed_signals=historical.get("_precomputed_signals"),
     )
     timer.phase_end()
     phases_done += 1

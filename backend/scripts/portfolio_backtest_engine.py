@@ -284,7 +284,11 @@ class PortfolioBacktestSession:
         }
 
     def run_with_signals(
-        self, symbols_data: Dict[str, pd.DataFrame], precomputed_signals: Dict[str, Dict]
+        self,
+        symbols_data: Dict[str, pd.DataFrame],
+        precomputed_signals: Dict[str, Dict],
+        sim_start_date: Optional[pd.Timestamp] = None,
+        sim_end_date: Optional[pd.Timestamp] = None,
     ) -> Dict[str, Any]:
         """Run portfolio backtest using pre-computed signals (from multiprocessing workers).
 
@@ -306,6 +310,14 @@ class PortfolioBacktestSession:
         common_dates = self._get_common_dates(symbols_data)
         if len(common_dates) < 100:
             raise ValueError(f"Insufficient common trading days: {len(common_dates)}")
+
+        if sim_start_date is not None:
+            common_dates = common_dates[common_dates >= sim_start_date]
+        if sim_end_date is not None:
+            common_dates = common_dates[common_dates <= sim_end_date]
+
+        if len(common_dates) < 60:
+            raise ValueError(f"Insufficient common trading days after date filter: {len(common_dates)}")
 
         self.start_date = common_dates[0]
         self.end_date = common_dates[-1]
@@ -1332,16 +1344,15 @@ class PortfolioBacktestSession:
         avg_loss = gross_loss / (total_trades - len(winning_trades)) if total_trades > len(winning_trades) else 1
         expectancy = ((win_rate / 100 * avg_win) - ((1 - win_rate / 100) * avg_loss)) if total_trades > 0 else 0.0
 
-        # Sharpe ratio (from daily returns)
-        daily_returns = []
-        for i in range(1, len(self.daily_snapshots)):
-            prev = self.daily_snapshots[i - 1]["portfolio_value"]
-            curr = self.daily_snapshots[i]["portfolio_value"]
-            daily_returns.append((curr - prev) / prev if prev > 0 else 0)
-
+        # Sharpe ratio (from daily returns) — vectorized with numpy
         sharpe = 0.0
-        if daily_returns and np.std(daily_returns) > 0:
-            sharpe = (np.mean(daily_returns) / np.std(daily_returns)) * np.sqrt(252)
+        if len(self.daily_snapshots) > 1:
+            pv = np.array([s["portfolio_value"] for s in self.daily_snapshots], dtype=np.float64)
+            mask = pv[:-1] > 0
+            daily_returns = np.where(mask, (pv[1:] - pv[:-1]) / np.where(mask, pv[:-1], 1.0), 0.0)
+            std = np.std(daily_returns)
+            if std > 0:
+                sharpe = float(np.mean(daily_returns) / std * np.sqrt(252))
 
         avg_positions = (
             sum(s["open_positions_count"] for s in self.daily_snapshots) / len(self.daily_snapshots)

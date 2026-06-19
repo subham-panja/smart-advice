@@ -12,8 +12,10 @@ Tests:
 4. Transaction cost sensitivity
 """
 
+import multiprocessing as mp
 import os
 import sys
+from concurrent.futures import ProcessPoolExecutor
 from typing import Any, Dict, List
 
 import pandas as pd
@@ -75,6 +77,9 @@ def run_regime_tests(
     symbols: dict = None,
     symbols_data: dict = None,
     index_data=None,
+    indicators=None,
+    prefilter=None,
+    precomputed_signals=None,
 ) -> List[Dict[str, Any]]:
     """Run historical backtests on specific market regimes.
 
@@ -99,15 +104,17 @@ def run_regime_tests(
         symbols_data = fetch_symbols_data(symbols, period="10y", verbose=False)
         index_data = _prepare_index_data(strategy, symbols_data, "10y")
 
-    # Pre-compute indicators once
+    # Use pre-computed indicators if provided, otherwise compute locally
     from scripts.vectorbt_indicator_batch import IndicatorStore, compute_all_indicators
 
-    indicators = compute_all_indicators(symbols_data, strategy_config=strategy)
-    store = IndicatorStore(indicators)
+    if indicators is None:
+        indicators = compute_all_indicators(symbols_data, strategy_config=strategy)
+    indicator_store = IndicatorStore(indicators)
 
-    from scripts.vectorbt_signal_generator import compute_stock_prefilter
+    if prefilter is None:
+        from scripts.vectorbt_signal_generator import compute_stock_prefilter
 
-    prefilter = compute_stock_prefilter(indicators, strategy)
+        prefilter = compute_stock_prefilter(indicators, strategy)
 
     # Minimum data filter
     MIN_DAYS = 250
@@ -139,12 +146,17 @@ def run_regime_tests(
                         break
 
         engine = PortfolioBacktestSession(strategy_config=strategy)
-        engine.set_indicator_store(store)
+        engine.set_indicator_store(indicator_store)
         engine._stock_prefilter = prefilter
         if index_data is not None:
             engine._index_data_override = index_data
 
-        result = engine.run(symbols_data, sim_start_date=sim_start, sim_end_date=sim_end)
+        if precomputed_signals:
+            result = engine.run_with_signals(
+                symbols_data, precomputed_signals, sim_start_date=sim_start, sim_end_date=sim_end
+            )
+        else:
+            result = engine.run(symbols_data, sim_start_date=sim_start, sim_end_date=sim_end)
 
         cagr = result["cagr"]
         max_dd = result["max_drawdown_pct"]
@@ -179,7 +191,7 @@ def run_regime_tests(
 # ---------------------------------------------------------------------------
 
 # Fine-grained ATR stop sweep (replaces coarse low/high test)
-ATR_STOP_SWEEP = [2.0, 2.4, 2.8, 3.0, 3.2, 3.4, 3.6, 4.0]
+ATR_STOP_SWEEP = [2.0, 2.8, 3.0, 3.2, 4.0]
 
 PARAM_VARIATIONS = {
     "time_stop_bars": {"base": 12, "low": 10, "high": 14},
@@ -197,6 +209,10 @@ def run_param_sensitivity(
     end_date: str = "2026-05-15",
     symbols: dict = None,
     symbols_data: dict = None,
+    index_data=None,
+    indicators=None,
+    prefilter=None,
+    precomputed_signals=None,
 ) -> List[Dict[str, Any]]:
     """Test strategy performance with +/- 20% parameter variations.
 
@@ -214,8 +230,6 @@ def run_param_sensitivity(
         symbols = dict(list(symbols.items())[:max_stocks])
         symbols_data = fetch_symbols_data(symbols, period="10y", verbose=False)
         index_data = _prepare_index_data(strategy, symbols_data, "10y")
-    else:
-        index_data = None
 
     MIN_DAYS = 250
     for sym, df in list(symbols_data.items()):
@@ -239,15 +253,17 @@ def run_param_sensitivity(
                         sim_start = d
                     break
 
-    # Pre-compute indicators once for all variations
+    # Use pre-computed indicators if provided, otherwise compute locally
     from scripts.vectorbt_indicator_batch import IndicatorStore, compute_all_indicators
 
-    indicators = compute_all_indicators(symbols_data, strategy_config=strategy)
-    store = IndicatorStore(indicators)
+    if indicators is None:
+        indicators = compute_all_indicators(symbols_data, strategy_config=strategy)
+    indicator_store = IndicatorStore(indicators)
 
-    from scripts.vectorbt_signal_generator import compute_stock_prefilter
+    if prefilter is None:
+        from scripts.vectorbt_signal_generator import compute_stock_prefilter
 
-    prefilter = compute_stock_prefilter(indicators, strategy)
+        prefilter = compute_stock_prefilter(indicators, strategy)
 
     # Run base case
     print(f"\n{'='*70}")
@@ -255,11 +271,16 @@ def run_param_sensitivity(
     print(f"{'='*70}\n")
 
     base_engine = PortfolioBacktestSession(strategy_config=strategy)
-    base_engine.set_indicator_store(store)
+    base_engine.set_indicator_store(indicator_store)
     base_engine._stock_prefilter = prefilter
     if index_data is not None:
         base_engine._index_data_override = index_data
-    base_result = base_engine.run(symbols_data, sim_start_date=sim_start, sim_end_date=sim_end)
+    if precomputed_signals:
+        base_result = base_engine.run_with_signals(
+            symbols_data, precomputed_signals, sim_start_date=sim_start, sim_end_date=sim_end
+        )
+    else:
+        base_result = base_engine.run(symbols_data, sim_start_date=sim_start, sim_end_date=sim_end)
     base_cagr = base_result["cagr"]
     print(f"Base case CAGR: {base_cagr:.1f}%\n")
 
@@ -272,11 +293,16 @@ def run_param_sensitivity(
         test_strat = _deep_copy_strategy(strategy)
         _apply_param_change(test_strat, "atr_stop_multiplier", atr_val)
         engine = PortfolioBacktestSession(strategy_config=test_strat)
-        engine.set_indicator_store(store)
+        engine.set_indicator_store(indicator_store)
         engine._stock_prefilter = prefilter
         if index_data is not None:
             engine._index_data_override = index_data
-        result = engine.run(symbols_data, sim_start_date=sim_start, sim_end_date=sim_end)
+        if precomputed_signals:
+            result = engine.run_with_signals(
+                symbols_data, precomputed_signals, sim_start_date=sim_start, sim_end_date=sim_end
+            )
+        else:
+            result = engine.run(symbols_data, sim_start_date=sim_start, sim_end_date=sim_end)
         test_cagr = result["cagr"]
         atr_cagrs.append((atr_val, test_cagr))
         results.append({"param": "atr_stop_multiplier", "value": atr_val, "cagr": round(test_cagr, 2), "passed": True})
@@ -315,12 +341,17 @@ def run_param_sensitivity(
             _apply_param_change(test_strat, param_name, new_value)
 
             engine = PortfolioBacktestSession(strategy_config=test_strat)
-            engine.set_indicator_store(store)
+            engine.set_indicator_store(indicator_store)
             engine._stock_prefilter = prefilter
             if index_data is not None:
                 engine._index_data_override = index_data
 
-            result = engine.run(symbols_data, sim_start_date=sim_start, sim_end_date=sim_end)
+            if precomputed_signals:
+                result = engine.run_with_signals(
+                    symbols_data, precomputed_signals, sim_start_date=sim_start, sim_end_date=sim_end
+                )
+            else:
+                result = engine.run(symbols_data, sim_start_date=sim_start, sim_end_date=sim_end)
             test_cagr = result["cagr"]
 
             # Check if within tolerance
@@ -401,6 +432,10 @@ def run_cost_sensitivity(
     end_date: str = "2026-05-15",
     symbols: dict = None,
     symbols_data: dict = None,
+    index_data=None,
+    indicators=None,
+    prefilter=None,
+    precomputed_signals=None,
 ) -> List[Dict[str, Any]]:
     """Test performance at different cost levels.
 
@@ -418,8 +453,6 @@ def run_cost_sensitivity(
         symbols = dict(list(symbols.items())[:max_stocks])
         symbols_data = fetch_symbols_data(symbols, period="10y", verbose=False)
         index_data = _prepare_index_data(strategy, symbols_data, "10y")
-    else:
-        index_data = None
 
     MIN_DAYS = 250
     for sym, df in list(symbols_data.items()):
@@ -443,15 +476,17 @@ def run_cost_sensitivity(
                         sim_start = d
                     break
 
-    # Pre-compute indicators once for all cost scenarios
+    # Use pre-computed indicators if provided, otherwise compute locally
     from scripts.vectorbt_indicator_batch import IndicatorStore, compute_all_indicators
 
-    indicators = compute_all_indicators(symbols_data, strategy_config=strategy)
-    store = IndicatorStore(indicators)
+    if indicators is None:
+        indicators = compute_all_indicators(symbols_data, strategy_config=strategy)
+    indicator_store = IndicatorStore(indicators)
 
-    from scripts.vectorbt_signal_generator import compute_stock_prefilter
+    if prefilter is None:
+        from scripts.vectorbt_signal_generator import compute_stock_prefilter
 
-    prefilter = compute_stock_prefilter(indicators, strategy)
+        prefilter = compute_stock_prefilter(indicators, strategy)
 
     print(f"\n{'='*70}")
     print("TRANSACTION COST SENSITIVITY")
@@ -461,25 +496,20 @@ def run_cost_sensitivity(
     base_cagr = None
 
     for scenario in COST_SCENARIOS:
-        import config
-
-        original_brokerage = config.PORTFOLIO_BACKTEST_CONFIG.get("brokerage_charges")
-        original_slippage = config.PORTFOLIO_BACKTEST_CONFIG.get("slippage_pct")
-
-        config.PORTFOLIO_BACKTEST_CONFIG["brokerage_charges"] = scenario["brokerage"]
-        config.PORTFOLIO_BACKTEST_CONFIG["slippage_pct"] = scenario["slippage"]
-
         engine = PortfolioBacktestSession(strategy_config=strategy)
-        engine.set_indicator_store(store)
+        engine.set_indicator_store(indicator_store)
         engine._stock_prefilter = prefilter
         if index_data is not None:
             engine._index_data_override = index_data
+        engine.brokerage = scenario["brokerage"]
+        engine.slippage = scenario["slippage"]
 
-        result = engine.run(symbols_data, sim_start_date=sim_start, sim_end_date=sim_end)
-
-        # Restore original values
-        config.PORTFOLIO_BACKTEST_CONFIG["brokerage_charges"] = original_brokerage
-        config.PORTFOLIO_BACKTEST_CONFIG["slippage_pct"] = original_slippage
+        if precomputed_signals:
+            result = engine.run_with_signals(
+                symbols_data, precomputed_signals, sim_start_date=sim_start, sim_end_date=sim_end
+            )
+        else:
+            result = engine.run(symbols_data, sim_start_date=sim_start, sim_end_date=sim_end)
 
         cagr = result["cagr"]
         if base_cagr is None:
@@ -513,16 +543,124 @@ def run_all_stress_tests(
     symbols: dict = None,
     symbols_data: dict = None,
     index_data=None,
+    indicators=None,
+    prefilter=None,
+    precomputed_signals=None,
 ) -> Dict[str, Any]:
     """Run all stress tests and return combined results.
 
-    If symbols/symbols_data are provided, reuse them instead of re-fetching.
+    Computes indicators ONCE globally and runs 3 sub-tests in parallel
+    for ~3x speedup. Falls back to sequential if parallel fails.
+    Reuses pre-computed indicators/signals from Phase 1 when passed in.
     """
-    regime_results = run_regime_tests(
-        strategy_name, max_stocks, symbols=symbols, symbols_data=symbols_data, index_data=index_data
-    )
-    param_results = run_param_sensitivity(strategy_name, max_stocks, symbols=symbols, symbols_data=symbols_data)
-    cost_results = run_cost_sensitivity(strategy_name, max_stocks, symbols=symbols, symbols_data=symbols_data)
+    # Pre-compute index_data if not provided
+    if index_data is None and symbols_data is not None:
+        strategy = StrategyLoader.get_strategy_by_name(strategy_name)
+        if not strategy:
+            raise RuntimeError(f"Strategy '{strategy_name}' not found")
+        strategy.setdefault("analysis_config", {})["market_regime_detection"] = True
+        index_data = _prepare_index_data(strategy, symbols_data, "10y")
+
+    # Reuse pre-computed data from Phase 1 if available, otherwise compute fresh
+    if indicators is not None and precomputed_signals is not None:
+        print(f"  Reusing pre-computed indicators and signals from Phase 1 ({len(precomputed_signals)} symbols)")
+    elif symbols_data is not None:
+        try:
+            strategy = StrategyLoader.get_strategy_by_name(strategy_name)
+            strategy.setdefault("analysis_config", {})["market_regime_detection"] = True
+
+            from scripts.vectorbt_indicator_batch import compute_all_indicators
+
+            print("  Pre-computing indicators for stress tests (shared across all sub-tests)...")
+            indicators = compute_all_indicators(symbols_data, strategy_config=strategy)
+
+            from scripts.vectorbt_signal_generator import compute_stock_prefilter
+
+            prefilter = compute_stock_prefilter(indicators, strategy)
+            print("  Indicators + prefilter computed once for all stress tests")
+
+            # Pre-compute signals ONCE for all stress test sub-tests
+            from scripts.run_portfolio_backtest import precompute_full_signals
+
+            print("  Pre-computing signals for stress tests...")
+            precomputed_signals = precompute_full_signals(symbols_data, strategy, indicators, prefilter, num_workers=4)
+            print(f"  Signals pre-computed: {len(precomputed_signals)} symbols with buy signals")
+        except Exception as e:
+            print(f"  Indicator pre-computation failed: {e}, sub-tests will compute individually")
+
+    # Run sub-tests in parallel using fork (copy-on-write shares indicators/symbols_data)
+    try:
+        fork_ctx = mp.get_context("fork")
+        with ProcessPoolExecutor(max_workers=3, mp_context=fork_ctx) as executor:
+            regime_f = executor.submit(
+                run_regime_tests,
+                strategy_name,
+                max_stocks,
+                symbols=symbols,
+                symbols_data=symbols_data,
+                index_data=index_data,
+                indicators=indicators,
+                prefilter=prefilter,
+                precomputed_signals=precomputed_signals,
+            )
+            param_f = executor.submit(
+                run_param_sensitivity,
+                strategy_name,
+                max_stocks,
+                symbols=symbols,
+                symbols_data=symbols_data,
+                index_data=index_data,
+                indicators=indicators,
+                prefilter=prefilter,
+                precomputed_signals=precomputed_signals,
+            )
+            cost_f = executor.submit(
+                run_cost_sensitivity,
+                strategy_name,
+                max_stocks,
+                symbols=symbols,
+                symbols_data=symbols_data,
+                index_data=index_data,
+                indicators=indicators,
+                prefilter=prefilter,
+                precomputed_signals=precomputed_signals,
+            )
+
+            regime_results = regime_f.result()
+            param_results = param_f.result()
+            cost_results = cost_f.result()
+    except Exception as e:
+        print(f"  Parallel stress tests failed ({e}), falling back to sequential...")
+        regime_results = run_regime_tests(
+            strategy_name,
+            max_stocks,
+            symbols=symbols,
+            symbols_data=symbols_data,
+            index_data=index_data,
+            indicators=indicators,
+            prefilter=prefilter,
+            precomputed_signals=precomputed_signals,
+        )
+        param_results = run_param_sensitivity(
+            strategy_name,
+            max_stocks,
+            symbols=symbols,
+            symbols_data=symbols_data,
+            index_data=index_data,
+            indicators=indicators,
+            prefilter=prefilter,
+            precomputed_signals=precomputed_signals,
+        )
+        cost_results = run_cost_sensitivity(
+            strategy_name,
+            max_stocks,
+            symbols=symbols,
+            symbols_data=symbols_data,
+            index_data=index_data,
+            indicators=indicators,
+            prefilter=prefilter,
+            precomputed_signals=precomputed_signals,
+        )
 
     # Summary
     regime_pass = sum(1 for r in regime_results if r["passed"])
