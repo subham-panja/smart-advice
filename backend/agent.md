@@ -19,7 +19,7 @@ This file contains persistent rules and context that every agent (AI assistant) 
   - `hybrid_trading.json` (enabled) — Combined multi-factor strategy
   - `triple_confirm.json` (enabled) — Nitin Triple Confirm Retracement strategy
 - **Indicator Modules**: `backend/scripts/strategies/` (55+ TA-Lib modules, all inherit from `BaseStrategy`)
-- **Database**: MongoDB (`super_advice`)
+- **Database**: MongoDB (`smart_advice` — set via `.env` MONGODB_DATABASE)
 - **Telegram Bot**: `telegram_bot.py` (remote control)
 
 ## Key Modules
@@ -66,9 +66,11 @@ This file contains persistent rules and context that every agent (AI assistant) 
 
 ## Backtest Performance Notes
 - **Data fetching**: Uses `period="max"` — fetches all available yfinance data, simulation range controlled by `--months` flag
+- **Data caching**: Single-file parquet per symbol (`{symbol}.parquet`), cache freshness checked against NIFTY 50 last trading day (handles weekends + Indian holidays)
 - **Indicator pre-computation**: vectorbt batch computes all indicators once for all symbols x all dates
 - **Simulation loop**: Uses IndicatorStore for O(1) lookups — no TA-Lib calls during the day-by-day loop
-- **Walk-forward**: Sequential execution (no multiprocessing spawn overhead), pre-computed indicators shared across windows
+- **Walk-forward**: Parallel execution via ProcessPoolExecutor with fork (COW shares indicators/signals across workers)
+- **Stress tests**: 3 sub-tests (regime, param sensitivity, cost sensitivity) run in parallel via fork
 - **Chartink caching**: Results cached across all 6 phases — no repeated HTTP scans
 - **MongoDB persistence**: Backtest sessions, trades, and daily snapshots saved automatically
 

@@ -1,19 +1,86 @@
-# Cursor Instructions
+# Cursor Instructions — Smart Advice Project
 
-## Before Any Task
-Read AGENT.md first for project context, rules, and workflows.
+## MANDATORY: Before ANY Task (Non-Negotiable)
+
+You MUST complete this checklist before writing a single line of code or answering questions:
+
+### Step 1: Run Startup Script
+```bash
+cd /Users/subhampanja/Desktop/tranding/smart_advice
+python .agent/startup_check.py
+```
+This script reads all key docs and saves a read receipt to `.agent/last_read.json`.
+
+### Step 2: Read Core Documents (in order)
+1. **AGENT.md** — Project mission, tech stack, development rules, directory structure
+2. **All 6 Skills** (read EVERY file completely):
+   - `skills/backtest_validation.md` — Backtest result validation and interpretation
+   - `skills/data_validation.md` — Stock data quality validation
+   - `skills/entry_pattern_optimization.md` — Entry pattern tuning and gate optimization
+   - `skills/performance_debugging.md` — Backtest performance debugging
+   - `skills/risk_management.md` — Position sizing, stops, and risk controls
+   - `skills/strategy_analysis.md` — Strategy performance analysis
+3. **All 3 Workflows** (read EVERY file completely):
+   - `.agent/workflows/analyze_stocks.md` — Stock analysis execution
+   - `.agent/workflows/add_strategy.md` — Adding new strategies
+   - `.agent/workflows/frontend_development.md` — Frontend changes
+
+### Step 3: Verify Read Receipt
+Check `.agent/last_read.json` exists and contains timestamps for all docs. If missing, re-run startup script.
+
+## Code Writing Rules (MANDATORY)
+1. **MINIMAL CODE**: Write the absolute minimum lines needed. If it can be done in 50 lines, do NOT write 500 or 5000.
+2. **NO VERBOSE COMMENTS**: No comments explaining what code does. Only comment on non-obvious WHY (bug workarounds, hidden constraints).
+3. **NO BLOAT**: No unnecessary abstractions, helpers, wrappers, or "future-proofing." Do exactly what's asked.
+4. **NO BOILERPLATE**: No excessive docstrings, redundant validation, unused type hints, or defensive code for impossible scenarios.
+5. **HUMAN STANDARD**: Write like a senior human dev — short, clean, direct. If it looks like a textbook, it's too much.
+6. **EDIT OVER CREATE**: Prefer editing existing files. Only create new files when absolutely necessary.
+7. **ONE TASK = ONE CHANGE**: Don't refactor surrounding code or add unrequested features.
 
 ## Quick Reference
-- Project: Stock analysis platform for Indian Equity Market (NSE)
-- Backend: Python/Flask, MongoDB, Redis, TA-Lib, vectorbt
-- Frontend: Next.js 15.5, React 19, Tailwind CSS v4
-- Strategies: JSON-configured in backend/strategies/
-- Data cache: backend/data/historical/ (date-stamped parquet files)
-- Workflows: .agent/workflows/
+- **Project**: Stock analysis platform for Indian Equity Market (NSE)
+- **Backend**: Python/Flask, MongoDB, Redis, TA-Lib, vectorbt
+- **Frontend**: Next.js 15.5, React 19, Tailwind CSS v4
+- **Strategies**: JSON-configured in `backend/strategies/`
+- **Data cache**: `backend/data/historical/` (parquet files per symbol)
+- **Workflows**: `.agent/workflows/`
+- **Skills**: `skills/`
+
+## Communication Rules (MANDATORY)
+1. **Keep it SHORT**: Default to 1-3 sentences. Only expand if user says "explain", "detail", "show me".
+2. **NO CODE by default**: Never show code snippets, commands, or technical output unless explicitly requested.
+3. **Direct answers only**: Answer the question directly without preamble.
+4. **Prove on request**: Only show code, logs, or technical proof when user says "prove", "show code", "show me".
 
 ## Key Rules
 - Use vectorized operations (no Python loops over DataFrames)
 - Never bypass circuit_breaker or risk controls
-- New strategies go in backend/strategies/*.json
-- Indicator modules inherit from BaseStrategy in backend/scripts/strategies/
-- Check .agent/workflows/ before starting implementation tasks
+- New strategies go in `backend/strategies/*.json`
+- Indicator modules inherit from `BaseStrategy` in `backend/scripts/strategies/`
+- Check `.agent/workflows/` before starting implementation tasks
+- **ALWAYS read relevant skills before working** (see AGENT.md "Available Skills" section)
+
+## When to Read Skills
+
+**ALWAYS read skills when:**
+- Starting a new feature or modification
+- Analyzing backtest results
+- Optimizing strategy parameters
+- Debugging performance issues
+- Making risk management changes
+- Working with stock data
+
+**Example:**
+```
+Task: "Optimize swing trading entry patterns"
+→ Read: skills/entry_pattern_optimization.md (ENTIRE FILE)
+→ Follow: Optimization Workflow (steps 1-5)
+→ Apply: Parameter Tuning Guidelines
+→ Verify: Backtesting Parameter Changes checklist
+```
+
+## Task Routing
+1. Check `AGENT.md` for project context
+2. Check `.agent/workflows/` for task-specific SOP
+3. Read relevant `skills/*.md` files completely
+4. Execute & verify with tests

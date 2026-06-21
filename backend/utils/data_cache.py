@@ -69,12 +69,55 @@ def _cache_path(symbol: str) -> str:
     return os.path.join(CACHE_DIR, f"{symbol}.parquet")
 
 
-def _is_cache_recent(df: pd.DataFrame, max_age_days: int = 1) -> bool:
-    """Check if cached data is recent enough (last row within max_age_days **trading days**).
+_last_trading_day_cache = {"date": None, "fetched_at": None}
 
-    Uses trading-day logic: weekends and holidays don't count.
-    On Saturday, Friday's data is fresh (0 trading days gap).
-    On Monday, Friday's data is also fresh (0 trading days gap since market was closed).
+
+def _get_last_trading_day() -> Optional[date]:
+    """Determine the actual last trading day using NIFTY 50 index data.
+
+    Handles weekends AND Indian market holidays correctly:
+    - Normal weekend (Sat/Sun): returns Friday
+    - Holiday on Friday: returns Thursday
+    - Holiday week: returns the most recent day NIFTY actually traded
+
+    Falls back to weekday-based estimation if ^NSEI cache is unavailable.
+    """
+    # Reuse cached result within the same session (avoid repeated reads)
+    if _last_trading_day_cache["date"] and _last_trading_day_cache["fetched_at"] == date.today():
+        return _last_trading_day_cache["date"]
+
+    nsei_path = _cache_path("^NSEI")
+    if os.path.exists(nsei_path):
+        try:
+            df = pd.read_parquet(nsei_path)
+            if not df.empty:
+                last_date = df.index[-1]
+                if hasattr(last_date, "date"):
+                    last_date = last_date.date()
+                elif isinstance(last_date, str):
+                    last_date = pd.to_datetime(last_date).date()
+                _last_trading_day_cache["date"] = last_date
+                _last_trading_day_cache["fetched_at"] = date.today()
+                return last_date
+        except Exception:
+            pass
+
+    # Fallback: estimate last trading day from weekday
+    today = date.today()
+    d = today
+    while d.weekday() >= 5:
+        d -= timedelta(days=1)
+    return d
+
+
+def _is_cache_recent(df: pd.DataFrame, max_age_days: int = 1) -> bool:
+    """Check if cached data is recent enough.
+
+    Uses actual last trading day from NIFTY 50 when available, which correctly
+    handles weekends AND Indian market holidays. On a holiday Friday, Thursday's
+    data is fresh. On a normal weekend, Friday's data is fresh.
+
+    Falls back to weekday-based gap counting if NIFTY data is unavailable.
     """
     if df.empty:
         return False
@@ -87,11 +130,16 @@ def _is_cache_recent(df: pd.DataFrame, max_age_days: int = 1) -> bool:
 
         today = date.today()
 
-        # Count trading days (weekdays only) between last_date and today
+        # Use actual last trading day from NIFTY 50 (handles holidays correctly)
+        last_td = _get_last_trading_day()
+        if last_td and last_td != today:
+            return last_date >= last_td
+
+        # Fallback: count trading days (weekdays only)
         trading_days_gap = 0
         d = last_date + timedelta(days=1)
         while d <= today:
-            if d.weekday() < 5:  # Monday=0 to Friday=4
+            if d.weekday() < 5:
                 trading_days_gap += 1
             d += timedelta(days=1)
 
@@ -141,10 +189,11 @@ def fetch_historical_data_cached(
     One parquet file per symbol ({symbol}.parquet).
     Cache is used if:
     1. File exists
-    2. Has sufficient rows for requested period
-    3. Data is recent (last row within 1 day)
+    2. Data is recent (last row matches the actual last trading day from NIFTY 50)
 
-    If cache is outdated or insufficient, fresh data is fetched and cache is updated.
+    Row count is secondary: if cache is recent, it's accepted even for newer stocks
+    that don't have full history for the requested period.
+    Re-fetched only when data is stale (newer trading day exists).
     """
     cache_path = _cache_path(symbol)
     yf_sym = f"{symbol}.NS" if not symbol.startswith("^") else symbol
@@ -156,13 +205,12 @@ def fetch_historical_data_cached(
             df = pd.read_parquet(cache_path)
             if not df.empty:
                 is_recent = _is_cache_recent(df, max_age_days=1)
-                # For 'max' period, accept any recent cache (all available data)
                 has_enough_rows = len(df) >= needed if period != "max" else is_recent
 
-                if has_enough_rows and is_recent:
+                if is_recent:
                     logger.debug(f"Cache hit for {symbol}: {len(df)} rows, recent data")
                     return df
-                elif has_enough_rows and not is_recent:
+                elif has_enough_rows:
                     logger.info(f"Cache for {symbol} has {len(df)} rows but outdated. Re-fetching...")
                 else:
                     logger.info(f"Cache for {symbol} has {len(df)} rows, need {needed} for {period}. Re-fetching...")

@@ -72,13 +72,13 @@ EOF
    EOF
    ```
 
-2. Check cache path format:
+2. Check cache format:
    ```bash
    ls backend/data/historical/ | head -20
-   # Should be: SYMBOL_YYYY-MM-DD.parquet
+   # Should be: SYMBOL.parquet (one file per symbol, e.g. RELIANCE.parquet)
    ```
 
-3. Verify cache check logic in `backend/utils/data_cache.py:119-129`
+3. Cache freshness is checked against NIFTY 50 (`^NSEI.parquet`) last trading day — handles weekends AND Indian holidays automatically.
 
 ### Issue 2: Non-Vectorized Operations
 

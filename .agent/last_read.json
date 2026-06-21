@@ -1,0 +1,95 @@
+{
+  "timestamp": "2026-06-22T00:08:05.772142",
+  "project_root": "/Users/subhampanja/Desktop/tranding/smart_advice",
+  "documents": {
+    "agent_md": {
+      "exists": true,
+      "path": "/Users/subhampanja/Desktop/tranding/smart_advice/AGENT.md",
+      "size_bytes": 18174,
+      "lines": 274,
+      "last_modified": "2026-06-22T00:03:51.301279",
+      "read_at": "2026-06-22T00:08:05.772436"
+    },
+    "skills": {
+      "backtest_validation": {
+        "exists": true,
+        "path": "/Users/subhampanja/Desktop/tranding/smart_advice/skills/backtest_validation.md",
+        "size_bytes": 6218,
+        "lines": 190,
+        "last_modified": "2026-06-17T23:59:11.530083",
+        "read_at": "2026-06-22T00:08:05.772685"
+      },
+      "data_validation": {
+        "exists": true,
+        "path": "/Users/subhampanja/Desktop/tranding/smart_advice/skills/data_validation.md",
+        "size_bytes": 1098,
+        "lines": 25,
+        "last_modified": "2026-05-02T03:33:13.964542",
+        "read_at": "2026-06-22T00:08:05.772991"
+      },
+      "entry_pattern_optimization": {
+        "exists": true,
+        "path": "/Users/subhampanja/Desktop/tranding/smart_advice/skills/entry_pattern_optimization.md",
+        "size_bytes": 7821,
+        "lines": 270,
+        "last_modified": "2026-06-17T23:59:59.653680",
+        "read_at": "2026-06-22T00:08:05.773157"
+      },
+      "performance_debugging": {
+        "exists": true,
+        "path": "/Users/subhampanja/Desktop/tranding/smart_advice/skills/performance_debugging.md",
+        "size_bytes": 7730,
+        "lines": 300,
+        "last_modified": "2026-06-18T00:01:30.157308",
+        "read_at": "2026-06-22T00:08:05.773416"
+      },
+      "risk_management": {
+        "exists": true,
+        "path": "/Users/subhampanja/Desktop/tranding/smart_advice/skills/risk_management.md",
+        "size_bytes": 6891,
+        "lines": 258,
+        "last_modified": "2026-06-18T00:00:44.365546",
+        "read_at": "2026-06-22T00:08:05.773594"
+      },
+      "strategy_analysis": {
+        "exists": true,
+        "path": "/Users/subhampanja/Desktop/tranding/smart_advice/skills/strategy_analysis.md",
+        "size_bytes": 3696,
+        "lines": 103,
+        "last_modified": "2026-06-17T23:58:34.681072",
+        "read_at": "2026-06-22T00:08:05.773742"
+      }
+    },
+    "workflows": {
+      "analyze_stocks": {
+        "exists": true,
+        "path": "/Users/subhampanja/Desktop/tranding/smart_advice/.agent/workflows/analyze_stocks.md",
+        "size_bytes": 2984,
+        "lines": 74,
+        "last_modified": "2026-06-17T23:42:04.378419",
+        "read_at": "2026-06-22T00:08:05.773906"
+      },
+      "add_strategy": {
+        "exists": true,
+        "path": "/Users/subhampanja/Desktop/tranding/smart_advice/.agent/workflows/add_strategy.md",
+        "size_bytes": 3896,
+        "lines": 101,
+        "last_modified": "2026-06-17T23:42:22.428370",
+        "read_at": "2026-06-22T00:08:05.774081"
+      },
+      "frontend_development": {
+        "exists": true,
+        "path": "/Users/subhampanja/Desktop/tranding/smart_advice/.agent/workflows/frontend_development.md",
+        "size_bytes": 2302,
+        "lines": 52,
+        "last_modified": "2026-05-02T03:32:36.150177",
+        "read_at": "2026-06-22T00:08:05.774705"
+      }
+    }
+  },
+  "summary": {
+    "total": 10,
+    "found": 10,
+    "missing": 0
+  }
+}

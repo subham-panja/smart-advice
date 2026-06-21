@@ -22,6 +22,92 @@ Your core responsibilities:
 4.  **Verifiable Work**: Every change must be verified with local tests before finishing.
 5.  **Respect Risk Controls**: Never bypass `circuit_breaker`, position limits, or stop-loss logic.
 
+## Communication Rules (MANDATORY)
+**ALL responses must follow these rules:**
+1.  **Keep it SHORT**: Default to 1-3 sentences. Only expand if user says "explain", "detail", "show me", or similar.
+2.  **NO CODE by default**: Never show code snippets, commands, or technical output unless the user explicitly asks for code, commands, or proof.
+3.  **Direct answers only**: Answer the question directly without preamble, examples, or edge cases unless asked.
+4.  **Prove on request**: Only show code, logs, or technical proof when user says "prove", "show code", "show me", or similar.
+
+**Examples:**
+- User: "Is the cache updated?" → Answer: "Yes, last trade date is June 19 (Friday). It's fresh."
+- User: "How does cache work?" → Answer: "Uses parquet files per symbol. Checks if data is within 1 trading day. If not, re-downloads from yfinance."
+- User: "Show me the cache code" → THEN show code snippets.
+
+## Code Writing Rules (MANDATORY — Write Like a Human, Not a Machine)
+
+**ALL AI agents MUST follow these rules when writing or modifying code:**
+
+1. **MINIMAL CODE**: Write the absolute minimum lines of code needed. If a task can be done in 50 lines, do NOT write 500 or 5000 lines. Every extra line is debt.
+2. **NO VERBOSE COMMENTS**: Do NOT add comments explaining what the code does. The code itself should be self-explanatory through good naming. Only add a comment if the WHY is non-obvious (e.g., a workaround for a specific bug, a hidden constraint).
+3. **NO BLOAT**: Do not add abstractions, helpers, wrapper functions, base classes, or utility modules unless the task explicitly requires them. Do not "prepare for future use cases."
+4. **NO BOILERPLATE PADDING**: Do not add unnecessary imports, unused type hints, excessive docstrings, redundant validation, or defensive coding for impossible scenarios.
+5. **HUMAN STANDARD**: A senior human developer would write it short, clean, and direct. Match that standard. If your output looks like a textbook example with excessive structure, you've written too much.
+6. **EDIT OVER CREATE**: Always prefer editing existing files over creating new ones. Only create a new file if the task cannot be accomplished any other way.
+7. **ONE TASK = ONE CHANGE**: Don't refactor surrounding code, add features beyond what was asked, or "improve" unrelated parts. Do exactly what was asked, nothing more.
+
+**Bad (bloated):**
+```python
+# This function calculates the simple moving average
+# It takes a dataframe and a period as input
+# Returns the calculated SMA values
+def calculate_simple_moving_average(dataframe: pd.DataFrame, period: int = 20) -> pd.Series:
+    """Calculate the Simple Moving Average (SMA) for a given period.
+    
+    Args:
+        dataframe: The input pandas DataFrame containing price data.
+        period: The number of periods for the moving average calculation.
+    
+    Returns:
+        A pandas Series containing the calculated SMA values.
+    """
+    # Use the rolling window method to calculate SMA
+    result = dataframe['Close'].rolling(window=period).mean()
+    return result
+```
+
+**Good (minimal, like a human):**
+```python
+def sma(df, period=20):
+    return df['Close'].rolling(period).mean()
+```
+
+## MANDATORY Startup Procedure (Non-Negotiable)
+
+**ALL AI agents MUST complete this before starting ANY task:**
+
+### Step 1: Run Startup Script
+```bash
+cd /Users/subhampanja/Desktop/tranding/smart_advice
+python .agent/startup_check.py
+```
+This reads all critical docs and saves a timestamped receipt to `.agent/last_read.json`.
+
+### Step 2: Read Core Documents Completely
+After running the startup script, you MUST read these files **in full**:
+
+1. **AGENT.md** (this file) — Project context, rules, workflows
+2. **All 6 Skills** (read EVERY file completely):
+   - `skills/backtest_validation.md` — Backtest result validation
+   - `skills/data_validation.md` — Stock data quality checks
+   - `skills/entry_pattern_optimization.md` — Entry pattern tuning
+   - `skills/performance_debugging.md` — Performance debugging
+   - `skills/risk_management.md` — Risk controls and position sizing
+   - `skills/strategy_analysis.md` — Strategy performance analysis
+3. **All 3 Workflows** (read EVERY file completely):
+   - `.agent/workflows/analyze_stocks.md` — Stock analysis execution
+   - `.agent/workflows/add_strategy.md` — Adding new strategies
+   - `.agent/workflows/frontend_development.md` — Frontend changes
+
+### Step 3: Verify Read Receipt
+Check that `.agent/last_read.json` exists with timestamps for all 10 documents. If missing or incomplete, re-run the startup script.
+
+**Why this is mandatory:**
+- Prevents agents from giving incorrect answers due to missing context
+- Ensures agents understand project-specific rules and workflows
+- Creates an audit trail of what was loaded and when
+- Reduces rework from misunderstandings
+
 ## Internal Mental Model & Routing
 Whenever you receive a task, follow this precedence:
 1.  **Consult `AGENT.md`**: Always start here to understand the current project state and rules.
@@ -193,19 +279,21 @@ python scripts/run_ultimate_backtest.py --strategy Swing_Trading --months 120 --
 **Key optimizations:**
 - vectorbt indicator batch pre-computation (one-time, all symbols x all dates)
 - IndicatorStore for O(1) lookups during simulation (no TA-Lib during loop)
-- Sequential walk-forward (no multiprocessing overhead)
+- Parallel walk-forward via ProcessPoolExecutor with fork (copy-on-write shares indicators/symbols_data)
+- Stress tests run 3 sub-tests in parallel (regime, param, cost) via fork
 - Chartink results cached across all phases
-- **Date-stamped parquet cache**: `{symbol}_{YYYY-MM-DD}.parquet` in `backend/data/historical/` — if today's cache exists with sufficient rows, no yfinance download occurs
+- **Single-file parquet cache**: `{symbol}.parquet` in `backend/data/historical/` — if cache data matches the last trading day (from NIFTY 50), no yfinance download occurs
 - Stock prefilter computed once with vectorbt (no per-stock loops)
 
 **Data Caching:**
 - Cache location: `backend/data/historical/`
-- Format: `{SYMBOL}_{YYYY-MM-DD}.parquet` (e.g., `RELIANCE_2026-06-17.parquet`)
-- Cache check: Requires today's date in filename AND sufficient rows for the requested period
-- If cache is missing or insufficient, data is fetched from yfinance and cached for the day
+- Format: `{symbol}.parquet` (e.g., `RELIANCE.parquet`) — one file per symbol, contains all available history
+- Cache check: Uses NIFTY 50 (`^NSEI.parquet`) to determine the actual last trading day — handles weekends AND Indian market holidays correctly
+- If cache's last date matches the last trading day → cache hit (instant, no yfinance call)
+- If cache is stale (newer trading day exists) → re-fetches and updates cache
 - Symbols with < 250 trading days are excluded from simulation
 
-**Performance**: ~2 minutes for Phase 1 (full NSE universe, 10y). Walk-forward adds significant compute time depending on MC iterations.
+**Performance**: ~10-20 minutes for Phase 1 (full NSE universe ~2000 stocks, 10y). Walk-forward adds ~5-15 min depending on MC iterations and parallelism.
 
 **Latest Benchmark Results (Swing_Trading, 10y, full NSE universe, 2026-06-17):**
 
