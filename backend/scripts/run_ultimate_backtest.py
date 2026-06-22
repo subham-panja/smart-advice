@@ -293,7 +293,7 @@ def run_validation_phase(daily_snapshots: list) -> dict:
     mc = results.get("monte_carlo_permutation", {})
     print("\nMonte Carlo Permutation:")
     print(f"  Actual Sharpe: {mc.get('actual_sharpe', 'N/A')}")
-    print(f"  Shuffled mean: {mc.get('shuffled_sharpe_mean', 'N/A')}")
+    print(f"  Z-score: {mc.get('z_score', 'N/A')}")
     print(f"  p-value: {mc.get('p_value', 'N/A')}")
     print(f"  Significant: {'YES' if mc.get('significant') else 'NO'}")
 

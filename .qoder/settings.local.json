@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "echo '📋 IMPORTANT: Always read AGENT.md first before starting any task. It contains project context, rules, and workflows.'"
+            "command": "echo '🚀 SMART ADVICE — MANDATORY STARTUP PROCEDURE:' && echo '1. Run: python .agent/startup_check.py' && echo '2. Read ALL 6 skills in skills/ directory (completely)' && echo '3. Read ALL 3 workflows in .agent/workflows/ directory (completely)' && echo '4. Check .agent/last_read.json exists before starting any task' && echo '' && echo '⚠️  DO NOT proceed until startup procedure is complete.'"
           }
         ]
       }

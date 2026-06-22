@@ -17,6 +17,7 @@ Key features:
 """
 
 import logging
+import re
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
@@ -28,6 +29,13 @@ from config import PORTFOLIO_BACKTEST_CONFIG
 from scripts.market_regime_detection import MarketRegimeDetection
 from scripts.risk_management import RiskManager
 from scripts.swing_trading_signals import SwingTradingSignalAnalyzer
+
+try:
+    import scripts.execution_costs  # noqa: F401
+
+    _HAS_EXECUTION_COSTS = True
+except ImportError:
+    _HAS_EXECUTION_COSTS = False
 
 PYRAMID_COUNTS_AS_NEW_POSITION = False  # Global default
 
@@ -52,6 +60,7 @@ class PortfolioPosition:
     bar_executed: int = 0
     is_scaled_out: bool = False
     status: str = "OPEN"
+    entry_pattern: str = "unknown"
 
     def __post_init__(self):
         if self.current_stop_loss == 0.0:
@@ -83,6 +92,7 @@ class PortfolioTrade:
     portfolio_value_at_entry: float = 0.0
     cash_balance_at_entry: float = 0.0
     open_positions_count_at_entry: int = 0
+    entry_pattern: Optional[str] = None
 
 
 class PortfolioBacktestSession:
@@ -112,15 +122,7 @@ class PortfolioBacktestSession:
         self.gap_seed = cfg.get("gap_risk_seed", 42)
 
         # Use execution_costs module if available (realistic Indian market costs)
-        try:
-            import importlib.util
-
-            if importlib.util.find_spec("scripts.execution_costs") is not None:
-                self.use_realistic_costs = True
-            else:
-                self.use_realistic_costs = False
-        except Exception:
-            self.use_realistic_costs = False
+        self.use_realistic_costs = _HAS_EXECUTION_COSTS
 
         # Risk params from strategy's risk_management section (matches live trading)
         risk_cfg = strategy_config.get("risk_management", {})
@@ -138,6 +140,15 @@ class PortfolioBacktestSession:
         self.trades: List[PortfolioTrade] = []
         self.daily_snapshots: List[dict] = []
         self.bar_count = 0
+
+        self._cached_pv = None
+        self._cached_pv_date = None
+        self._dd_pause_active = False
+        self._dd_pause_start_bar = None
+        self._dd_pause_cfg = risk_cfg.get("drawdown_pause", {})
+        self._close_prices = {}
+        self._atr_cache = {}  # {symbol: {date: atr_value}} — pre-computed ATR fallback
+        self._date_idx = {}  # {symbol: {date: int_position}} — for iloc slicing
 
         # Tools
         self.swing_analyzer = SwingTradingSignalAnalyzer()
@@ -234,6 +245,25 @@ class PortfolioBacktestSession:
         # 2. Pre-compute last available date per symbol (for delisted detection)
         self._last_dates = {sym: df.index[-1] for sym, df in symbols_data.items()}
 
+        # Pre-compute close prices for O(1) lookup
+        self._close_prices = {}
+        for sym, df in symbols_data.items():
+            self._close_prices[sym] = dict(zip(df.index, df["Close"]))
+
+        # Pre-compute ATR for all symbols (eliminates _calculate_atr fallback path)
+        self._atr_cache = {}
+        for sym, df in symbols_data.items():
+            try:
+                atr_series = ta.ATR(df["High"], df["Low"], df["Close"], timeperiod=14)
+                self._atr_cache[sym] = dict(zip(df.index, atr_series))
+            except Exception:
+                pass
+
+        # Pre-build date-to-index-position map (for iloc slicing)
+        self._date_idx = {}
+        for sym, df in symbols_data.items():
+            self._date_idx[sym] = {dt: i for i, dt in enumerate(df.index)}
+
         # 3. Day-by-day simulation
         total_days = len(common_dates)
         import time as _time
@@ -329,6 +359,31 @@ class PortfolioBacktestSession:
         # 2. Pre-compute last available date per symbol
         self._last_dates = {sym: df.index[-1] for sym, df in symbols_data.items()}
 
+        self._close_prices = {}
+        for sym, df in symbols_data.items():
+            self._close_prices[sym] = dict(zip(df.index, df["Close"]))
+
+        self._signals_by_date = {}
+        for symbol, date_signals in precomputed_signals.items():
+            for dt, sig_data in date_signals.items():
+                if dt not in self._signals_by_date:
+                    self._signals_by_date[dt] = {}
+                self._signals_by_date[dt][symbol] = sig_data
+
+        # Pre-compute ATR for all symbols (eliminates _calculate_atr fallback path)
+        self._atr_cache = {}
+        for sym, df in symbols_data.items():
+            try:
+                atr_series = ta.ATR(df["High"], df["Low"], df["Close"], timeperiod=14)
+                self._atr_cache[sym] = dict(zip(df.index, atr_series))
+            except Exception:
+                pass
+
+        # Pre-build date-to-index-position map (for iloc slicing)
+        self._date_idx = {}
+        for sym, df in symbols_data.items():
+            self._date_idx[sym] = {dt: i for i, dt in enumerate(df.index)}
+
         # 3. Day-by-day simulation using pre-computed signals
         total_days = len(common_dates)
         import time as _time
@@ -399,6 +454,45 @@ class PortfolioBacktestSession:
         return self.run(symbols_data, sim_start_date, sim_end_date)
 
     # ------------------------------------------------------------------
+    # Drawdown Pause Circuit Breaker
+    # ------------------------------------------------------------------
+
+    def _check_drawdown_pause(self, symbols_data: Dict[str, pd.DataFrame], date: pd.Timestamp) -> bool:
+        """Check/update portfolio drawdown pause state. Returns True if entries should be paused."""
+        cfg = self._dd_pause_cfg
+        if not cfg.get("enabled", False):
+            return False
+
+        curr_value = self._current_portfolio_value(symbols_data, date)
+        if curr_value > self.peak_value:
+            self.peak_value = curr_value
+
+        dd_pct = ((self.peak_value - curr_value) / self.peak_value) * 100
+        pause_threshold = cfg.get("pause_threshold_pct", 15.0)
+        resume_threshold = cfg.get("resume_threshold_pct", 10.0)
+        pause_days_min = cfg.get("pause_days_min", 5)
+
+        if not self._dd_pause_active:
+            if dd_pct >= pause_threshold:
+                self._dd_pause_active = True
+                self._dd_pause_start_bar = self.bar_count
+                logger.info(
+                    f"⏸️ DRAWDOWN PAUSE activated on {date.date()}: DD {dd_pct:.1f}% >= {pause_threshold}% threshold"
+                )
+                return True
+            return False
+        else:
+            bars_paused = self.bar_count - (self._dd_pause_start_bar or self.bar_count)
+            if dd_pct <= resume_threshold and bars_paused >= pause_days_min:
+                self._dd_pause_active = False
+                self._dd_pause_start_bar = None
+                logger.info(
+                    f"▶️ DRAWDOWN PAUSE lifted on {date.date()}: DD recovered to {dd_pct:.1f}%, paused {bars_paused} bars"
+                )
+                return False
+            return True
+
+    # ------------------------------------------------------------------
     # Simulation Core
     # ------------------------------------------------------------------
 
@@ -432,8 +526,9 @@ class PortfolioBacktestSession:
         if rebal_cfg.get("enabled", False) and self.positions:
             self._daily_active_rebalance(date, symbols_data, rebal_cfg)
 
-        # --- Phase 2: Scan for New Signals ---
-        candidates = self._scan_for_signals(date, symbols_data)
+        # --- Phase 2: Scan for New Signals (skip if drawdown pause active) ---
+        entries_paused = self._check_drawdown_pause(symbols_data, date)
+        candidates = [] if entries_paused else self._scan_for_signals(date, symbols_data)
 
         # --- Phase 3: Rank and Execute Buys ---
         if candidates:
@@ -475,15 +570,15 @@ class PortfolioBacktestSession:
         exits_today = self._process_exits(date, symbols_data)
         _ = sum(e.pnl for e in exits_today if e.pnl > 0)
 
-        # --- Phase 2: Use pre-computed signals for this date ---
+        # --- Phase 2: Use pre-computed signals for this date (skip if drawdown pause active) ---
+        entries_paused = self._check_drawdown_pause(symbols_data, date)
         candidates = []
-        # Normalize date to tz-naive for dict lookup (worker stores tz-naive keys)
-        date_key = date.tz_localize(None) if date.tzinfo is not None else date
-        for symbol, date_signals in precomputed_signals.items():
-            if symbol in self.positions:
-                continue
-            if date_key in date_signals:
-                sig_data = date_signals[date_key]
+        if not entries_paused:
+            date_key = date.tz_localize(None) if date.tzinfo is not None else date
+            date_signals = self._signals_by_date.get(date_key, {})
+            for symbol, sig_data in date_signals.items():
+                if symbol in self.positions:
+                    continue
                 candidates.append(
                     {
                         "symbol": symbol,
@@ -531,7 +626,7 @@ class PortfolioBacktestSession:
                         exits.append(trade)
                 continue
 
-            current_price = df.loc[date, "Close"]
+            current_price = self._close_prices.get(symbol, {}).get(date, df.loc[date, "Close"])
             atr = self._calculate_atr_from_store(symbol, date) or self._calculate_atr(df, date)
             bars_held = self.bar_count - pos.bar_executed
             days_held = (date - pos.entry_date).days if hasattr(date, "__sub__") else bars_held
@@ -587,7 +682,11 @@ class PortfolioBacktestSession:
                 if stop_loss_type == "swing_low":
                     # Calculate swing low from recent lows (last 20 bars)
                     lookback = max(10, min(20, bars_held))
-                    recent_lows = df.loc[:date, "Low"].tail(lookback)
+                    idx = self._date_idx.get(symbol, {}).get(date)
+                    if idx is None:
+                        continue
+                    start = max(0, idx - lookback + 1)
+                    recent_lows = df["Low"].iloc[start : idx + 1]
                     swing_low = recent_lows.min()
                     # Stop is placed slightly below swing low (2% buffer)
                     swing_stop = swing_low * 0.98
@@ -611,7 +710,11 @@ class PortfolioBacktestSession:
                 if targets and targets[0].get("type") == "swing_structure" and pos.current_target_idx == 0:
                     # Swing high target - use recent high as exit target
                     lookback = max(10, min(20, bars_held + 10))
-                    recent_highs = df.loc[:date, "High"].tail(lookback)
+                    idx = self._date_idx.get(symbol, {}).get(date)
+                    if idx is None:
+                        idx = df.index.searchsorted(date)
+                    start = max(0, idx - lookback + 1)
+                    recent_highs = df["High"].iloc[start : idx + 1]
                     swing_high = recent_highs.max()
                     if current_price >= swing_high:
                         sell_pct = targets[0].get("sell_percentage", 1.0)
@@ -705,7 +808,7 @@ class PortfolioBacktestSession:
             df = symbols_data.get(symbol)
             if df is None or date not in df.index:
                 continue
-            current_price = df.loc[date, "Close"]
+            current_price = self._close_prices.get(symbol, {}).get(date, df.loc[date, "Close"])
             pnl_pct = (current_price - pos.entry_price) / pos.entry_price * 100
             position_pnl.append((symbol, pos, current_price, pnl_pct))
 
@@ -773,7 +876,10 @@ class PortfolioBacktestSession:
                     continue
 
             # Truncate data up to current date (no look-ahead)
-            hist = df.loc[:date]
+            idx = self._date_idx.get(symbol, {}).get(date)
+            if idx is None:
+                idx = df.index.searchsorted(date)
+            hist = df.iloc[: idx + 1]
             if len(hist) < 50:
                 continue
 
@@ -804,7 +910,11 @@ class PortfolioBacktestSession:
         """Execute a BUY order with portfolio-aware position sizing."""
         symbol = candidate["symbol"]
         df = symbols_data[symbol]
-        close_price = df.loc[date, "Close"]
+        swing_result = candidate.get("swing_result", {})
+        reason = swing_result.get("reason", "")
+        patterns = re.findall(r"Pattern\((\w+)\)", reason)
+        entry_pattern = patterns[0] if patterns else "unknown"
+        close_price = self._close_prices.get(symbol, {}).get(date, df.loc[date, "Close"])
 
         # Apply slippage: pay slightly more than close on buys
         exec_price = close_price * (1 + self.slippage)
@@ -813,7 +923,10 @@ class PortfolioBacktestSession:
         portfolio_value = self._current_portfolio_value(symbols_data, date)
         self.risk_manager.balance = self.initial_capital
 
-        hist = df.loc[:date]
+        idx = self._date_idx.get(symbol, {}).get(date)
+        if idx is None:
+            idx = df.index.searchsorted(date)
+        hist = df.iloc[: idx + 1]
         risk = self.risk_manager.calculate_risk_params(hist, exec_price, self.strategy_config, self._regime_status)
 
         if not risk.get("risk_reward_ok"):
@@ -860,6 +973,7 @@ class PortfolioBacktestSession:
 
         # Deduct cash
         self.cash -= total_cost
+        self._cached_pv = None
 
         # Create position
         position = PortfolioPosition(
@@ -870,6 +984,7 @@ class PortfolioBacktestSession:
             stop_loss=risk["stop_loss"],
             current_stop_loss=risk["stop_loss"],
             bar_executed=self.bar_count,
+            entry_pattern=entry_pattern,
         )
         self.positions[symbol] = position
 
@@ -886,6 +1001,7 @@ class PortfolioBacktestSession:
             portfolio_value_at_entry=portfolio_value,
             cash_balance_at_entry=self.cash,
             open_positions_count_at_entry=len(self.positions) - 1,
+            entry_pattern=entry_pattern,
         )
         self.trades.append(trade)
 
@@ -921,10 +1037,14 @@ class PortfolioBacktestSession:
             if df is None or date not in df.index:
                 continue
 
-            current_price = df.loc[date, "Close"]
-
-            # ATR trigger check
-            atr = self._calculate_atr_from_store(symbol, date) or self._calculate_atr(df.loc[:date], date)
+            current_price = self._close_prices.get(symbol, {}).get(date, df.loc[date, "Close"])
+            atr = self._calculate_atr_from_store(symbol, date)
+            if atr is None:
+                idx = self._date_idx.get(symbol, {}).get(date)
+                if idx is not None:
+                    atr = self._calculate_atr(df.iloc[: idx + 1], date)
+                else:
+                    atr = self._calculate_atr(df.loc[:date], date)
             step = steps[pos.adds_count]
             trigger_mult = step.get("trigger_step_atr", 1.5)
             required_price = pos.last_add_price + (trigger_mult * atr)
@@ -958,6 +1078,7 @@ class PortfolioBacktestSession:
 
             # Execute pyramid
             self.cash -= total_cost
+            self._cached_pv = None
             pos.quantity += add_qty
             pos.adds_count += 1
             pos.last_add_price = current_price
@@ -1011,6 +1132,7 @@ class PortfolioBacktestSession:
         pnl_pct = (pnl / (pos.quantity * pos.entry_price)) * 100 if pos.entry_price > 0 else 0
 
         self.cash += net_value
+        self._cached_pv = None
 
         trade = PortfolioTrade(
             symbol=symbol,
@@ -1027,6 +1149,7 @@ class PortfolioBacktestSession:
             portfolio_value_at_entry=self._current_portfolio_value_at_date(date),
             cash_balance_at_entry=self.cash - net_value,
             open_positions_count_at_entry=len(self.positions),
+            entry_pattern=pos.entry_pattern,
         )
         self.trades.append(trade)
 
@@ -1083,6 +1206,7 @@ class PortfolioBacktestSession:
             pnl=pnl,
             pnl_pct=pnl_pct,
             exit_reason=reason,
+            entry_pattern=pos.entry_pattern,
         )
         self.trades.append(trade)
 
@@ -1136,7 +1260,10 @@ class PortfolioBacktestSession:
             for symbol, df in symbols_data.items():
                 if date not in df.index:
                     continue
-                hist = df.loc[:date]
+                idx = self._date_idx.get(symbol, {}).get(date)
+                if idx is None:
+                    idx = df.index.searchsorted(date)
+                hist = df.iloc[: idx + 1]
                 if len(hist) < sma_period:
                     continue
                 total += 1
@@ -1172,10 +1299,14 @@ class PortfolioBacktestSession:
             index_symbol = self.regime_config.get("index", "^NSEI")
             if self._index_data_override is not None:
                 index_df = self._index_data_override
-                index_hist = index_df.loc[:date]
+                idx = index_df.index.searchsorted(date)
+                index_hist = index_df.iloc[: idx + 1]
             elif index_symbol in symbols_data:
                 index_df = symbols_data[index_symbol]
-                index_hist = index_df.loc[:date]
+                idx = self._date_idx.get(index_symbol, {}).get(date)
+                if idx is None:
+                    idx = index_df.index.searchsorted(date)
+                index_hist = index_df.iloc[: idx + 1]
             else:
                 # Fetch index data on-the-fly
                 from scripts.data_fetcher import get_historical_data
@@ -1232,15 +1363,16 @@ class PortfolioBacktestSession:
         return pd.DatetimeIndex(sorted(all_dates))
 
     def _current_portfolio_value(self, symbols_data: Dict[str, pd.DataFrame], date: pd.Timestamp) -> float:
-        """Calculate total portfolio value = cash + market value of open positions."""
+        if self._cached_pv is not None and self._cached_pv_date == date:
+            return self._cached_pv
         market_value = 0.0
         for symbol, pos in self.positions.items():
-            df = symbols_data.get(symbol)
-            if df is not None and date in df.index:
-                market_value += pos.quantity * df.loc[date, "Close"]
-            else:
-                market_value += pos.quantity * pos.entry_price
-        return self.cash + market_value
+            close_price = self._close_prices.get(symbol, {}).get(date, pos.entry_price)
+            market_value += pos.quantity * close_price
+        result = self.cash + market_value
+        self._cached_pv = result
+        self._cached_pv_date = date
+        return result
 
     def _current_portfolio_value_at_date(self, date: pd.Timestamp) -> float:
         """Return cached portfolio value if available, else approximate."""
@@ -1256,18 +1388,22 @@ class PortfolioBacktestSession:
             return 0.0
 
     def _calculate_atr_from_store(self, symbol: str, date: pd.Timestamp, period: int = 14) -> Optional[float]:
-        """Get ATR from pre-computed vectorbt indicator store (O(1) lookup).
+        """Get ATR from pre-computed stores (O(1) lookup).
 
-        Falls back to None if indicator store is not available.
+        Checks indicator_store first, then _atr_cache fallback.
         """
-        if self._indicator_store is None:
-            return None
-        try:
-            atr_val = self._indicator_store.get(symbol, "atr_14", date)
-            if atr_val is not None and not np.isnan(atr_val):
-                return float(atr_val)
-        except Exception:
-            pass
+        if self._indicator_store is not None:
+            try:
+                atr_val = self._indicator_store.get(symbol, "atr_14", date)
+                if atr_val is not None and not np.isnan(atr_val):
+                    return float(atr_val)
+            except Exception:
+                pass
+
+        atr_val = self._atr_cache.get(symbol, {}).get(date)
+        if atr_val is not None and not np.isnan(atr_val):
+            return float(atr_val)
+
         return None
 
     def _can_open_new_position(self, symbol: str) -> bool:

@@ -191,7 +191,7 @@ def run_regime_tests(
 # ---------------------------------------------------------------------------
 
 # Fine-grained ATR stop sweep (replaces coarse low/high test)
-ATR_STOP_SWEEP = [2.0, 2.8, 3.0, 3.2, 4.0]
+ATR_STOP_SWEEP = [2.0, 2.5, 2.8, 3.0, 3.05, 3.1, 3.15, 3.2, 3.3, 3.5, 4.0]
 
 PARAM_VARIATIONS = {
     "time_stop_bars": {"base": 12, "low": 10, "high": 14},

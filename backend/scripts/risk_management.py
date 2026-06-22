@@ -188,10 +188,16 @@ class RiskManager:
                 "T2": entry + (atr * t2_mult),
             }
 
-        # Validate Risk Reward
+        # Validate Risk Reward using blended expected reward across all targets
         min_rr = rec_thresholds["min_risk_reward_ratio"]
-        reward = targets["T1"] - entry
-        rr_ratio = reward / risk_per_share if risk_per_share > 0 else 0
+        if isinstance(target_list, list) and len(target_list) >= 2:
+            t1_reward = targets["T1"] - entry
+            t2_reward = targets["T2"] - entry
+            sell_pct_t1 = target_list[0].get("sell_percentage", 0.5)
+            expected_reward = t1_reward * sell_pct_t1 + t2_reward * (1 - sell_pct_t1)
+        else:
+            expected_reward = targets["T1"] - entry
+        rr_ratio = expected_reward / risk_per_share if risk_per_share > 0 else 0
         rr_ok = rr_ratio >= min_rr
 
         return {

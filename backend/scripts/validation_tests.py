@@ -11,7 +11,6 @@ and not the result of luck or overfitting:
 """
 
 import math
-import random
 from typing import Any, Dict, List
 
 import numpy as np
@@ -102,20 +101,17 @@ def monte_carlo_permutation_test(
     annual_factor: int = 252,
     seed: int = 42,
 ) -> Dict[str, Any]:
-    """Test if strategy returns are statistically different from random.
+    """Test if strategy Sharpe ratio is statistically significant.
 
-    Randomly shuffles the return series many times. If the shuffled results
-    beat the actual Sharpe ratio >5% of the time, the edge isn't real.
+    Uses autocorrelation-adjusted standard error to properly test whether
+    the observed Sharpe ratio is significantly different from zero, accounting
+    for the temporal dependence in returns that trend-following strategies exploit.
 
-    Args:
-        daily_returns: List of daily portfolio returns
-        n_simulations: Number of random permutations
-        annual_factor: Trading days per year
-        seed: Random seed for reproducibility
-
-    Returns:
-        Dict with p-value, confidence, and significance assessment
+    Also performs a sign-flip permutation test on mean returns to verify
+    that the strategy's mean return is significantly positive.
     """
+    from scipy.stats import norm
+
     returns = np.array(daily_returns)
     n = len(returns)
 
@@ -123,32 +119,60 @@ def monte_carlo_permutation_test(
         return {"status": "error", "reason": "Insufficient returns (need 30+)"}
 
     actual_sharpe = _compute_sharpe(returns, annual_factor)
+    mean_ret = np.mean(returns)
 
-    rng = random.Random(seed)
+    # Autocorrelation-adjusted Sharpe SE
+    max_lag = min(20, n // 4)
+    rho_sum = 0.0
+    for k in range(1, max_lag + 1):
+        rho_k = np.corrcoef(returns[:-k], returns[k:])[0, 1]
+        if not np.isnan(rho_k):
+            rho_sum += rho_k
+
+    ac_factor = max(1.0, 1.0 + 2.0 * rho_sum)
+    adjusted_se = math.sqrt(ac_factor / n)
+
+    z_score = actual_sharpe / (adjusted_se * math.sqrt(annual_factor)) if adjusted_se > 0 else 0
+    p_value_sharpe = 1.0 - norm.cdf(z_score)
+
+    # Sign-flip permutation test on mean return
+    rng = np.random.RandomState(seed)
     better_count = 0
-    shuffled_sharpes = []
-
     for _ in range(n_simulations):
-        shuffled = returns.copy()
-        rng.shuffle(shuffled)
-        shuffled_sr = _compute_sharpe(shuffled, annual_factor)
-        shuffled_sharpes.append(shuffled_sr)
-        if shuffled_sr > actual_sharpe:
+        signs = rng.choice([-1, 1], size=n)
+        flipped_mean = np.mean(returns * signs)
+        if flipped_mean > mean_ret:
             better_count += 1
 
-    p_value = better_count / n_simulations
+    p_value_mean = better_count / n_simulations
+    p_value = max(p_value_sharpe, p_value_mean)
+
+    # Bootstrap confidence interval for Sharpe
+    bootstrap_sharpes = []
+    for _ in range(min(n_simulations, 2000)):
+        sample = rng.choice(returns, size=n, replace=True)
+        bootstrap_sharpes.append(_compute_sharpe(sample, annual_factor))
+
+    bootstrap_sharpes = np.array(bootstrap_sharpes)
+    sharpe_ci_low = float(np.percentile(bootstrap_sharpes, 5))
+    sharpe_ci_high = float(np.percentile(bootstrap_sharpes, 95))
+    pct_positive = float(np.mean(bootstrap_sharpes > 0) * 100)
 
     return {
         "actual_sharpe": round(actual_sharpe, 4),
-        "shuffled_sharpe_mean": round(float(np.mean(shuffled_sharpes)), 4),
-        "shuffled_sharpe_std": round(float(np.std(shuffled_sharpes)), 4),
-        "shuffled_sharpe_p5": round(float(np.percentile(shuffled_sharpes, 5)), 4),
-        "shuffled_sharpe_p95": round(float(np.percentile(shuffled_sharpes, 95)), 4),
-        "n_simulations": n_simulations,
-        "better_count": better_count,
+        "autocorrelation_factor": round(ac_factor, 4),
+        "adjusted_se": round(adjusted_se, 6),
+        "z_score": round(z_score, 4),
+        "p_value_sharpe": round(float(p_value_sharpe), 6),
+        "p_value_mean_return": round(p_value_mean, 6),
         "p_value": round(p_value, 6),
         "significant": p_value < 0.05,
         "confidence_pct": round((1 - p_value) * 100, 2),
+        "bootstrap_sharpe_ci_low": round(sharpe_ci_low, 4),
+        "bootstrap_sharpe_ci_high": round(sharpe_ci_high, 4),
+        "bootstrap_pct_positive": round(pct_positive, 2),
+        "n_simulations": n_simulations,
+        "autocorrelation_sum": round(rho_sum, 4),
     }
 
 

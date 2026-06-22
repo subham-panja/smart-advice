@@ -8,7 +8,7 @@
     "fundamental_analysis": true,
     "sentiment_analysis": false,
     "sector_analysis": true,
-    "market_regime_detection": false,
+    "market_regime_detection": true,
     "risk_management": true,
     "options_oi": true
   },
@@ -116,7 +116,7 @@
     },
     "MACD_Signal_Crossover": {
       "enabled": true,
-      "is_bonus": false,
+      "is_bonus": true,
       "fast_period": 12,
       "slow_period": 26,
       "signal_period": 9,
@@ -214,7 +214,7 @@
   "entry_patterns": [
     {
       "name": "pullback_to_ema",
-      "enabled": true,
+      "enabled": false,
       "ema_period": 21,
       "rsi_range": [
         35,
@@ -234,7 +234,7 @@
     },
     {
       "name": "macd_zero_cross",
-      "enabled": true,
+      "enabled": false,
       "fast": 12,
       "slow": 26,
       "signal": 9,
@@ -321,7 +321,7 @@
     "risk_per_trade_pct": 2.0,
     "max_risk_per_trade_pct": 2.0,
     "max_position_pct": 30.0,
-    "max_positions": 4,
+    "max_positions": 6,
     "stop_loss_type": "ATR",
     "position_sizing": "risk_based",
     "volatility_scaling": {
@@ -334,12 +334,18 @@
     "regime_adaptive_risk": {
       "bull": {
         "risk_per_trade_pct": 2.0,
-        "max_positions": 8
+        "max_positions": 6
       },
       "bear": {
         "risk_per_trade_pct": 1.0,
         "max_positions": 4
       }
+    },
+    "drawdown_pause": {
+      "enabled": true,
+      "pause_threshold_pct": 15.0,
+      "resume_threshold_pct": 10.0,
+      "pause_days_min": 5
     }
   },
   "pyramiding": {
