@@ -41,6 +41,7 @@ Check `.agent/last_read.json` exists with timestamps for all docs.
 5. **HUMAN STANDARD**: Write like a senior human dev — short, clean, direct. If it looks like a textbook, it's too much.
 6. **EDIT OVER CREATE**: Prefer editing existing files. Only create new files when absolutely necessary.
 7. **ONE TASK = ONE CHANGE**: Don't refactor surrounding code or add unrequested features.
+8. **NO SCRATCH SCRIPTS**: For any work, do NOT create temporary files/scripts for running code. Instead, run it directly in the terminal using python code (e.g. `python -c "..."` or heredoc). Do not create a script file unless explicitly instructed to do so.
 
 ## Quick Reference
 - **Project**: Stock analysis platform for Indian Equity Market (NSE)

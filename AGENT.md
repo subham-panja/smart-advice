@@ -45,6 +45,7 @@ Your core responsibilities:
 5. **HUMAN STANDARD**: A senior human developer would write it short, clean, and direct. Match that standard. If your output looks like a textbook example with excessive structure, you've written too much.
 6. **EDIT OVER CREATE**: Always prefer editing existing files over creating new ones. Only create a new file if the task cannot be accomplished any other way.
 7. **ONE TASK = ONE CHANGE**: Don't refactor surrounding code, add features beyond what was asked, or "improve" unrelated parts. Do exactly what was asked, nothing more.
+8. **NO SCRATCH SCRIPTS**: For any work, do NOT create temporary files/scripts for running code. Instead, run it directly in the terminal using python code (e.g. `python -c "..."` or heredoc). Do not create a script file unless explicitly instructed to do so.
 
 **Bad (bloated):**
 ```python
