@@ -208,12 +208,21 @@ class PersistenceHandler:
         Stores all Phase 2-6 results as a nested 'ultimate_phases' field on the
         backtest_sessions document so the full analysis is persisted for later review.
         """
+
+        def sanitize(d):
+            if isinstance(d, dict):
+                return {str(k): sanitize(v) for k, v in d.items()}
+            elif isinstance(d, list):
+                return [sanitize(x) for x in d]
+            return d
+
         try:
             db = get_mongodb()
             now = trading_now(timezone.utc).replace(tzinfo=None)
+            safe_phases = sanitize(phases)
             db.backtest_sessions.update_one(
                 {"_id": session_id},
-                {"$set": {"ultimate_phases": phases, "updated_at": now}},
+                {"$set": {"ultimate_phases": safe_phases, "updated_at": now}},
             )
             return True
         except Exception as e:

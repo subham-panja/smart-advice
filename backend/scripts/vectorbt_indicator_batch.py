@@ -269,7 +269,7 @@ def compute_all_indicators(
 
     if need_weekly:
         weekly_sma_10, weekly_sma_30, weekly_rsi_14, vwap_20 = _compute_weekly_indicators(
-            symbols, aligned, common_dates
+            close, high, low, volume, common_dates
         )
 
     return ComputedIndicators(
@@ -306,59 +306,31 @@ def compute_all_indicators(
 
 
 def _compute_weekly_indicators(
-    symbols: List[str],
-    aligned: Dict[str, pd.DataFrame],
+    close: pd.DataFrame,
+    high: pd.DataFrame,
+    low: pd.DataFrame,
+    volume: pd.DataFrame,
     common_dates: pd.DatetimeIndex,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """Compute weekly-resampled indicators and map back to daily dates."""
-    weekly_sma_10_data = {}
-    weekly_sma_30_data = {}
-    weekly_rsi_14_data = {}
-    vwap_20_data = {}
+    """Compute weekly-resampled indicators and map back to daily dates using fully vectorized 2D operations."""
 
-    for sym in symbols:
-        df = aligned[sym]
-        if df.dropna().empty:
-            continue
+    # Resample all 2D DataFrames to weekly at once (eliminates 1300-stock for loop)
+    w_close = close.resample("W").last()
 
-        # Resample to weekly
-        weekly = (
-            df.resample("W")
-            .agg({"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"})
-            .dropna()
-        )
+    # Vectorized TA-Lib runs on all symbols at once
+    sma10 = vbt.talib("SMA").run(w_close, timeperiod=10).real
+    sma30 = vbt.talib("SMA").run(w_close, timeperiod=30).real
+    rsi14 = vbt.talib("RSI").run(w_close, timeperiod=14).real
 
-        if len(weekly) < 30:
-            continue
+    # Reindex back to daily, ffill
+    weekly_sma_10 = sma10.reindex(common_dates, method="ffill")
+    weekly_sma_30 = sma30.reindex(common_dates, method="ffill")
+    weekly_rsi_14 = rsi14.reindex(common_dates, method="ffill")
 
-        w_close = weekly["Close"]
-
-        sma10 = vbt.talib("SMA").run(w_close, timeperiod=10).real
-        sma30 = vbt.talib("SMA").run(w_close, timeperiod=30).real
-        rsi14 = vbt.talib("RSI").run(w_close, timeperiod=14).real
-
-        # Reindex back to daily, forward-fill from weekly to daily dates
-        weekly_sma_10_data[sym] = sma10.reindex(common_dates, method="ffill")
-        weekly_sma_30_data[sym] = sma30.reindex(common_dates, method="ffill")
-        weekly_rsi_14_data[sym] = rsi14.reindex(common_dates, method="ffill")
-
-        # VWAP (20-day rolling on daily data)
-        typical_price = (df["High"] + df["Low"] + df["Close"]) / 3
-        cum_vp = (typical_price * df["Volume"]).rolling(20, min_periods=10).sum()
-        cum_vol = df["Volume"].rolling(20, min_periods=10).sum()
-        vwap = cum_vp / cum_vol
-        vwap_20_data[sym] = vwap
-
-    if weekly_sma_10_data:
-        weekly_sma_10 = pd.DataFrame(weekly_sma_10_data)
-        weekly_sma_10.columns = list(weekly_sma_10_data.keys())
-        weekly_sma_30 = pd.DataFrame(weekly_sma_30_data)
-        weekly_sma_30.columns = list(weekly_sma_30_data.keys())
-        weekly_rsi_14 = pd.DataFrame(weekly_rsi_14_data)
-        weekly_rsi_14.columns = list(weekly_rsi_14_data.keys())
-        vwap_20 = pd.DataFrame(vwap_20_data)
-        vwap_20.columns = list(vwap_20_data.keys())
-    else:
-        weekly_sma_10 = weekly_sma_30 = weekly_rsi_14 = vwap_20 = None
+    # VWAP (daily data) - fully vectorized 2D operations
+    typical_price = (high + low + close) / 3
+    cum_vp = (typical_price * volume).rolling(20, min_periods=10).sum()
+    cum_vol = volume.rolling(20, min_periods=10).sum()
+    vwap_20 = cum_vp / cum_vol
 
     return weekly_sma_10, weekly_sma_30, weekly_rsi_14, vwap_20

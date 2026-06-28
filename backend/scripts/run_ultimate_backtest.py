@@ -147,6 +147,23 @@ def run_historical_with_realistic_costs(
     symbols = {s: s for s in all_nse} if isinstance(all_nse, list) else dict(all_nse)
     print(f"  → Using full NSE universe: {len(symbols)} stocks")
 
+    # Pre-filter by strategy market cap to save massive memory/compute
+    min_cap = next(
+        (
+            f.get("value")
+            for f in strategy.get("stock_filters", [])
+            if f.get("type") == "market_cap" and f.get("op") == ">"
+        ),
+        None,
+    )
+    if min_cap is not None:
+        print(f"  → Pre-filtering universe by strategy market cap > {min_cap}...")
+        from scripts.data_fetcher import get_market_caps
+
+        mc_cache = get_market_caps(list(symbols.keys()))
+        symbols = {sym: symbols[sym] for sym in symbols.keys() if mc_cache.get(sym, 0) > min_cap}
+        print(f"  → Filtered universe: {len(symbols)} stocks remaining")
+
     # Scanned symbols returned in results["_scanned_symbols"] for reuse
 
     print(f"[3/6] Fetching {period} historical OHLCV data...")
