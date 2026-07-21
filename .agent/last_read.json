@@ -1,14 +1,14 @@
 {
-  "timestamp": "2026-06-28T14:36:37.354648",
+  "timestamp": "2026-07-21T23:34:38.042495",
   "project_root": "/Users/subhampanja/Desktop/tranding/smart_advice",
   "documents": {
     "agent_md": {
       "exists": true,
       "path": "/Users/subhampanja/Desktop/tranding/smart_advice/AGENT.md",
-      "size_bytes": 22412,
-      "lines": 350,
-      "last_modified": "2026-06-22T00:29:41.936621",
-      "read_at": "2026-06-28T14:36:37.354970"
+      "size_bytes": 22672,
+      "lines": 351,
+      "last_modified": "2026-06-28T14:38:59.761004",
+      "read_at": "2026-07-21T23:34:38.042821"
     },
     "skills": {
       "backtest_validation": {
@@ -17,7 +17,7 @@
         "size_bytes": 6218,
         "lines": 190,
         "last_modified": "2026-06-17T23:59:11.530083",
-        "read_at": "2026-06-28T14:36:37.355060"
+        "read_at": "2026-07-21T23:34:38.043315"
       },
       "data_validation": {
         "exists": true,
@@ -25,7 +25,7 @@
         "size_bytes": 1098,
         "lines": 25,
         "last_modified": "2026-05-02T03:33:13.964542",
-        "read_at": "2026-06-28T14:36:37.355110"
+        "read_at": "2026-07-21T23:34:38.043475"
       },
       "entry_pattern_optimization": {
         "exists": true,
@@ -33,7 +33,7 @@
         "size_bytes": 7821,
         "lines": 270,
         "last_modified": "2026-06-17T23:59:59.653680",
-        "read_at": "2026-06-28T14:36:37.355158"
+        "read_at": "2026-07-21T23:34:38.043651"
       },
       "performance_debugging": {
         "exists": true,
@@ -41,7 +41,7 @@
         "size_bytes": 7828,
         "lines": 300,
         "last_modified": "2026-06-22T00:29:58.104084",
-        "read_at": "2026-06-28T14:36:37.355205"
+        "read_at": "2026-07-21T23:34:38.043810"
       },
       "risk_management": {
         "exists": true,
@@ -49,7 +49,7 @@
         "size_bytes": 6891,
         "lines": 258,
         "last_modified": "2026-06-18T00:00:44.365546",
-        "read_at": "2026-06-28T14:36:37.355248"
+        "read_at": "2026-07-21T23:34:38.043970"
       },
       "strategy_analysis": {
         "exists": true,
@@ -57,7 +57,7 @@
         "size_bytes": 3696,
         "lines": 103,
         "last_modified": "2026-06-17T23:58:34.681072",
-        "read_at": "2026-06-28T14:36:37.355286"
+        "read_at": "2026-07-21T23:34:38.044121"
       }
     },
     "workflows": {
@@ -67,7 +67,7 @@
         "size_bytes": 2984,
         "lines": 74,
         "last_modified": "2026-06-17T23:42:04.378419",
-        "read_at": "2026-06-28T14:36:37.355329"
+        "read_at": "2026-07-21T23:34:38.044422"
       },
       "add_strategy": {
         "exists": true,
@@ -75,7 +75,7 @@
         "size_bytes": 3896,
         "lines": 101,
         "last_modified": "2026-06-17T23:42:22.428370",
-        "read_at": "2026-06-28T14:36:37.355367"
+        "read_at": "2026-07-21T23:34:38.044584"
       },
       "frontend_development": {
         "exists": true,
@@ -83,7 +83,7 @@
         "size_bytes": 2302,
         "lines": 52,
         "last_modified": "2026-05-02T03:32:36.150177",
-        "read_at": "2026-06-28T14:36:37.355403"
+        "read_at": "2026-07-21T23:34:38.044879"
       }
     }
   },

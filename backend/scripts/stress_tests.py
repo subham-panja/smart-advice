@@ -355,6 +355,7 @@ def run_param_sensitivity(
             test_cagr = result["cagr"]
 
             # Check if within tolerance
+            deviation = 0.0
             if base_cagr != 0:
                 deviation = abs(test_cagr - base_cagr) / abs(base_cagr)
                 passed = deviation <= tolerance

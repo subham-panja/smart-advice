@@ -55,9 +55,16 @@ class AutomatedStockAnalysis:
 
         # Macro Check
         if strategy_config["analysis_config"]["market_regime_detection"]:
-            if not MarketRegimeDetection().get_simple_regime_check(strategy_config["market_regime_config"])["passed"]:
-                logger.warning(f"[{strategy_config['name']}] Market regime is BEARISH. Skipping strategy.")
-                return
+            regime_check = MarketRegimeDetection().get_simple_regime_check(strategy_config["market_regime_config"])
+            if not regime_check["passed"]:
+                pause_buying = strategy_config.get("market_regime_config", {}).get("pause_buying_if_bearish", True)
+                if pause_buying:
+                    logger.warning(f"[{strategy_config['name']}] Market regime is BEARISH. Skipping strategy.")
+                    return
+                else:
+                    logger.info(
+                        f"[{strategy_config['name']}] Market regime is BEARISH, but pause_buying_if_bearish is False. Proceeding."
+                    )
 
         # Phase 1: Fetch Data
         thresholds = strategy_config.get("recommendation_thresholds", {})

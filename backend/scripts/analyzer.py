@@ -149,9 +149,20 @@ class StockAnalyzer:
             res["trade_plan"] = self.trade_logic.analyze(symbol, hist, app_config=app_config)
 
             if res["is_recommended"]:
-                res["risk_management"] = self.risk_manager.calculate_risk_params(
-                    hist, hist["Close"].iloc[-1], app_config=app_config
-                )
+                rm_result = self.risk_manager.calculate_risk_params(hist, hist["Close"].iloc[-1], app_config=app_config)
+                res["risk_management"] = rm_result
+                if not rm_result.get("risk_reward_ok", True):
+                    res["is_recommended"] = False
+                    res["reason"].append(f"Poor Risk-Reward (RR={rm_result.get('rr_ratio')})")
+                    audit_entry["steps"].append(
+                        {
+                            "step": "Risk-Reward Check",
+                            "status": "FAIL",
+                            "reason": f"RR={rm_result.get('rr_ratio')} < {app_config.get('recommendation_thresholds', {}).get('min_risk_reward_ratio', 1.0)}",
+                        }
+                    )
+                else:
+                    audit_entry["steps"].append({"step": "Risk-Reward Check", "status": "PASS"})
 
             res["reason"] = " ".join(res["reason"])
             return res

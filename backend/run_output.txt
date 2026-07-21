@@ -1,0 +1,6 @@
+
+==================================================
+Strategy: Swing_Trading
+==================================================
+
+GENERATED SCREENER QUERY: ( {cash} ( latest close > 50.0 and latest close < 8000.0 and latest volume > 150000 and market cap > 1000.0 and latest rsi( 14 ) > 55 and latest close > latest sma( close,20 ) and latest close > latest sma( close,50 ) and latest close > latest sma( close,150 ) and latest close > latest sma( close,200 ) and ( 1 day ago volume > 1 day ago sma(volume,50) * 1.2 or 2 day ago volume > 2 day ago sma(volume,50) * 1.2 or 3 day ago volume > 3 day ago sma(volume,50) * 1.2 or 4 day ago volume > 4 day ago sma(volume,50) * 1.2 or 5 day ago volume > 5 day ago sma(volume,50) * 1.2 or 6 day ago volume > 6 day ago sma(volume,50) * 1.2 or 7 day ago volume > 7 day ago sma(volume,50) * 1.2 or 8 day ago volume > 8 day ago sma(volume,50) * 1.2 or 9 day ago volume > 9 day ago sma(volume,50) * 1.2 or 10 day ago volume > 10 day ago sma(volume,50) * 1.2 ) ) )
