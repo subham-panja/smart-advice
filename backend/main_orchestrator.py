@@ -64,8 +64,6 @@ def run_trading_cycle():
         print("CIRCUIT BREAKER ACTIVE. Stopping.")
         return {"executed": 0, "exits": 0, "positions": 0, "equity": trading_opts.get("initial_capital", 100000.0)}
 
-    PersistenceHandler().clear_old_data(config.DATA_PURGE_DAYS)
-
     all_strategies = StrategyLoader.load_all_strategies()
     if not all_strategies:
         raise RuntimeError("No enabled strategies found.")
