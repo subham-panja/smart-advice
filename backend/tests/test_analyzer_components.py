@@ -123,22 +123,6 @@ try:
 
     alternative_data_analyzer = test_component("AlternativeDataAnalyzer", create_alternative_data_analyzer)
 
-    # 9. PricePredictor
-    def create_price_predictor():
-        from scripts.predictor import PricePredictor
-
-        return PricePredictor(symbol="DEFAULT")
-
-    price_predictor = test_component("PricePredictor", create_price_predictor)
-
-    # 10. RLTradingAgent
-    def create_rl_trading_agent():
-        from scripts.rl_trading_agent import RLTradingAgent
-
-        return RLTradingAgent(symbol="DEFAULT")
-
-    rl_trading_agent = test_component("RLTradingAgent", create_rl_trading_agent)
-
     # 11. TransactionCostAnalyzer
     def create_tca_analyzer():
         from scripts.tca_analysis import TransactionCostAnalyzer
