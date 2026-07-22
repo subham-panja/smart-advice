@@ -14,6 +14,7 @@ os.environ["NUMEXPR_NUM_THREADS"] = LIBRARY_MAX_THREADS
 SECRET_KEY = "your_super_secret_key_here"
 PERSIST_LOGGING = False
 VERBOSE_LOGGING = False
+VERBOSE = VERBOSE_LOGGING  # Global verbose toggle (True = all logs, False = important logs only)
 
 # Data Purge
 DATA_PURGE_DAYS = 7  # Purge recommendations and backtest results older than N days

@@ -238,9 +238,11 @@ class StockAnalyzer:
 
         res["recommendation_strength"] = "BUY" if res["is_recommended"] else "HOLD"
 
-        logger.warning(
-            f"[{res['symbol']}] Result: {res['recommendation_strength']} | Score: {score:.2f} (Target: {buy_t}) | Tech: {res['technical_score']:.2f} | Fund: {res['fundamental_score']:.2f}"
-        )
+        log_msg = f"[{res['symbol']}] Result: {res['recommendation_strength']} | Score: {score:.2f} (Target: {buy_t}) | Tech: {res['technical_score']:.2f} | Fund: {res['fundamental_score']:.2f}"
+        if res["is_recommended"]:
+            logger.important(log_msg)
+        else:
+            logger.info(log_msg)
         return res
 
 

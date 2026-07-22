@@ -25,7 +25,6 @@ class StockScanner:
                 filters = strategy_config["stock_filters"]
                 scan_clause = FilterTranslator.translate_to_scan_clause(filters)
                 logger.info(f"GENERATED SCREENER QUERY: {scan_clause}")
-                print(f"GENERATED SCREENER QUERY: {scan_clause}")
 
                 cf = ScreenerFilter()
                 syms = cf.get_filtered_symbols(scan_clause=scan_clause, max_stocks=max_stocks)

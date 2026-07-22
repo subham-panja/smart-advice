@@ -337,17 +337,25 @@ def main():
         default=None,
         help="Walk-forward MC iterations per window. Pass this flag to enable walk-forward (e.g. --mc-iterations 8)",
     )
+    parser.add_argument(
+        "--skip-phases",
+        type=str,
+        default=None,
+        help="Comma-separated phase numbers to skip (e.g. --skip-phases 2,3,4)",
+    )
     args = parser.parse_args()
 
-    setup_logging(verbose=False)
+    skipped_phases = set()
+    if args.skip_phases:
+        for p in args.skip_phases.split(","):
+            p = p.strip()
+            if p.isdigit():
+                skipped_phases.add(int(p))
+
+    setup_logging()
     timer = Timer()
     end_date = datetime.now().strftime("%Y-%m-%d")
-    run_wf = args.mc_iterations is not None
-
-    total_phases = 5  # 1:Historical, 1b:DB save, 2:Validation, 4:Stress, 5:Diagnostics, 6:Confidence
-    if run_wf:
-        total_phases += 1
-    phases_done = 0
+    run_wf = (args.mc_iterations is not None) and (3 not in skipped_phases)
 
     print(f"\n{'='*70}")
     print(f"ULTIMATE BACKTEST — {args.strategy}")
@@ -355,11 +363,13 @@ def main():
     print("Configuration:")
     print(f"  Lookback: {args.months} months ({args.months//12}y)")
     print(f"  End date: {end_date} (today)")
-    print(f"  Walk-Forward: {'YES' if run_wf else 'SKIPPED (pass --mc-iterations to enable)'}")
-    print("  Stress Tests: YES")
+    print(f"  Walk-Forward: {'YES' if run_wf else 'SKIPPED'}")
+    print(f"  Skipped Phases: {sorted(skipped_phases) if skipped_phases else 'None'}")
     print(f"  Send Telegram: {args.telegram}")
-    print(f"  Total phases to run: {total_phases}")
     print(f"{'='*70}")
+
+    phases_done = 0
+    total_phases = 6
 
     # ─── PHASE 1: Historical Backtest ───
     # Runs the strategy over real historical data with realistic execution costs
@@ -427,21 +437,15 @@ def main():
     print(f"   ⏳ {timer.estimate_remaining(phases_done, total_phases)}")
 
     # ─── PHASE 2: Statistical Validation ───
-    # Tests whether the strategy's edge is statistically significant
-    # DSR: Deflated Sharpe Ratio (accounts for multiple testing bias)
-    # MC Permutation: Randomizes returns to test if Sharpe could be luck
-    # MLRS: Minimum Track Record (is the sample size sufficient?)
-    timer.phase_start("Phase 2: Statistical Validation (DSR + MC Permutation + MLRS)")
-    validation = run_validation_phase(historical.get("daily_snapshots", []))
-    timer.phase_end()
-    phases_done += 1
-    print(f"   ⏳ {timer.estimate_remaining(phases_done, total_phases)}")
+    validation = {}
+    if 2 not in skipped_phases:
+        timer.phase_start("Phase 2: Statistical Validation (DSR + MC Permutation + MLRS)")
+        validation = run_validation_phase(historical.get("daily_snapshots", []))
+        timer.phase_end()
 
     # ─── PHASE 3: Walk-Forward Monte Carlo ───
-    # Splits data into rolling windows, runs 8 parallel backtest simulations
-    # Tests whether the strategy works across different time periods
     wf_results = None
-    if run_wf:
+    if run_wf and 3 not in skipped_phases:
         timer.phase_start(f"Phase 3: Walk-Forward Monte Carlo ({args.mc_iterations} iterations per window)")
         try:
             wf_results = run_walk_forward_backtest(
@@ -460,31 +464,26 @@ def main():
             print(f"  ❌ Walk-forward failed: {e}")
             wf_results = {"status": "failed", "error": str(e)}
         timer.phase_end()
-        phases_done += 1
-        print(f"   ⏳ {timer.estimate_remaining(phases_done, total_phases)}")
 
     # ─── PHASE 4: Stress Tests ───
-    # 3 sub-tests:
-    #   4a. Regime tests: bull/bear/crash/sideways specific periods
-    #   4b. Parameter sensitivity: +/-20% on 6 key parameters (13 runs)
-    #   4c. Cost sensitivity: 4 brokerage/slippage scenarios
     stress_results = None
-    timer.phase_start("Phase 4: Stress Tests (Regime + Param Sensitivity + Cost Sensitivity)")
-    from scripts.stress_tests import run_all_stress_tests
+    if 4 not in skipped_phases:
+        timer.phase_start("Phase 4: Stress Tests (Regime + Param Sensitivity + Cost Sensitivity)")
+        from scripts.stress_tests import run_all_stress_tests
 
-    print("  → 4a: Running regime-specific backtests (5 periods)...")
-    stress_results = run_all_stress_tests(
-        args.strategy,
-        symbols=historical.get("_scanned_symbols"),
-        symbols_data=historical.get("_symbols_data"),
-        index_data=None,
-        indicators=historical.get("_indicators"),
-        prefilter=historical.get("_prefilter"),
-        precomputed_signals=historical.get("_precomputed_signals"),
-    )
-    timer.phase_end()
-    phases_done += 1
-    print(f"   ⏳ {timer.estimate_remaining(phases_done, total_phases)}")
+        try:
+            stress_results = run_all_stress_tests(
+                strategy_name=args.strategy,
+                symbols=historical.get("_scanned_symbols"),
+                symbols_data=historical.get("_symbols_data"),
+                indicators=historical.get("_indicators"),
+                prefilter=historical.get("_prefilter"),
+                precomputed_signals=historical.get("_precomputed_signals"),
+            )
+        except Exception as e:
+            print(f"  ❌ Stress tests failed: {e}")
+            stress_results = {"status": "failed", "error": str(e)}
+        timer.phase_end()
 
     # ─── PHASE 5: Trade Diagnostics ───
     # Analyzes individual trade characteristics:

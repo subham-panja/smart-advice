@@ -764,12 +764,18 @@ def main():
 
     args = parser.parse_args()
 
+    from utils.logger import setup_logging
+
+    if args.verbose:
+        config.VERBOSE = True
+    setup_logging()
+
     if args.walk_forward:
         run_walk_forward_backtest(
             strategy_name=args.strategy,
             period=args.period,
             mc_iterations=args.mc_iterations,
-            verbose=args.verbose,
+            verbose=config.VERBOSE,
             save_to_db=not args.no_db,
         )
     else:
@@ -777,7 +783,7 @@ def main():
             strategy_name=args.strategy,
             period=args.period,
             save_to_db=not args.no_db,
-            verbose=args.verbose,
+            verbose=config.VERBOSE,
         )
 
 

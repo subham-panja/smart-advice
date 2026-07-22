@@ -11,7 +11,7 @@ from utils.logger import setup_logging
 from utils.strategy_loader import StrategyLoader
 from utils.trading_clock import is_replay, set_simulated_date, trading_now
 
-setup_logging(verbose=True)
+setup_logging()
 logger = logging.getLogger("Orchestrator")
 
 
@@ -50,17 +50,15 @@ def run_trading_cycle():
     else:
         sim = "LIVE"
 
-    print("")
-    print("=" * 50)
-    print(f"STARTING TRADING CYCLE [{sim}]")
-    print("=" * 50)
-    logger.warning(f"=== STARTING TRADING CYCLE [{sim}] ===")
+    logger.important("")
+    logger.important("=" * 50)
+    logger.important(f"STARTING TRADING CYCLE [{sim}]")
+    logger.important("=" * 50)
 
     _send_telegram(f"🔄 <b>Trading Cycle Started [{sim}]</b>\nRunning analysis and execution...")
 
     if trading_opts.get("circuit_breaker"):
-        logger.warning("CIRCUIT BREAKER ACTIVE. Stopping.")
-        print("CIRCUIT BREAKER ACTIVE. Stopping.")
+        logger.important("CIRCUIT BREAKER ACTIVE. Stopping.")
         return {"executed": 0, "exits": 0, "positions": 0, "equity": trading_opts.get("initial_capital", 100000.0)}
 
     all_strategies = StrategyLoader.load_all_strategies()
@@ -97,12 +95,10 @@ def run_trading_cycle():
     for strategy in all_strategies:
         strat_name = strategy["name"]
 
-        print(f"\nProcessing Strategy: {strat_name}")
-        logger.info("Processing Strategy: " + strat_name)
+        logger.important(f"\nProcessing Strategy: {strat_name}")
 
         # Phase 1: Monitor
-        print("Phase 1: Monitoring existing positions...")
-        logger.info("Phase 1: Monitoring existing positions...")
+        logger.important("Phase 1: Monitoring existing positions...")
         PortfolioMonitor().monitor_all_positions()
 
         # Phase 1b: Advanced exits
@@ -110,10 +106,9 @@ def run_trading_cycle():
         exit_engine.manage_exits()
 
         # Phase 2: Analysis (use all NSE symbols in replay mode for per-date local filtering)
-        print(f"Phase 2: Running analysis for {strat_name}...")
-        logger.info(f"Phase 2: Running analysis for {strat_name}...")
+        logger.important(f"Phase 2: Running analysis for {strat_name}...")
         try:
-            analyzer = AutomatedStockAnalysis(verbose=True)
+            analyzer = AutomatedStockAnalysis()
             analyzer.run(strategy_config=strategy, use_all_symbols=is_replay())
             if not analyzer.scanned_symbols_count:
                 logger.warning("Analysis scan produced 0 candidates for %s" % strat_name)
@@ -123,8 +118,7 @@ def run_trading_cycle():
             analysis_failed = True
 
         # Phase 3: Execute
-        print(f"Phase 3: Executing recommendations for {strat_name}...")
-        logger.info(f"Phase 3: Executing recommendations for {strat_name}...")
+        logger.important(f"Phase 3: Executing recommendations for {strat_name}...")
 
         engine = ExecutionEngine(strategy_config=strategy)
         db = get_mongodb()
@@ -136,8 +130,7 @@ def run_trading_cycle():
         max_pos = risk_cfg.get("max_positions", 15)
 
         if len(open_positions) >= max_pos:
-            logger.warning("Portfolio Full: %d/%d. Skipping %s" % (len(open_positions), max_pos, strat_name))
-            print(f"   Portfolio Full: {len(open_positions)}/{max_pos}")
+            logger.important("Portfolio Full: %d/%d. Skipping %s" % (len(open_positions), max_pos, strat_name))
             continue
 
         recs = list(
@@ -151,13 +144,11 @@ def run_trading_cycle():
         )
 
         if not recs:
-            logger.info(f"No new recommendations for {strat_name}")
-            print(f"   No new recommendations for {strat_name}")
+            logger.important(f"No new recommendations for {strat_name}")
             continue
 
         if not engine._check_market_breadth_paper(strategy):
-            logger.warning(f"MARKET BREADTH WEAK: Skipping new buys for {strat_name}")
-            print(f"   Market Breadth Weak: Skipping new buys for {strat_name}")
+            logger.important(f"MARKET BREADTH WEAK: Skipping new buys for {strat_name}")
             continue
 
         slots_left = max_pos - len(open_positions)
@@ -199,7 +190,7 @@ def run_trading_cycle():
                     executed_count += 1
                     remaining_capital -= trade_cost
 
-        print(f"   Executed {executed_count} trades for {strat_name}")
+        logger.important(f"   Executed {executed_count} trades for {strat_name}")
         total_executed += executed_count
 
     # Detect exits that happened this cycle
@@ -241,11 +232,11 @@ def run_trading_cycle():
     else:
         _send_telegram("⚠️ <b>Trading Cycle — Scan Failed</b>\nScreener API was unreachable.")
 
-    print(f"\n{'=' * 50}")
-    print(
+    logger.important(f"\n{'=' * 50}")
+    logger.important(
         f"TRADING CYCLE COMPLETE [{sim}] | Executed: {total_executed} | Exits: {total_exits} | Equity: ₹{total_equity:,.2f} ({cycle_stats['pnl_pct']:+.2f}%)"
     )
-    print(f"{'=' * 50}\n")
+    logger.important(f"{'=' * 50}\n")
 
     return cycle_stats
 

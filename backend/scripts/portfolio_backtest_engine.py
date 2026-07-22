@@ -241,6 +241,7 @@ class PortfolioBacktestSession:
         precomputed_signals: Dict[str, Dict],
         sim_start_date: Optional[pd.Timestamp] = None,
         sim_end_date: Optional[pd.Timestamp] = None,
+        verbose: bool = True,
     ) -> Dict[str, Any]:
         """Run portfolio backtest using pre-computed signals (from multiprocessing workers).
 
@@ -254,9 +255,10 @@ class PortfolioBacktestSession:
         if not symbols_data:
             raise ValueError("No symbols data provided for portfolio backtest")
 
-        logger.info(f"🚀 Starting portfolio backtest for strategy: {self.strategy_config['name']}")
-        logger.info(f"   Capital: ₹{self.initial_capital:,.0f} | Max Positions: {self.max_positions}")
-        logger.info(f"   Using pre-computed signals for {len(precomputed_signals)} symbols")
+        if verbose:
+            logger.info(f"🚀 Starting portfolio backtest for strategy: {self.strategy_config['name']}")
+            logger.info(f"   Capital: ₹{self.initial_capital:,.0f} | Max Positions: {self.max_positions}")
+            logger.info(f"   Using pre-computed signals for {len(precomputed_signals)} symbols")
 
         # 1. Build common timeline
         common_dates = self._get_common_dates(symbols_data)
@@ -274,9 +276,10 @@ class PortfolioBacktestSession:
         self.start_date = common_dates[0]
         self.end_date = common_dates[-1]
 
-        logger.info(
-            f"   Simulation range: {self.start_date.date()} → {self.end_date.date()} ({len(common_dates)} days)"
-        )
+        if verbose:
+            logger.info(
+                f"   Simulation range: {self.start_date.date()} → {self.end_date.date()} ({len(common_dates)} days)"
+            )
 
         # 2. Pre-compute last available date per symbol
         self._last_dates = {sym: df.index[-1] for sym, df in symbols_data.items()}
@@ -314,7 +317,7 @@ class PortfolioBacktestSession:
         for i, date in enumerate(common_dates):
             self.bar_count = i
             self._simulate_day_with_signals(date, symbols_data, precomputed_signals)
-            if (i + 1) % 250 == 0 or i == total_days - 1:
+            if verbose and ((i + 1) % 250 == 0 or i == total_days - 1):
                 pct = (i + 1) / total_days * 100
                 elapsed = _time.time() - _t0
                 speed = (i + 1) / elapsed if elapsed > 0 else 0

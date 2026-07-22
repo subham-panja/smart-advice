@@ -35,8 +35,11 @@ def clear_replay_cache():
 class AutomatedStockAnalysis:
     """Orchestrates the two-phase stock analysis pipeline."""
 
-    def __init__(self, verbose=False):
+    def __init__(self, verbose=None):
         global logger
+        # Default to config.VERBOSE if not explicitly passed
+        if verbose is None:
+            verbose = getattr(config, "VERBOSE", False)
         logger = setup_logging(verbose=verbose)
         self.persistence = PersistenceHandler()
         self.verbose = verbose
@@ -198,7 +201,12 @@ class AutomatedStockAnalysis:
             with open("logs/audit_log.json", "w") as f:
                 json.dump(audit_data, f, indent=4)
 
-            logger.info(f"Phase 2 Complete. Fetched {len(fetched)} stocks. Audit log saved.")
+            if not self.verbose:
+                print()  # Newline after progress bar
+            buy_count = sum(1 for r in results if r.get("is_recommended"))
+            logger.important(
+                f"Analysis Complete: {len(fetched)} scanned | {buy_count} BUY | {len(fetched) - buy_count} HOLD"
+            )
             return results
         else:
             logger.info(f"Phase 2: Analyzing {len(fetched)} stocks serially (Multiprocessing Disabled)...")
@@ -279,6 +287,6 @@ if __name__ == "__main__":
         print(f"Strategy: {strategy['name']}")
         print(f"{'='*50}\n")
 
-        analyzer = AutomatedStockAnalysis(verbose=True)
+        analyzer = AutomatedStockAnalysis()
         analyzer.run(strategy_config=strategy)
         _run_portfolio_backtest_if_enabled(strategy)

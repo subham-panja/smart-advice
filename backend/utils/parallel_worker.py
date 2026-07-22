@@ -11,11 +11,17 @@ _worker_analyzer = None
 _persistence = None
 
 
-def init_worker(verbose=False, account_balance=None):
+def init_worker(verbose=None, account_balance=None):
     """Initializer called once per worker process."""
     global _worker_analyzer, _persistence
     from utils.logger import setup_logging
     from utils.persistence_handler import PersistenceHandler
+
+    # Default to config.VERBOSE if not explicitly passed
+    if verbose is None:
+        import config
+
+        verbose = getattr(config, "VERBOSE", False)
 
     setup_logging(verbose=verbose)
     _worker_analyzer = StockAnalyzer(account_balance=account_balance)

@@ -44,5 +44,5 @@ class SmartMoneyTracker:
 
             return float(data["securityWiseDP"].get("deliveryToTradedQuantity", 0.0))
         except Exception as e:
-            logger.error(f"Delivery volume fetch failed for {symbol}: {e}")
+            logger.debug(f"Delivery volume fetch failed for {symbol}: {e}")
             return 0.0  # Return 0.0 as a safe fallback for bonus indicator
