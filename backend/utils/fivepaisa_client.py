@@ -12,7 +12,9 @@ Margin method: client.margin()
 """
 
 import logging
+
 from py5paisa import FivePaisaClient
+
 from config import FIVEPAISA_CONFIG
 
 logger = logging.getLogger(__name__)
@@ -29,24 +31,24 @@ class FivePaisaUtility:
     def _initialize_client(self):
         """Initialize the 5paisa client using OAuth."""
         try:
-            if not self.config.get('api_key') or not self.config.get('encry_key'):
+            if not self.config.get("api_key") or not self.config.get("encry_key"):
                 logger.warning("5paisa credentials missing in .env file")
                 return
 
             # Build the cred dict exactly as the SDK expects (uppercase keys)
             cred = {
-                "APP_NAME": self.config.get('app_name'),
-                "APP_SOURCE": self.config.get('app_source'),
-                "USER_ID": self.config.get('user_id'),
-                "PASSWORD": self.config.get('password'),
-                "USER_KEY": self.config.get('api_key'),
-                "ENCRYPTION_KEY": self.config.get('encry_key'),
+                "APP_NAME": self.config.get("app_name"),
+                "APP_SOURCE": self.config.get("app_source"),
+                "USER_ID": self.config.get("user_id"),
+                "PASSWORD": self.config.get("password"),
+                "USER_KEY": self.config.get("api_key"),
+                "ENCRYPTION_KEY": self.config.get("encry_key"),
             }
 
             self.client = FivePaisaClient(cred=cred)
 
-            access_token = self.config.get('access_token')
-            client_code = self.config.get('client_code')
+            access_token = self.config.get("access_token")
+            client_code = self.config.get("client_code")
 
             if access_token:
                 if client_code:
@@ -58,9 +60,7 @@ class FivePaisaUtility:
                         "Add FIVEPAISA_CLIENT_CODE (your 5paisa account number) to .env"
                     )
             else:
-                logger.info(
-                    "5paisa client initialized. Use /5paisa_login on Telegram to authenticate."
-                )
+                logger.info("5paisa client initialized. Use /5paisa_login on Telegram to authenticate.")
 
         except Exception as e:
             logger.error(f"Error initializing 5paisa client: {e}")
@@ -68,8 +68,8 @@ class FivePaisaUtility:
 
     def get_oauth_url(self):
         """Return the OAuth login URL for the user to visit in a browser."""
-        user_key = self.config.get('api_key')
-        redirect_url = self.config.get('redirect_url')
+        user_key = self.config.get("api_key")
+        redirect_url = self.config.get("redirect_url")
         if not user_key:
             return None
         return (
@@ -86,13 +86,16 @@ class FivePaisaUtility:
         try:
             access_token = self.client.get_oauth_session(request_token)
             if not access_token:
-                return {"status": "error", "message": "Failed to get access token. The token might have expired (they expire in 30 seconds). Try generating a new one and pasting it quickly."}
-                
+                return {
+                    "status": "error",
+                    "message": "Failed to get access token. The token might have expired (they expire in 30 seconds). Try generating a new one and pasting it quickly.",
+                }
+
             logger.info("5paisa OAuth login successful")
             return {
                 "status": "success",
                 "access_token": access_token,
-                "message": "Login successful! Save this access token to your .env file as FIVEPAISA_ACCESS_TOKEN"
+                "message": "Login successful! Save this access token to your .env file as FIVEPAISA_ACCESS_TOKEN",
             }
         except Exception as e:
             logger.error(f"5paisa OAuth login failed: {e}")
@@ -104,33 +107,36 @@ class FivePaisaUtility:
             return {"status": "error", "message": "5paisa client not initialized. Set credentials in .env"}
 
         # Check if we actually have an access token and client code
-        if not self.config.get('access_token'):
+        if not self.config.get("access_token"):
             return {
                 "status": "error",
-                "message": "Not authenticated. Use /5paisa_login on Telegram first to get an access token."
+                "message": "Not authenticated. Use /5paisa_login on Telegram first to get an access token.",
             }
-            
-        if not self.config.get('client_code'):
+
+        if not self.config.get("client_code"):
             return {
                 "status": "error",
-                "message": "Missing CLIENT_CODE. Please add FIVEPAISA_CLIENT_CODE to your .env file."
+                "message": "Missing CLIENT_CODE. Please add FIVEPAISA_CLIENT_CODE to your .env file.",
             }
 
         try:
             margin_data = self.client.margin()
 
             if margin_data is None:
-                return {"status": "error", "message": "5paisa API timed out or returned no data. Please try again in a few seconds."}
+                return {
+                    "status": "error",
+                    "message": "5paisa API timed out or returned no data. Please try again in a few seconds.",
+                }
 
             if isinstance(margin_data, list) and len(margin_data) > 0:
                 # The SDK typically returns a list of segment margins
                 equity_margin = margin_data[0]
                 return {
                     "status": "success",
-                    "available_margin": equity_margin.get('AvailableMargin', 0),
-                    "utilized_margin": equity_margin.get('UtilizedMargin', 0),
-                    "net_available": equity_margin.get('NetAvailableMargin', 0),
-                    "ledger_balance": equity_margin.get('ALB', equity_margin.get('LedgerBalance', 0)),
+                    "available_margin": equity_margin.get("AvailableMargin", 0),
+                    "utilized_margin": equity_margin.get("UtilizedMargin", 0),
+                    "net_available": equity_margin.get("NetAvailableMargin", 0),
+                    "ledger_balance": equity_margin.get("ALB", equity_margin.get("LedgerBalance", 0)),
                     "raw": equity_margin,
                 }
             elif isinstance(margin_data, dict):
@@ -147,19 +153,22 @@ class FivePaisaUtility:
         if not self.client:
             return {"status": "error", "message": "5paisa client not initialized. Set credentials in .env"}
 
-        if not self.config.get('access_token'):
+        if not self.config.get("access_token"):
             return {"status": "error", "message": "Not authenticated. Use /5paisa_login on Telegram first."}
-            
-        if not self.config.get('client_code'):
-            return {"status": "error", "message": "Missing CLIENT_CODE. Please add FIVEPAISA_CLIENT_CODE to your .env file."}
+
+        if not self.config.get("client_code"):
+            return {
+                "status": "error",
+                "message": "Missing CLIENT_CODE. Please add FIVEPAISA_CLIENT_CODE to your .env file.",
+            }
 
         try:
             # client.holdings() typically returns a list of holding dicts
             holdings_data = self.client.holdings()
-            
+
             if holdings_data is None:
                 return {"status": "error", "message": "5paisa API timed out or returned no data."}
-                
+
             return {"status": "success", "data": holdings_data}
 
         except Exception as e:
@@ -171,6 +180,7 @@ def get_5paisa_balance():
     """Convenience function for the Telegram bot."""
     utility = FivePaisaUtility()
     return utility.get_margin()
+
 
 def get_5paisa_holdings():
     """Convenience function for the Telegram bot to fetch holdings."""

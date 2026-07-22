@@ -5,3 +5,11 @@ repos:
     -   id: ruff
         args: [ --fix ]
     -   id: ruff-format
+-   repo: local
+    hooks:
+    -   id: check-max-lines
+        name: Check Max File Length (<1000 lines)
+        entry: python3 -c "import os, sys; over=[(len(open(os.path.join(r,f)).readlines()), f) for r,d,fs in os.walk('.') for f in fs if f.endswith('.py') and not any(x in r for x in ['.venv','venv','__pycache__']) and len(open(os.path.join(r,f)).readlines()) > 1000]; sys.exit(0 if not over else print(over) or 1)"
+        language: system
+        pass_filenames: false
+

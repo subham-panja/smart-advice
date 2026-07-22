@@ -1,9 +1,12 @@
-from pydantic import BaseModel, Field
 from datetime import date
 from typing import List, Optional
 
+from pydantic import BaseModel, Field
+
+
 class StockData(BaseModel):
     """Model for individual stock OHLCV data point."""
+
     open: float
     high: float
     low: float
@@ -11,8 +14,10 @@ class StockData(BaseModel):
     volume: int
     date: date  # Date of the OHLCV data
 
+
 class StockDetails(BaseModel):
     """Model for complete stock information."""
+
     symbol: str
     company_name: str
     industry: Optional[str] = None
