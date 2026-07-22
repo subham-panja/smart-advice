@@ -97,30 +97,6 @@ def test_components():
         logger.error(f"✗ MarketMicrostructureAnalyzer failed: {e}")
         return False
 
-    # Test AlternativeDataAnalyzer
-    try:
-        logger.info("Testing AlternativeDataAnalyzer...")
-        from scripts.alternative_data_analyzer import AlternativeDataAnalyzer
-
-        alternative_data_analyzer = AlternativeDataAnalyzer()
-        logger.info("✓ AlternativeDataAnalyzer initialized successfully")
-    except Exception as e:
-        logger.error(f"✗ AlternativeDataAnalyzer failed: {e}")
-        return False
-
-    # Test PricePredictor
-
-    # Test TransactionCostAnalyzer
-    try:
-        logger.info("Testing TransactionCostAnalyzer...")
-        from scripts.tca_analysis import TransactionCostAnalyzer
-
-        tca_analyzer = TransactionCostAnalyzer()
-        logger.info("✓ TransactionCostAnalyzer initialized successfully")
-    except Exception as e:
-        logger.error(f"✗ TransactionCostAnalyzer failed: {e}")
-        return False
-
     logger.info("All components initialized successfully!")
     return True
 

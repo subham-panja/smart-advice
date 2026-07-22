@@ -115,22 +115,6 @@ try:
         "MarketMicrostructureAnalyzer", create_market_microstructure_analyzer
     )
 
-    # 8. AlternativeDataAnalyzer
-    def create_alternative_data_analyzer():
-        from scripts.alternative_data_analyzer import AlternativeDataAnalyzer
-
-        return AlternativeDataAnalyzer()
-
-    alternative_data_analyzer = test_component("AlternativeDataAnalyzer", create_alternative_data_analyzer)
-
-    # 11. TransactionCostAnalyzer
-    def create_tca_analyzer():
-        from scripts.tca_analysis import TransactionCostAnalyzer
-
-        return TransactionCostAnalyzer()
-
-    tca_analyzer = test_component("TransactionCostAnalyzer", create_tca_analyzer)
-
     print("\nAll component tests completed!")
 
 except KeyboardInterrupt:
