@@ -455,6 +455,15 @@ class PortfolioBacktestSession:
 
         # --- Phase 2: Scan or fetch pre-computed signals ---
         entries_paused = self._check_drawdown_pause(symbols_data, date)
+
+        # Check pause_buying_if_bearish from strategy config
+        if not entries_paused and self.regime_enabled:
+            regime_status = self._check_market_regime(date, symbols_data)
+            pause_buying = self.regime_config.get("pause_buying_if_bearish", True)
+            if regime_status == "BEAR" and pause_buying:
+                logger.info(f"[{self.strategy_config['name']}] Market regime BEAR: pausing new buys")
+                entries_paused = True
+
         candidates = []
         if not entries_paused:
             if use_precomputed_signals:
