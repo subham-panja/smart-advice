@@ -129,52 +129,34 @@ def run_regime_tests(
         sim_end = pd.Timestamp(test["end_date"]).tz_localize(None)
         sim_start = (sim_end - pd.DateOffset(months=test["months"])).tz_localize(None)
 
-        # Ensure dataset covers regime test period (fetch 10y data if needed)
-        all_min_dates = [df.index[0] for df in symbols_data.values() if not df.empty]
-        test_symbols_data = symbols_data
-        test_index_data = index_data
-        if all_min_dates and sim_start < min(all_min_dates):
-            print(
-                f"  → Fetching 10y historical data to cover {test['name']} ({sim_start.date()} to {sim_end.date()})..."
-            )
-            regime_symbols = {s: s for s in symbols_data.keys()}
-            test_symbols_data = fetch_symbols_data(regime_symbols, period="10y", verbose=False)
-            test_index_data = _prepare_index_data(strategy, test_symbols_data, "10y")
-            test_indicators = compute_all_indicators(test_symbols_data, strategy_config=strategy)
-            test_store = IndicatorStore(test_indicators)
-            test_prefilter = compute_stock_prefilter(test_indicators, strategy)
-        else:
-            test_store = indicator_store
-            test_prefilter = prefilter
-
         # Regime warmup
-        if test_index_data is not None:
+        if index_data is not None:
             stock_only = {
                 k: v
-                for k, v in test_symbols_data.items()
+                for k, v in symbols_data.items()
                 if k != strategy.get("market_regime_config", {}).get("index", "^NSEI")
             }
             all_sets = [set(df.index) for df in stock_only.values()]
             if all_sets:
                 union_dates = sorted(set.union(*all_sets))
                 for d in union_dates:
-                    if len(test_index_data.loc[:d]) >= 250:
+                    if len(index_data.loc[:d]) >= 250:
                         if sim_start < d:
                             sim_start = d
                         break
 
         engine = PortfolioBacktestSession(strategy_config=strategy)
-        engine.set_indicator_store(test_store)
-        engine._stock_prefilter = test_prefilter
-        if test_index_data is not None:
-            engine._index_data_override = test_index_data
+        engine.set_indicator_store(indicator_store)
+        engine._stock_prefilter = prefilter
+        if index_data is not None:
+            engine._index_data_override = index_data
 
-        if precomputed_signals and test_symbols_data is symbols_data:
+        if precomputed_signals:
             result = engine.run_with_signals(
-                test_symbols_data, precomputed_signals, sim_start_date=sim_start, sim_end_date=sim_end, verbose=False
+                symbols_data, precomputed_signals, sim_start_date=sim_start, sim_end_date=sim_end, verbose=False
             )
         else:
-            result = engine.run(test_symbols_data, sim_start_date=sim_start, sim_end_date=sim_end)
+            result = engine.run(symbols_data, sim_start_date=sim_start, sim_end_date=sim_end)
 
         cagr = result["cagr"]
         max_dd = result["max_drawdown_pct"]
