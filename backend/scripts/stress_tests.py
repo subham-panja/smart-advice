@@ -348,10 +348,10 @@ def run_param_sensitivity(
 
             if precomputed_signals:
                 result = engine.run_with_signals(
-                    symbols_data, precomputed_signals, sim_start_date=sim_start, sim_end_date=sim_end
+                    symbols_data, precomputed_signals, sim_start_date=sim_start, sim_end_date=sim_end, verbose=False
                 )
             else:
-                result = engine.run(symbols_data, sim_start_date=sim_start, sim_end_date=sim_end)
+                result = engine.run(symbols_data, sim_start_date=sim_start, sim_end_date=sim_end, verbose=False)
             test_cagr = result["cagr"]
 
             # Check if within tolerance

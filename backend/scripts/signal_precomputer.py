@@ -62,7 +62,12 @@ def _compute_signals_batch(args):
     from scripts.vectorbt_indicator_batch import IndicatorStore
 
     analyzer = SwingTradingSignalAnalyzer()
-    store = IndicatorStore(indicator_store_data) if indicator_store_data is not None else None
+    if hasattr(indicator_store_data, "_series_cache"):
+        store = indicator_store_data
+    elif indicator_store_data is not None:
+        store = IndicatorStore(indicator_store_data)
+    else:
+        store = None
     signals = {}
 
     for symbol in symbol_list:

@@ -333,4 +333,9 @@ def _compute_weekly_indicators(
     cum_vol = volume.rolling(20, min_periods=10).sum()
     vwap_20 = cum_vp / cum_vol
 
+    weekly_sma_10.columns = close.columns
+    weekly_sma_30.columns = close.columns
+    weekly_rsi_14.columns = close.columns
+    vwap_20.columns = close.columns
+
     return weekly_sma_10, weekly_sma_30, weekly_rsi_14, vwap_20

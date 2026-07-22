@@ -291,9 +291,10 @@ class PortfolioBacktestSession:
         self._signals_by_date = {}
         for symbol, date_signals in precomputed_signals.items():
             for dt, sig_data in date_signals.items():
-                if dt not in self._signals_by_date:
-                    self._signals_by_date[dt] = {}
-                self._signals_by_date[dt][symbol] = sig_data
+                dt_key = dt.tz_localize(None) if hasattr(dt, "tzinfo") and dt.tzinfo is not None else dt
+                if dt_key not in self._signals_by_date:
+                    self._signals_by_date[dt_key] = {}
+                self._signals_by_date[dt_key][symbol] = sig_data
 
         # Pre-compute ATR for all symbols (eliminates _calculate_atr fallback path)
         self._atr_cache = {}

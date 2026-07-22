@@ -279,12 +279,16 @@ def fetch_historical_data_cached(
                 is_recent = _is_cache_recent(df, max_age_days=1)
                 has_enough_rows = len(df) >= needed if period != "max" else is_recent
 
-                if is_recent:
+                if is_recent and has_enough_rows:
                     # Sync live price for current day if cache row lacks today's close
                     if not is_replay() and df.index[-1].date() < trading_now().date():
                         df = _sync_live_price(df, yf_sym, symbol)
                     logger.debug(f"Cache hit for {symbol}: {len(df)} rows, recent data")
                     return df
+                elif is_recent and not has_enough_rows:
+                    logger.info(
+                        f"Cache for {symbol} has {len(df)} rows, need {needed} for {period}. Re-fetching longer period..."
+                    )
                 elif has_enough_rows:
                     logger.info(f"Cache for {symbol} has {len(df)} rows but outdated. Re-fetching...")
                 else:
@@ -341,9 +345,9 @@ def fetch_multiple_symbols_cached(
                     if verbose:
                         print(f"  [{i+1}/{total}] {sym}: {len(df)} bars")
                 else:
-                    logger.warning(f"Insufficient data for {sym}: {len(df) if df is not None else 0} bars")
+                    logger.debug(f"Insufficient data for {sym}: {len(df) if df is not None else 0} bars")
             except Exception as e:
-                logger.error(f"Failed to fetch {sym}: {e}")
+                logger.debug(f"Failed to fetch {sym}: {e}")
 
     logger.info(f"Successfully fetched data for {len(data)}/{total} symbols")
     return data
