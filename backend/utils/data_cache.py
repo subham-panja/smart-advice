@@ -64,8 +64,10 @@ def _min_rows_for_period(period: str) -> int:
     return 0  # unknown period → accept any cached data
 
 
-def _cache_path(symbol: str) -> str:
-    """Return cache path for a symbol (one file per symbol)."""
+def _cache_path(symbol: str, interval: str = "1d") -> str:
+    """Return cache path for a symbol (separated by interval if not daily)."""
+    if interval and interval != "1d":
+        return os.path.join(CACHE_DIR, f"{symbol}_{interval}.parquet")
     return os.path.join(CACHE_DIR, f"{symbol}.parquet")
 
 
@@ -195,7 +197,8 @@ def fetch_historical_data_cached(
     that don't have full history for the requested period.
     Re-fetched only when data is stale (newer trading day exists).
     """
-    cache_path = _cache_path(symbol)
+    cache_path = _cache_path(symbol, interval)
+
     yf_sym = f"{symbol}.NS" if not symbol.startswith("^") else symbol
     needed = min_rows if min_rows else _min_rows_for_period(period)
 

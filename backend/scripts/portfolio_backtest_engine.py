@@ -67,6 +67,12 @@ class PortfolioBacktestSession:
         # Global pyramid flag (matches live trading)
         self.pyramid_counts_as_new = PYRAMID_COUNTS_AS_NEW_POSITION
 
+        # Multi-timeframe execution configuration
+        mtf_cfg = strategy_config.get("multitimeframe_execution", {})
+        self.mtf_enabled = mtf_cfg.get("enabled", False)
+        self.mtf_lower_tf = mtf_cfg.get("lower_timeframe", "60m")
+        self.mtf_shortlist_n = mtf_cfg.get("shortlist_top_n", 10)
+
         # State
         self.cash = self.initial_capital
         self.peak_value = self.initial_capital

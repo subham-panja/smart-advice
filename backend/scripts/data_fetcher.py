@@ -150,6 +150,16 @@ def get_historical_data(symbol: str, period: str = "2y", interval: str = "1d") -
     return df
 
 
+def get_subdaily_historical_data(symbol: str, period: str = "60d", interval: str = "60m") -> pd.DataFrame:
+    """Fetches sub-daily intraday (e.g. 60m / 1h) OHLCV data using cached parquet."""
+    from utils.data_cache import fetch_historical_data_cached
+
+    df = fetch_historical_data_cached(symbol, period=period, interval=interval)
+    if df.index.tz is not None:
+        df.index = df.index.tz_localize(None)
+    return df
+
+
 def get_current_price(symbol: str) -> float:
     """Gets latest price strictly."""
     yf_sym = f"{symbol}.NS" if not symbol.startswith("^") else symbol
