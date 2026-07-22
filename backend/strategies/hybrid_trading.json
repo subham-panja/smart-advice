@@ -9,6 +9,15 @@
     "market_regime_detection": true,
     "options_oi": true
   },
+  "multitimeframe_execution": {
+    "enabled": true,
+    "higher_timeframe": "1d",
+    "lower_timeframe": "60m",
+    "shortlist_top_n": 10,
+    "intraday_sl_trailing": true,
+    "intraday_pyramiding": true
+  },
+
   "analysis_weights": {
     "technical": 0.7,
     "fundamental": 0.15,
