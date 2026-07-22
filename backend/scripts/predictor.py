@@ -1,5 +1,7 @@
 import logging
+from typing import Dict, List, Tuple
 
+import numpy as np
 import torch
 import torch.nn as nn
 from sklearn.preprocessing import MinMaxScaler

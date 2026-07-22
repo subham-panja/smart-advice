@@ -1,24 +1,7 @@
-"""
-Portfolio Backtest Engine
-=========================
-
-Simulates trading multiple stocks simultaneously on a shared timeline
-with a single capital pool. Compounding happens across the entire portfolio.
-
-Key features:
-- Day-by-day timeline walker across all symbols
-- Shared capital pool (default 10 Lakhs)
-- Respects max_concurrent_positions and max_position_pct
-- Ranks candidates by technical_score (swing signal strength)
-- Same-day cash recycling (configurable)
-- Pyramid support (configurable position counting)
-- Force-close delisted stocks
-- Daily portfolio snapshots for equity curve & drawdown
-"""
+"""Portfolio Backtest Engine — Simulates multi-stock trading on a shared capital pool timeline."""
 
 import logging
 import re
-from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 import numpy as np
@@ -26,6 +9,10 @@ import pandas as pd
 import talib as ta
 
 from config import PORTFOLIO_BACKTEST_CONFIG
+from scripts.backtest_position_manager import (
+    PortfolioPosition,
+    PortfolioTrade,
+)
 from scripts.market_regime_detection import MarketRegimeDetection
 from scripts.risk_management import RiskManager
 from scripts.swing_trading_signals import SwingTradingSignalAnalyzer
@@ -40,59 +27,6 @@ except ImportError:
 PYRAMID_COUNTS_AS_NEW_POSITION = False  # Global default
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class PortfolioPosition:
-    """Tracks an open position in the portfolio backtest."""
-
-    symbol: str
-    entry_date: pd.Timestamp
-    entry_price: float
-    quantity: int
-    stop_loss: float
-    current_target_idx: int = 0
-    targets_hit: int = 0
-    current_stop_loss: float = 0.0
-    initial_quantity: int = 0
-    adds_count: int = 0
-    last_add_price: float = 0.0
-    bar_executed: int = 0
-    is_scaled_out: bool = False
-    status: str = "OPEN"
-    entry_pattern: str = "unknown"
-
-    def __post_init__(self):
-        if self.current_stop_loss == 0.0:
-            self.current_stop_loss = self.stop_loss
-        if self.last_add_price == 0.0:
-            self.last_add_price = self.entry_price
-        if self.initial_quantity == 0:
-            self.initial_quantity = self.quantity
-
-
-@dataclass
-class PortfolioTrade:
-    """Represents a completed trade for persistence."""
-
-    symbol: str
-    trade_type: str  # BUY, SELL, PARTIAL_SELL, PYRAMID_ADD
-    entry_date: str
-    entry_price: float
-    exit_date: Optional[str] = None
-    exit_price: Optional[float] = None
-    quantity: int = 0
-    position_value: float = 0.0
-    allocation_pct: float = 0.0
-    stop_loss: float = 0.0
-    target: Optional[float] = None
-    pnl: float = 0.0
-    pnl_pct: float = 0.0
-    exit_reason: Optional[str] = None
-    portfolio_value_at_entry: float = 0.0
-    cash_balance_at_entry: float = 0.0
-    open_positions_count_at_entry: int = 0
-    entry_pattern: Optional[str] = None
 
 
 class PortfolioBacktestSession:
@@ -293,25 +227,7 @@ class PortfolioBacktestSession:
             f"| CAGR {metrics['cagr']:.1f}% | Max DD {metrics['max_drawdown_pct']:.1f}%"
         )
 
-        return {
-            "strategy_name": self.strategy_config["name"],
-            "status": "completed",
-            "initial_capital": self.initial_capital,
-            "final_portfolio_value": metrics["final_portfolio_value"],
-            "cash_remaining": self.cash,
-            "total_return_pct": metrics["total_return_pct"],
-            "cagr": metrics["cagr"],
-            "max_drawdown_pct": metrics["max_drawdown_pct"],
-            "sharpe_ratio": metrics["sharpe_ratio"],
-            "total_trades": metrics["total_trades"],
-            "win_rate": metrics["win_rate"],
-            "profit_factor": metrics["profit_factor"],
-            "expectancy": metrics["expectancy"],
-            "avg_positions_held": metrics["avg_positions_held"],
-            "trades": self.trades,
-            "daily_snapshots": self.daily_snapshots,
-            "date_range": {"start_date": str(self.start_date.date()), "end_date": str(self.end_date.date())},
-        }
+        return self._format_session_results(metrics)
 
     def run_with_signals(
         self,
@@ -407,11 +323,10 @@ class PortfolioBacktestSession:
         # 5. Calculate final metrics
         metrics = self._calculate_metrics(common_dates)
 
-        logger.info(
-            f"🏁 Portfolio backtest complete: Final Value ₹{metrics['final_portfolio_value']:,.0f} "
-            f"| CAGR {metrics['cagr']:.1f}% | Max DD {metrics['max_drawdown_pct']:.1f}%"
-        )
+        return self._format_session_results(metrics)
 
+    def _format_session_results(self, metrics: dict) -> Dict[str, Any]:
+        """Format final session result dictionary."""
         return {
             "strategy_name": self.strategy_config["name"],
             "status": "completed",
@@ -496,59 +411,13 @@ class PortfolioBacktestSession:
     # Simulation Core
     # ------------------------------------------------------------------
 
-    def _simulate_day(self, date: pd.Timestamp, symbols_data: Dict[str, pd.DataFrame]):
-        """Process a single trading day: exits → entries → pyramiding → snapshot."""
-        # Check max daily loss circuit breaker
-        exit_cfg = self.strategy_config.get("exit_rules", {})
-        max_daily_loss_pct = exit_cfg.get("max_daily_loss_pct", None)
-        if max_daily_loss_pct and self.daily_snapshots and self.positions:
-            prev_value = self.daily_snapshots[-1]["portfolio_value"]
-            curr_value = self._current_portfolio_value(symbols_data, date)
-            daily_loss_pct = ((curr_value - prev_value) / prev_value) * 100
-            if daily_loss_pct <= -max_daily_loss_pct:
-                logger.info(
-                    f"🛑 MAX DAILY LOSS TRIGGERED on {date.date()}: Loss {daily_loss_pct:.2f}% >= {max_daily_loss_pct}% threshold. "
-                    f"Force closing all positions."
-                )
-                # Force close all positions
-                for symbol in list(self.positions.keys()):
-                    df = symbols_data.get(symbol)
-                    last_price = df["Close"].iloc[-1] if df is not None else self.positions[symbol].entry_price
-                    self._close_position(symbol, date, last_price, "MAX_DAILY_LOSS")
-                return  # Skip rest of the day
-
-        # --- Phase 1: Process Exits (before entries to free cash) ---
-        exits_today = self._process_exits(date, symbols_data)
-        _ = sum(e.pnl for e in exits_today if e.pnl > 0)  # cash freed, may be used for recycling logic
-
-        # --- Phase 1b: Daily Active Rebalancing (if enabled) ---
-        rebal_cfg = self.strategy_config.get("exit_rules", {}).get("daily_active_rebalancing", {})
-        if rebal_cfg.get("enabled", False) and self.positions:
-            self._daily_active_rebalance(date, symbols_data, rebal_cfg)
-
-        # --- Phase 2: Scan for New Signals (skip if drawdown pause active) ---
-        entries_paused = self._check_drawdown_pause(symbols_data, date)
-        candidates = [] if entries_paused else self._scan_for_signals(date, symbols_data)
-
-        # --- Phase 3: Rank and Execute Buys ---
-        if candidates:
-            candidates.sort(key=lambda c: c["score"], reverse=True)
-            for cand in candidates:
-                if not self._can_open_new_position(cand["symbol"]):
-                    continue
-                self._execute_buy(cand, date, symbols_data)
-
-        # --- Phase 4: Pyramiding ---
-        self._process_pyramiding(date, symbols_data)
-
-        # --- Phase 5: Record Snapshot ---
-        if self.save_snapshots:
-            self._record_snapshot(date, symbols_data)
-
-    def _simulate_day_with_signals(
-        self, date: pd.Timestamp, symbols_data: Dict[str, pd.DataFrame], precomputed_signals: Dict[str, Dict]
+    def _simulate_day(
+        self,
+        date: pd.Timestamp,
+        symbols_data: Dict[str, pd.DataFrame],
+        use_precomputed_signals: bool = False,
     ):
-        """Process a single trading day using pre-computed signals (from multiprocessing workers)."""
+        """Process a single trading day: exits → entries → pyramiding → snapshot."""
         # Check max daily loss circuit breaker
         exit_cfg = self.strategy_config.get("exit_rules", {})
         max_daily_loss_pct = exit_cfg.get("max_daily_loss_pct", None)
@@ -570,22 +439,30 @@ class PortfolioBacktestSession:
         exits_today = self._process_exits(date, symbols_data)
         _ = sum(e.pnl for e in exits_today if e.pnl > 0)
 
-        # --- Phase 2: Use pre-computed signals for this date (skip if drawdown pause active) ---
+        # --- Phase 1b: Daily Active Rebalancing (if enabled) ---
+        rebal_cfg = self.strategy_config.get("exit_rules", {}).get("daily_active_rebalancing", {})
+        if rebal_cfg.get("enabled", False) and self.positions:
+            self._daily_active_rebalance(date, symbols_data, rebal_cfg)
+
+        # --- Phase 2: Scan or fetch pre-computed signals ---
         entries_paused = self._check_drawdown_pause(symbols_data, date)
         candidates = []
         if not entries_paused:
-            date_key = date.tz_localize(None) if date.tzinfo is not None else date
-            date_signals = self._signals_by_date.get(date_key, {})
-            for symbol, sig_data in date_signals.items():
-                if symbol in self.positions:
-                    continue
-                candidates.append(
-                    {
-                        "symbol": symbol,
-                        "score": sig_data["score"],
-                        "swing_result": sig_data["swing_result"],
-                    }
-                )
+            if use_precomputed_signals:
+                date_key = date.tz_localize(None) if date.tzinfo is not None else date
+                date_signals = self._signals_by_date.get(date_key, {})
+                for symbol, sig_data in date_signals.items():
+                    if symbol in self.positions:
+                        continue
+                    candidates.append(
+                        {
+                            "symbol": symbol,
+                            "score": sig_data["score"],
+                            "swing_result": sig_data["swing_result"],
+                        }
+                    )
+            else:
+                candidates = self._scan_for_signals(date, symbols_data)
 
         # --- Phase 3: Rank and Execute Buys ---
         if candidates:
@@ -602,17 +479,20 @@ class PortfolioBacktestSession:
         if self.save_snapshots:
             self._record_snapshot(date, symbols_data)
 
-    def _process_exits(self, date: pd.Timestamp, symbols_data: Dict[str, pd.DataFrame]) -> List[PortfolioTrade]:
-        """Check all open positions for SL, target, time-stop, O'Neil rules, or delisted.
+    def _simulate_day_with_signals(
+        self, date: pd.Timestamp, symbols_data: Dict[str, pd.DataFrame], precomputed_signals: Dict[str, Dict]
+    ):
+        """Process a single trading day using pre-computed signals."""
+        self._simulate_day(date, symbols_data, use_precomputed_signals=True)
 
-        Regime-adaptive: exit parameters change based on market regime (bull/bear).
-        """
+    def _process_exits(self, date: pd.Timestamp, symbols_data: Dict[str, pd.DataFrame]) -> List[PortfolioTrade]:
+        """Check all open positions for SL, target, time-stop, O'Neil rules, or delisted."""
+        from scripts.backtest_position_manager import check_position_exit_signal
+
         exits = []
         symbols_to_remove = []
         exit_cfg = self.strategy_config.get("exit_rules", {})
         regime_adaptive = exit_cfg.get("regime_adaptive_exits", {})
-
-        # Get current regime
         regime = self._regime_status.lower() if self._regime_status != "UNKNOWN" else "bull"
         regime_params = regime_adaptive.get(regime, {})
 
@@ -630,227 +510,58 @@ class PortfolioBacktestSession:
             atr = self._calculate_atr_from_store(symbol, date) or self._calculate_atr(df, date)
             bars_held = self.bar_count - pos.bar_executed
             days_held = (date - pos.entry_date).days if hasattr(date, "__sub__") else bars_held
-            weeks_held = days_held / 7.0
 
-            # Get regime-specific parameters (fall back to base config)
-            t1_pct = regime_params.get("t1_sell_percentage", exit_cfg["targets"][0]["sell_percentage"])
-            time_stop = regime_params.get("time_stop_bars", exit_cfg.get("time_stop_bars", 20))
-            stop_loss_pct = regime_params.get("stop_loss_pct", None)  # O'Neil fixed % stop
+            date_idx_dict = self._date_idx.get(symbol, {})
+            exit_info = check_position_exit_signal(
+                pos,
+                date,
+                current_price,
+                atr,
+                bars_held,
+                days_held,
+                regime_params,
+                exit_cfg,
+                df,
+                date_idx_dict,
+            )
 
-            # 0. O'Neil Fixed Stop Loss (7-8% in bull, 5-6% in bear)
-            if stop_loss_pct:
-                oneil_stop = pos.entry_price * (1 - stop_loss_pct / 100.0)
-                if current_price <= oneil_stop:
-                    trade = self._close_position(symbol, date, current_price, f"ONEIL_STOP_{stop_loss_pct}%")
+            if exit_info:
+                reason, exit_price, sell_qty_override = exit_info
+                if sell_qty_override and sell_qty_override > 0:
+                    trade = self._partial_sell(symbol, date, exit_price, sell_qty_override, pos, reason)
                     if trade:
                         exits.append(trade)
-                    continue
-
-            # 1. O'Neil Absolute Profit Target (20-25% in bull, 15% in bear)
-            oneil_target_pct = regime_params.get("oneil_target_pct", 25.0)
-            gain_pct = (current_price - pos.entry_price) / pos.entry_price * 100
-            leader_cfg = exit_cfg.get("leader_exception", {})
-
-            # Check 8-week leader exception
-            is_leader = False
-            if leader_cfg.get("enabled", False) and gain_pct >= leader_cfg.get("min_gain_pct", 20.0):
-                if weeks_held <= leader_cfg.get("max_weeks", 8):
-                    is_leader = True
-
-            if gain_pct >= oneil_target_pct and not is_leader:
-                # Sell at O'Neil target
-                sell_qty = pos.quantity
-                trade = self._close_position(symbol, date, current_price, f"ONEIL_TARGET_{oneil_target_pct:.0f}%")
-                if trade:
-                    exits.append(trade)
-                continue
-
-            # 8-week leader: hold and trail instead of selling
-            if is_leader and leader_cfg.get("action") == "hold_and_trail":
-                # Skip normal targets, just trail aggressively
-                pass
-            else:
-                # 2. Time Stop (regime-adaptive)
-                if bars_held >= time_stop:
-                    trade = self._close_position(symbol, date, current_price, "TIME_STOP")
+                    pos.quantity -= sell_qty_override
+                    pos.current_target_idx += 1
+                    if pos.quantity <= 0:
+                        symbols_to_remove.append(symbol)
+                else:
+                    trade = self._close_position(symbol, date, exit_price, reason)
                     if trade:
                         exits.append(trade)
-                    continue
 
-                # 3. Stop Loss (ATR-based or swing_low)
-                stop_loss_type = exit_cfg.get("stop_loss_type", "ATR")
-                if stop_loss_type == "swing_low":
-                    # Calculate swing low from recent lows (last 20 bars)
-                    lookback = max(10, min(20, bars_held))
-                    idx = self._date_idx.get(symbol, {}).get(date)
-                    if idx is None:
-                        continue
-                    start = max(0, idx - lookback + 1)
-                    recent_lows = df["Low"].iloc[start : idx + 1]
-                    swing_low = recent_lows.min()
-                    # Stop is placed slightly below swing low (2% buffer)
-                    swing_stop = swing_low * 0.98
-                    if current_price <= swing_stop:
-                        trade = self._close_position(symbol, date, current_price, f"SWING_LOW_STOP@{swing_low:.2f}")
-                        if trade:
-                            exits.append(trade)
-                        continue
-                    # Update trailing stop to swing low if it's higher
-                    if swing_stop > pos.current_stop_loss:
-                        pos.current_stop_loss = swing_stop
-                elif current_price <= pos.current_stop_loss:
-                    trade = self._close_position(symbol, date, current_price, "STOP_LOSS")
-                    if trade:
-                        exits.append(trade)
-                    continue
-
-                # 4. ATR Targets or Swing High Target
-                targets = exit_cfg.get("targets", [])
-                # Check if first target uses swing_structure type
-                if targets and targets[0].get("type") == "swing_structure" and pos.current_target_idx == 0:
-                    # Swing high target - use recent high as exit target
-                    lookback = max(10, min(20, bars_held + 10))
-                    idx = self._date_idx.get(symbol, {}).get(date)
-                    if idx is None:
-                        idx = df.index.searchsorted(date)
-                    start = max(0, idx - lookback + 1)
-                    recent_highs = df["High"].iloc[start : idx + 1]
-                    swing_high = recent_highs.max()
-                    if current_price >= swing_high:
-                        sell_pct = targets[0].get("sell_percentage", 1.0)
-                        sell_qty = int(pos.quantity * sell_pct)
-                        if sell_qty > 0 and sell_pct < 1.0:
-                            trade = self._partial_sell(symbol, date, current_price, sell_qty, pos, "SWING_HIGH")
-                            if trade:
-                                exits.append(trade)
-                            pos.quantity -= sell_qty
-                            pos.current_target_idx += 1
-                            if pos.quantity <= 0:
-                                symbols_to_remove.append(symbol)
-                            continue
-                        elif sell_pct >= 1.0:
-                            trade = self._close_position(symbol, date, current_price, "SWING_HIGH_TARGET")
-                            if trade:
-                                exits.append(trade)
-                            continue
-                elif pos.current_target_idx < len(targets):
-                    target_cfg = targets[pos.current_target_idx].copy()
-                    # Override sell percentage with regime-adaptive value for T1
-                    if pos.current_target_idx == 0:
-                        target_cfg["sell_percentage"] = t1_pct
-
-                    target_price = pos.entry_price + (target_cfg["atr_multiplier"] * atr)
-
-                    if current_price >= target_price:
-                        sell_pct = target_cfg["sell_percentage"]
-                        sell_qty = int(pos.quantity * sell_pct)
-
-                        if sell_qty > 0 and sell_pct < 1.0:
-                            trade = self._partial_sell(symbol, date, current_price, sell_qty, pos, target_cfg["name"])
-                            if trade:
-                                exits.append(trade)
-
-                            pos.quantity -= sell_qty
-                            pos.current_target_idx += 1
-                            pos.is_scaled_out = True
-
-                            if pos.current_target_idx == 1 and exit_cfg.get("breakeven_at_target_1"):
-                                pos.current_stop_loss = pos.entry_price
-                                logger.info(f"🛡️ {symbol}: SL moved to breakeven ₹{pos.entry_price:.2f}")
-
-                            if pos.quantity <= 0:
-                                symbols_to_remove.append(symbol)
-                            continue
-                        elif sell_pct >= 1.0:
-                            trade = self._close_position(symbol, date, current_price, f"FINAL_{target_cfg['name']}")
-                            if trade:
-                                exits.append(trade)
-                            continue
-
-            # 5. Trailing Stop (regime-adaptive: ATR or MA-based)
-            trail_type = regime_params.get("trail_stop_type", "atr")
-            if trail_type == "ma" and len(df) >= regime_params.get("trail_stop_ma_period", 20):
-                # Use moving average as trailing stop (Minervini style)
-                ma_period = regime_params.get("trail_stop_ma_period", 20)
-                ma_value = df["Close"].rolling(ma_period).mean().iloc[-1]
-                if ma_value > pos.current_stop_loss:
-                    pos.current_stop_loss = ma_value
-                    logger.info(f"📉 {symbol}: MA{ma_period} trail SL updated to ₹{ma_value:.2f}")
-            elif atr > 0:
-                # ATR-based trailing stop (regime-adaptive multiplier)
-                trail_mult = regime_params.get("trail_stop_atr_multiplier", exit_cfg.get("trail_stop_atr", 2.0))
-                new_sl = current_price - (atr * trail_mult)
-                if new_sl > pos.current_stop_loss:
-                    logger.info(f"📉 {symbol}: Trailing SL updated {pos.current_stop_loss:.2f} → {new_sl:.2f}")
-                    pos.current_stop_loss = new_sl
-
-        # Cleanup closed positions
         for sym in symbols_to_remove:
             if sym in self.positions:
                 del self.positions[sym]
 
         return exits
 
+        return exits
+
     def _daily_active_rebalance(self, date: pd.Timestamp, symbols_data: Dict[str, pd.DataFrame], rebal_cfg: dict):
-        """Daily active rebalancing: sell top gainers, buy bottom losers.
+        """Daily active rebalancing: sell top gainers, buy bottom losers."""
+        from scripts.backtest_position_manager import daily_active_rebalance
 
-        Sells partial positions that gained > threshold and uses freed capital
-        to add to positions that dropped > threshold (buy the dip).
-        """
-        top_gainer_pct = rebal_cfg.get("top_gainer_threshold_pct", 3.0)
-        sell_pct = rebal_cfg.get("sell_amount_of_remaining_position_pct", 10.0) / 100.0
-        bottom_loser_pct = rebal_cfg.get("bottom_loser_threshold_pct", -3.0)
-        buy_pct = rebal_cfg.get("buy_amount_with_freed_capital_pct", 10.0) / 100.0
-
-        # Calculate PnL for each position
-        position_pnl = []
-        for symbol, pos in self.positions.items():
-            df = symbols_data.get(symbol)
-            if df is None or date not in df.index:
-                continue
-            current_price = self._close_prices.get(symbol, {}).get(date, df.loc[date, "Close"])
-            pnl_pct = (current_price - pos.entry_price) / pos.entry_price * 100
-            position_pnl.append((symbol, pos, current_price, pnl_pct))
-
-        # Sort by PnL
-        position_pnl.sort(key=lambda x: x[3], reverse=True)
-
-        freed_capital = 0.0
-
-        # Sell partial from top gainers
-        for symbol, pos, current_price, pnl_pct in position_pnl:
-            if pnl_pct >= top_gainer_pct:
-                sell_qty = max(1, int(pos.quantity * sell_pct))
-                if sell_qty < pos.quantity:
-                    trade = self._partial_sell(symbol, date, current_price, sell_qty, pos, "REBALANCE_SELL")
-                    if trade:
-                        freed_capital += trade.exit_price * sell_qty
-                        logger.info(
-                            f"🔄 REBALANCE: Sold {sell_qty} of {symbol} (+{pnl_pct:.1f}%) | Freed ₹{freed_capital:.0f}"
-                        )
-                    pos.quantity -= sell_qty
-
-        # Buy more of bottom losers with freed capital
-        position_pnl.sort(key=lambda x: x[3])  # Sort by lowest PnL first
-        for symbol, pos, current_price, pnl_pct in position_pnl:
-            if pnl_pct <= bottom_loser_pct and freed_capital > 0:
-                buy_amount = freed_capital * buy_pct
-                if buy_amount > 0 and current_price > 0:
-                    buy_qty = int(buy_amount / current_price)
-                    if buy_qty > 0:
-                        cost = buy_qty * current_price
-                        brokerage = cost * self.brokerage
-                        total_cost = cost + brokerage
-                        if total_cost <= freed_capital:
-                            # Add to existing position
-                            pos.quantity += buy_qty
-                            # Update average entry price
-                            total_investment = pos.entry_price * (pos.quantity - buy_qty) + cost
-                            pos.entry_price = total_investment / pos.quantity
-                            freed_capital -= total_cost
-                            logger.info(
-                                f"🔄 REBALANCE: Added {buy_qty} to {symbol} ({pnl_pct:.1f}%) | Avg entry: ₹{pos.entry_price:.2f}"
-                            )
+        daily_active_rebalance(
+            self.positions,
+            self._close_prices,
+            symbols_data,
+            date,
+            rebal_cfg,
+            self._partial_sell,
+            self.brokerage,
+            logger,
+        )
 
     def _scan_for_signals(self, date: pd.Timestamp, symbols_data: Dict[str, pd.DataFrame]) -> List[dict]:
         """Scan stocks without open positions for BUY signals."""
@@ -941,32 +652,16 @@ class PortfolioBacktestSession:
         size = min(size, max_by_pct)
 
         # Calculate realistic buy cost
-        if self.use_realistic_costs:
-            from scripts.execution_costs import calculate_buy_cost
+        from scripts.backtest_position_manager import calculate_buy_order_cost
 
-            cost = size * exec_price
-            costs = calculate_buy_cost(exec_price, size)
-            total_cost = costs.net_cost
-        else:
-            cost = size * exec_price
-            brokerage_cost = cost * self.brokerage
-            total_cost = cost + brokerage_cost
+        cost, total_cost = calculate_buy_order_cost(size, exec_price, self.use_realistic_costs, self.brokerage)
 
         # Respect available cash
         if total_cost > self.cash:
             max_by_cash = int(self.cash / exec_price)
             size = min(size, max_by_cash)
-            # Recalculate cost with adjusted size
-            if self.use_realistic_costs:
-                from scripts.execution_costs import calculate_buy_cost
-
-                cost = size * exec_price
-                costs = calculate_buy_cost(exec_price, size)
-                total_cost = costs.net_cost
-            else:
-                cost = size * exec_price
-                brokerage_cost = cost * self.brokerage
-                total_cost = cost + brokerage_cost
+            if size > 0:
+                cost, total_cost = calculate_buy_order_cost(size, exec_price, self.use_realistic_costs, self.brokerage)
 
         if size <= 0 or total_cost > self.cash:
             return
@@ -1011,72 +706,48 @@ class PortfolioBacktestSession:
         )
 
     def _process_pyramiding(self, date: pd.Timestamp, symbols_data: Dict[str, pd.DataFrame]):
-        """Check existing positions for pyramid add triggers.
+        """Check existing positions for pyramid add triggers."""
+        from scripts.backtest_position_manager import evaluate_pyramid_step
 
-        Regime-controlled: pyramiding disabled in bear markets.
-        """
         pyramid_cfg = self.strategy_config.get("pyramiding", {})
         if not pyramid_cfg.get("enabled", False):
             return
 
-        # Regime control: skip pyramiding in bear markets
         if pyramid_cfg.get("regime_controlled", False):
             regime = self._regime_status.lower() if self._regime_status != "UNKNOWN" else "bull"
             regime_adaptive = self.strategy_config.get("exit_rules", {}).get("regime_adaptive_exits", {})
             regime_params = regime_adaptive.get(regime, {})
             if not regime_params.get("pyramiding_allowed", True):
-                return  # No pyramiding in bear regime
-
-        steps = pyramid_cfg.get("steps", [])
+                return
 
         for symbol, pos in list(self.positions.items()):
-            if pos.adds_count >= len(steps):
-                continue
-
             df = symbols_data.get(symbol)
             if df is None or date not in df.index:
                 continue
 
             current_price = self._close_prices.get(symbol, {}).get(date, df.loc[date, "Close"])
-            atr = self._calculate_atr_from_store(symbol, date)
-            if atr is None:
-                idx = self._date_idx.get(symbol, {}).get(date)
-                if idx is not None:
-                    atr = self._calculate_atr(df.iloc[: idx + 1], date)
-                else:
-                    atr = self._calculate_atr(df.loc[:date], date)
-            step = steps[pos.adds_count]
-            trigger_mult = step.get("trigger_step_atr", 1.5)
-            required_price = pos.last_add_price + (trigger_mult * atr)
-
-            if current_price < required_price:
-                continue
-
-            # Calculate pyramid quantity based on original position size
-            base_qty = pos.initial_quantity
-            add_pct = step.get("add_size_pct", 0.5)
-            add_qty = max(int(base_qty * add_pct), 1)
-
-            # Check if pyramid counts as new position
-            if self.pyramid_counts_as_new:
-                if len(self.positions) >= self.max_positions:
-                    continue
-
-            # Check cash
-            cost = add_qty * current_price
-            brokerage_cost = cost * self.brokerage
-            total_cost = cost + brokerage_cost
-            if total_cost > self.cash:
-                continue
-
-            # Check max position pct
+            atr = self._calculate_atr_from_store(symbol, date) or self._calculate_atr(df.loc[:date], date)
             portfolio_value = self._current_portfolio_value(symbols_data, date)
-            current_position_value = pos.quantity * current_price
-            new_position_value = current_position_value + cost
-            if (new_position_value / portfolio_value) > self.max_position_pct:
+
+            pyramid_res = evaluate_pyramid_step(
+                pos,
+                date,
+                current_price,
+                atr,
+                pyramid_cfg,
+                self.pyramid_counts_as_new,
+                self.max_positions,
+                len(self.positions),
+                self.cash,
+                self.brokerage,
+                portfolio_value,
+                self.max_position_pct,
+            )
+
+            if not pyramid_res:
                 continue
 
-            # Execute pyramid
+            add_qty, cost, total_cost = pyramid_res
             self.cash -= total_cost
             self._cached_pv = None
             pos.quantity += add_qty
@@ -1096,41 +767,30 @@ class PortfolioBacktestSession:
             )
             self.trades.append(trade)
 
-            logger.info(
-                f"⬆️ PYRAMID {symbol} | Added {add_qty} @ ₹{current_price:.2f} | "
-                f"New Qty: {pos.quantity} | Step: {step.get('name', 'Add')}"
-            )
+            logger.info(f"⬆️ PYRAMID {symbol} | Added {add_qty} @ ₹{current_price:.2f} | " f"New Qty: {pos.quantity}")
 
     def _close_position(self, symbol: str, date: pd.Timestamp, price: float, reason: str) -> Optional[PortfolioTrade]:
         """Close a position fully and record the trade."""
+        from scripts.backtest_position_manager import execute_close_position
+
         pos = self.positions.get(symbol)
         if not pos:
             return None
 
-        # Apply gap risk modeling for realistic exit fills
-        if self.use_realistic_costs:
-            from scripts.execution_costs import apply_gap_risk
+        atr_val = self._calculate_atr_from_store(symbol, date) or (price * 0.02)
+        fill_price, gross_value, net_value, pnl = execute_close_position(
+            pos,
+            date,
+            price,
+            reason,
+            self.use_realistic_costs,
+            self.gap_seed,
+            self.bar_count,
+            self.brokerage,
+            atr_val,
+        )
 
-            atr = self._calculate_atr_from_store(symbol, date) or (price * 0.02)
-            fill_price = apply_gap_risk(price, atr, reason, seed=self.gap_seed + self.bar_count)
-        else:
-            fill_price = price
-
-        # Calculate realistic sell costs
-        if self.use_realistic_costs:
-            from scripts.execution_costs import calculate_sell_cost
-
-            gross_value = pos.quantity * fill_price
-            costs = calculate_sell_cost(fill_price, pos.quantity)
-            net_value = costs.net_proceeds
-        else:
-            gross_value = pos.quantity * fill_price
-            brokerage_cost = gross_value * self.brokerage
-            net_value = gross_value - brokerage_cost
-
-        pnl = net_value - (pos.quantity * pos.entry_price)
         pnl_pct = (pnl / (pos.quantity * pos.entry_price)) * 100 if pos.entry_price > 0 else 0
-
         self.cash += net_value
         self._cached_pv = None
 
@@ -1167,31 +827,31 @@ class PortfolioBacktestSession:
         self, symbol: str, date: pd.Timestamp, price: float, qty: int, pos: PortfolioPosition, reason: str
     ) -> PortfolioTrade:
         """Sell a portion of a position."""
-        # Apply gap risk for partial sells too
-        if self.use_realistic_costs:
-            from scripts.execution_costs import apply_gap_risk
+        from scripts.backtest_position_manager import execute_close_position
 
-            atr = self._calculate_atr_from_store(symbol, date) or (price * 0.02)
-            fill_price = apply_gap_risk(price, atr, reason, seed=self.gap_seed + self.bar_count)
-        else:
-            fill_price = price
-
-        # Calculate realistic costs
-        if self.use_realistic_costs:
-            from scripts.execution_costs import calculate_sell_cost
-
-            gross_value = qty * fill_price
-            costs = calculate_sell_cost(fill_price, qty)
-            net_value = costs.net_proceeds
-        else:
-            gross_value = qty * fill_price
-            brokerage_cost = gross_value * self.brokerage
-            net_value = gross_value - brokerage_cost
+        atr_val = self._calculate_atr_from_store(symbol, date) or (price * 0.02)
+        # Temporary position for partial math
+        temp_pos = PortfolioPosition(
+            symbol=symbol,
+            entry_date=pos.entry_date,
+            entry_price=pos.entry_price,
+            quantity=qty,
+            stop_loss=pos.stop_loss,
+        )
+        fill_price, gross_value, net_value, pnl = execute_close_position(
+            temp_pos,
+            date,
+            price,
+            reason,
+            self.use_realistic_costs,
+            self.gap_seed,
+            self.bar_count,
+            self.brokerage,
+            atr_val,
+        )
 
         cost_basis = qty * pos.entry_price
-        pnl = net_value - cost_basis
         pnl_pct = (pnl / cost_basis) * 100 if cost_basis > 0 else 0
-
         self.cash += net_value
 
         trade = PortfolioTrade(
@@ -1226,134 +886,35 @@ class PortfolioBacktestSession:
     # ------------------------------------------------------------------
 
     def _check_market_breadth(self, date: pd.Timestamp, symbols_data: Dict[str, pd.DataFrame]) -> bool:
-        """Calculate market breadth across the stock universe.
+        """Calculate market breadth across the stock universe."""
+        from scripts.backtest_metrics import check_market_breadth
 
-        Returns True if market breadth is healthy (enough stocks in uptrend).
-        Returns False if broad market weakness is detected (>65% of stocks below 20-SMA).
-        This blocks new buys during market-wide sell-offs even if individual signals look good.
-        """
-        bread_cfg = self.strategy_config.get("market_breadth_filter", {})
-        if not bread_cfg.get("enabled", True):
-            return True
-
-        min_advance_pct = bread_cfg.get("min_advance_pct", 35)
-
-        # Use pre-computed sma_20 from IndicatorStore if available
-        if self._indicator_store is not None:
-            above_count = 0
-            total = 0
-            for symbol in symbols_data.keys():
-                if date not in symbols_data[symbol].index:
-                    continue
-                close_val = self._indicator_store.get(symbol, "close", date)
-                sma_val = self._indicator_store.get(symbol, "sma_20", date)
-                if np.isnan(close_val) or np.isnan(sma_val):
-                    continue
-                total += 1
-                if close_val > sma_val:
-                    above_count += 1
-        else:
-            # Fallback: compute SMA-20 on the fly
-            sma_period = 20
-            above_count = 0
-            total = 0
-            for symbol, df in symbols_data.items():
-                if date not in df.index:
-                    continue
-                idx = self._date_idx.get(symbol, {}).get(date)
-                if idx is None:
-                    idx = df.index.searchsorted(date)
-                hist = df.iloc[: idx + 1]
-                if len(hist) < sma_period:
-                    continue
-                total += 1
-                sma = hist["Close"].tail(sma_period).mean()
-                if hist["Close"].iloc[-1] > sma:
-                    above_count += 1
-
-        if total < 5:
-            return True  # Too few stocks to judge, allow by default
-
-        advance_pct = (above_count / total) * 100
-        return advance_pct >= min_advance_pct
+        return check_market_breadth(
+            self.strategy_config,
+            self._indicator_store,
+            date,
+            symbols_data,
+            self._date_idx,
+        )
 
     def _check_market_regime(self, date: pd.Timestamp, symbols_data: Dict[str, pd.DataFrame]) -> str:
-        """Check market regime (BULL/BEAR) using NIFTY 50 index.
-
-        Returns 'BULL' or 'BEAR'. Caches result per date to avoid redundant checks.
-        Raises RuntimeError if regime detection is disabled — this strategy requires it.
-        """
-        if not self.regime_enabled or not self.regime_config:
-            raise RuntimeError(
-                "Market regime detection is DISABLED but required by this strategy. "
-                "Set 'market_regime_detection': true in analysis_config of your strategy JSON. "
-                "Regime detection controls exit behavior (stops, targets, pyramiding) — running without it is unsafe."
-            )
-
-        # Cache by date
+        """Check market regime (BULL/BEAR) using NIFTY 50 index."""
         if date == self._regime_check_date:
             return self._regime_status
 
-        try:
-            # Get NIFTY data: use override first, then symbols_data, then fetch
-            index_symbol = self.regime_config.get("index", "^NSEI")
-            if self._index_data_override is not None:
-                index_df = self._index_data_override
-                idx = index_df.index.searchsorted(date)
-                index_hist = index_df.iloc[: idx + 1]
-            elif index_symbol in symbols_data:
-                index_df = symbols_data[index_symbol]
-                idx = self._date_idx.get(index_symbol, {}).get(date)
-                if idx is None:
-                    idx = index_df.index.searchsorted(date)
-                index_hist = index_df.iloc[: idx + 1]
-            else:
-                # Fetch index data on-the-fly
-                from scripts.data_fetcher import get_historical_data
+        from scripts.backtest_metrics import check_market_regime
 
-                full_data = get_historical_data(index_symbol, period="10y")
-                if date.tzinfo is not None and full_data.index.tzinfo is None:
-                    full_data.index = full_data.index.tz_localize(date.tzinfo)
-                index_hist = full_data.loc[:date]
-
-            if len(index_hist) < 250:
-                raise RuntimeError(
-                    f"Insufficient index data for regime detection: {len(index_hist)} days < 250 required. "
-                    f"Need at least 250 days of {index_symbol} data to calculate SMA for regime check."
-                )
-
-            # Parse the bull_market_rule (e.g., "latest close > sma(50)")
-            import re
-
-            rule = self.regime_config.get("bull_market_rule", "latest close > sma(50)")
-            sma_match = re.search(r"sma\((\d+)\)", rule)
-            if not sma_match:
-                raise RuntimeError(
-                    f"Invalid bull_market_rule in market_regime_config: '{rule}'. "
-                    "Expected format: 'latest close > sma(N)' where N is the SMA period."
-                )
-
-            sma_period = int(sma_match.group(1))
-            current_price = index_hist["Close"].iloc[-1]
-            sma_value = index_hist["Close"].rolling(sma_period).mean().iloc[-1]
-
-            is_bull = current_price > sma_value
-            self._regime_status = "BULL" if is_bull else "BEAR"
-            self._regime_check_date = date
-
-            if not is_bull:
-                logger.info(f"🔴 MACRO REGIME: BEARISH on {date.date()} - {index_symbol} below SMA({sma_period})")
-
-            return self._regime_status
-
-        except RuntimeError:
-            raise
-        except Exception as e:
-            raise RuntimeError(
-                f"Market regime detection failed on {date}: {e}. "
-                "This strategy requires regime detection to function. "
-                "Check that market_regime_config.index is valid and data is accessible."
-            ) from e
+        self._regime_status = check_market_regime(
+            self.regime_enabled,
+            self.regime_config,
+            date,
+            self._index_data_override,
+            symbols_data,
+            self._date_idx,
+            logger,
+        )
+        self._regime_check_date = date
+        return self._regime_status
 
     def _get_common_dates(self, symbols_data: Dict[str, pd.DataFrame]) -> pd.DatetimeIndex:
         """Build a union of all trading dates across symbols."""
@@ -1375,136 +936,39 @@ class PortfolioBacktestSession:
         return result
 
     def _current_portfolio_value_at_date(self, date: pd.Timestamp) -> float:
-        """Return cached portfolio value if available, else approximate."""
-        # Used during exit recording; approximate is fine
         return self.cash + sum(pos.quantity * pos.entry_price for pos in self.positions.values())
 
     def _calculate_atr(self, df: pd.DataFrame, date: pd.Timestamp, period: int = 14) -> float:
-        """Calculate ATR using data up to given date."""
-        try:
-            atr_series = ta.ATR(df["High"], df["Low"], df["Close"], timeperiod=period)
-            return float(atr_series.loc[date]) if date in atr_series.index else float(atr_series.iloc[-1])
-        except Exception:
-            return 0.0
+        s = ta.ATR(df["High"], df["Low"], df["Close"], timeperiod=period)
+        return float(s.loc[date]) if date in s.index else float(s.iloc[-1])
 
     def _calculate_atr_from_store(self, symbol: str, date: pd.Timestamp, period: int = 14) -> Optional[float]:
-        """Get ATR from pre-computed stores (O(1) lookup).
-
-        Checks indicator_store first, then _atr_cache fallback.
-        """
         if self._indicator_store is not None:
-            try:
-                atr_val = self._indicator_store.get(symbol, "atr_14", date)
-                if atr_val is not None and not np.isnan(atr_val):
-                    return float(atr_val)
-            except Exception:
-                pass
-
-        atr_val = self._atr_cache.get(symbol, {}).get(date)
-        if atr_val is not None and not np.isnan(atr_val):
-            return float(atr_val)
-
-        return None
+            v = self._indicator_store.get(symbol, "atr_14", date)
+            if v is not None and not np.isnan(v):
+                return float(v)
+        v = self._atr_cache.get(symbol, {}).get(date)
+        return float(v) if v is not None and not np.isnan(v) else None
 
     def _can_open_new_position(self, symbol: str) -> bool:
-        """Check if we can open a new position (regime-adaptive)."""
         if symbol in self.positions:
             return False
-
-        # Regime-adaptive max positions
         regime = self._regime_status.lower() if self._regime_status != "UNKNOWN" else "bull"
         regime_risk_cfg = self.strategy_config.get("risk_management", {}).get("regime_adaptive_risk", {})
-        max_pos = self.max_positions  # default
-        if regime in regime_risk_cfg:
-            max_pos = regime_risk_cfg[regime].get("max_positions", self.max_positions)
-
-        current_slot_count = len(self.positions)
-        return current_slot_count < max_pos
+        max_pos = regime_risk_cfg.get(regime, {}).get("max_positions", self.max_positions)
+        return len(self.positions) < max_pos
 
     def _record_snapshot(self, date: pd.Timestamp, symbols_data: Dict[str, pd.DataFrame]):
-        """Save daily portfolio state."""
-        portfolio_value = self._current_portfolio_value(symbols_data, date)
-        market_value = portfolio_value - self.cash
+        from scripts.backtest_metrics import record_daily_snapshot
 
-        if portfolio_value > self.peak_value:
-            self.peak_value = portfolio_value
-
-        drawdown = portfolio_value - self.peak_value
-        drawdown_pct = (drawdown / self.peak_value) * 100 if self.peak_value > 0 else 0
-
-        self.daily_snapshots.append(
-            {
-                "date": str(date.date()),
-                "portfolio_value": round(portfolio_value, 2),
-                "cash_balance": round(self.cash, 2),
-                "market_value": round(market_value, 2),
-                "open_positions_count": len(self.positions),
-                "open_positions": list(self.positions.keys()),
-                "drawdown_from_peak": round(drawdown, 2),
-                "drawdown_from_peak_pct": round(drawdown_pct, 2),
-            }
+        pv = self._current_portfolio_value(symbols_data, date)
+        self.peak_value = record_daily_snapshot(
+            self.daily_snapshots, date, pv, self.cash, self.peak_value, self.positions
         )
 
     def _calculate_metrics(self, common_dates: pd.DatetimeIndex) -> Dict[str, Any]:
-        """Calculate final portfolio performance metrics."""
-        final_value = self.daily_snapshots[-1]["portfolio_value"] if self.daily_snapshots else self.cash
-        total_return_pct = ((final_value - self.initial_capital) / self.initial_capital) * 100
+        from scripts.backtest_metrics import calculate_portfolio_metrics
 
-        # CAGR — only meaningful for periods >= 1 year.
-        # For shorter windows, report a linear annualized return instead of
-        # compounding (which inflates short-term returns unrealistically).
-        days = (common_dates[-1] - common_dates[0]).days
-        years = days / 365.25
-        if years >= 1.0:
-            cagr = ((final_value / self.initial_capital) ** (1 / years) - 1) * 100
-            annualized_return = cagr
-        else:
-            # Linear annualization: return * (1 / years)
-            annualized_return = total_return_pct / years if years > 0.01 else 0.0
-            cagr = annualized_return  # keep cagr field for compatibility
-
-        # Max Drawdown
-        max_dd_pct = min((s["drawdown_from_peak_pct"] for s in self.daily_snapshots), default=0)
-
-        # Trade metrics
-        completed_trades = [t for t in self.trades if t.trade_type == "SELL"]
-        winning_trades = [t for t in completed_trades if t.pnl > 0]
-        total_trades = len(completed_trades)
-        win_rate = (len(winning_trades) / total_trades * 100) if total_trades > 0 else 0
-
-        gross_profit = sum(t.pnl for t in winning_trades)
-        gross_loss = abs(sum(t.pnl for t in completed_trades if t.pnl <= 0))
-        profit_factor = (gross_profit / gross_loss) if gross_loss > 0 else (999.0 if gross_profit > 0 else 0.0)
-
-        avg_win = gross_profit / len(winning_trades) if winning_trades else 0
-        avg_loss = gross_loss / (total_trades - len(winning_trades)) if total_trades > len(winning_trades) else 1
-        expectancy = ((win_rate / 100 * avg_win) - ((1 - win_rate / 100) * avg_loss)) if total_trades > 0 else 0.0
-
-        # Sharpe ratio (from daily returns) — vectorized with numpy
-        sharpe = 0.0
-        if len(self.daily_snapshots) > 1:
-            pv = np.array([s["portfolio_value"] for s in self.daily_snapshots], dtype=np.float64)
-            mask = pv[:-1] > 0
-            daily_returns = np.where(mask, (pv[1:] - pv[:-1]) / np.where(mask, pv[:-1], 1.0), 0.0)
-            std = np.std(daily_returns)
-            if std > 0:
-                sharpe = float(np.mean(daily_returns) / std * np.sqrt(252))
-
-        avg_positions = (
-            sum(s["open_positions_count"] for s in self.daily_snapshots) / len(self.daily_snapshots)
-            if self.daily_snapshots
-            else 0
+        return calculate_portfolio_metrics(
+            self.daily_snapshots, self.trades, self.initial_capital, self.cash, common_dates
         )
-
-        return {
-            "final_portfolio_value": round(final_value, 2),
-            "total_return_pct": round(total_return_pct, 2),
-            "cagr": round(cagr, 2),
-            "max_drawdown_pct": round(max_dd_pct, 2),
-            "sharpe_ratio": round(sharpe, 2),
-            "total_trades": total_trades,
-            "win_rate": round(win_rate, 2),
-            "profit_factor": round(profit_factor, 2),
-            "expectancy": round(expectancy, 2),
-            "avg_positions_held": round(avg_positions, 2),
-        }

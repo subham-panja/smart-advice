@@ -8,7 +8,6 @@ import config
 from database import get_mongodb, get_open_positions
 from run_analysis import AutomatedStockAnalysis
 from utils.logger import setup_logging
-from utils.persistence_handler import PersistenceHandler
 from utils.strategy_loader import StrategyLoader
 from utils.trading_clock import is_replay, set_simulated_date, trading_now
 
