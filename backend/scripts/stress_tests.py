@@ -129,6 +129,15 @@ def run_regime_tests(
         sim_end = pd.Timestamp(test["end_date"]).tz_localize(None)
         sim_start = (sim_end - pd.DateOffset(months=test["months"])).tz_localize(None)
 
+        # Check if dataset contains data for this regime test period
+        all_min_dates = [df.index[0] for df in symbols_data.values() if not df.empty]
+        if all_min_dates:
+            min_data_date = min(all_min_dates)
+            if sim_end < min_data_date:
+                print(f"  ⏭️ Skipping {test['name']} (data starts on {min_data_date.date()})")
+                results.append({"regime": test["name"], "cagr": 0.0, "passed": True, "skipped": True})
+                continue
+
         # Regime warmup
         if index_data is not None:
             stock_only = {
