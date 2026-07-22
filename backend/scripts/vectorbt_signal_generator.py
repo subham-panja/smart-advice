@@ -177,15 +177,18 @@ def compute_signal_matrix(
         sma_trend = vbt.talib("SMA").run(c, timeperiod=sma_p).real
         sma_trend.columns = symbols
 
-    trend_ok = adx > t_cfg.get("adx_min", 15)
+    trend_ok = adx > t_cfg.get("adx_min", 20)
     if t_cfg.get("require_di_alignment", True):
         trend_ok = trend_ok & (pdi > mdi)
     if t_cfg.get("require_price_above_sma", True):
         trend_ok = trend_ok & (c > sma_trend)
+    if indicators.sma_200 is not None:
+        trend_ok = trend_ok & (c > indicators.sma_200)
 
     # SMA Stack: 50 > 150 > 200
-    if t_cfg.get("require_sma_stack", False):
-        trend_ok = trend_ok & (indicators.sma_50 > indicators.sma_150) & (indicators.sma_150 > indicators.sma_200)
+    if t_cfg.get("require_sma_stack", True):
+        if indicators.sma_50 is not None and indicators.sma_150 is not None and indicators.sma_200 is not None:
+            trend_ok = trend_ok & (indicators.sma_50 > indicators.sma_150) & (indicators.sma_150 > indicators.sma_200)
 
     # --- VOLUME GATE ---
     vol_ok = pd.DataFrame(True, index=dates, columns=symbols, dtype=bool)

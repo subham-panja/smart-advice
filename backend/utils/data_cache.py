@@ -23,6 +23,7 @@ import pandas as pd
 import yfinance as yf
 
 import config
+from utils.trading_clock import is_replay, trading_now
 
 logger = logging.getLogger(__name__)
 
@@ -82,10 +83,11 @@ def _get_last_trading_day() -> Optional[date]:
     - Holiday on Friday: returns Thursday
     - Holiday week: returns the most recent day NIFTY actually traded
 
-    Falls back to weekday-based estimation if ^NSEI cache is unavailable.
+    Falls back to weekday-based estimation if ^NSEI cache is unavailable or stale.
     """
-    # Reuse cached result within the same session (avoid repeated reads)
-    if _last_trading_day_cache["date"] and _last_trading_day_cache["fetched_at"] == date.today():
+    today = trading_now().date()
+    # Reuse cached result within the same session
+    if _last_trading_day_cache["date"] and _last_trading_day_cache["fetched_at"] == today:
         return _last_trading_day_cache["date"]
 
     nsei_path = _cache_path("^NSEI")
@@ -98,14 +100,31 @@ def _get_last_trading_day() -> Optional[date]:
                     last_date = last_date.date()
                 elif isinstance(last_date, str):
                     last_date = pd.to_datetime(last_date).date()
-                _last_trading_day_cache["date"] = last_date
-                _last_trading_day_cache["fetched_at"] = date.today()
-                return last_date
+
+                # Verify that ^NSEI cache itself is fresh relative to today
+                max_gap = 4 if today.weekday() >= 5 else 2
+                if (today - last_date).days <= max_gap:
+                    _last_trading_day_cache["date"] = last_date
+                    _last_trading_day_cache["fetched_at"] = today
+                    return last_date
         except Exception:
             pass
 
+    # If ^NSEI cache is missing or stale, fetch fresh ^NSEI from yfinance
+    try:
+        df = yf.Ticker("^NSEI").history(period="5d", interval="1d")
+        if df is not None and not df.empty:
+            df = df[["Open", "High", "Low", "Close", "Volume"]].dropna()
+            df.index = pd.to_datetime(df.index)
+            df.to_parquet(nsei_path, index=True)
+            last_date = df.index[-1].date()
+            _last_trading_day_cache["date"] = last_date
+            _last_trading_day_cache["fetched_at"] = today
+            return last_date
+    except Exception as e:
+        logger.warning(f"Failed to fetch ^NSEI to determine last trading day: {e}")
+
     # Fallback: estimate last trading day from weekday
-    today = date.today()
     d = today
     while d.weekday() >= 5:
         d -= timedelta(days=1)
@@ -130,7 +149,13 @@ def _is_cache_recent(df: pd.DataFrame, max_age_days: int = 1) -> bool:
         elif isinstance(last_date, str):
             last_date = pd.to_datetime(last_date).date()
 
-        today = date.today()
+        today = trading_now().date()
+
+        # Hard safety check: If not in replay mode and cache is > 4 calendar days old, it's stale!
+        if not is_replay():
+            gap_days = (today - last_date).days
+            if gap_days > 4:
+                return False
 
         # Use actual last trading day from NIFTY 50 (handles holidays correctly)
         last_td = _get_last_trading_day()
@@ -179,6 +204,60 @@ def _fetch_with_retry(
                 raise last_error
 
 
+def _sync_live_price(df: pd.DataFrame, yf_sym: str, symbol: str) -> pd.DataFrame:
+    """Sync live market last_price from fast_info if today's history row has NaN Close."""
+    if is_replay():
+        return df.dropna(subset=["Close"])
+    try:
+        if df.index.tz is not None:
+            df.index = df.index.tz_localize(None)
+
+        t = yf.Ticker(yf_sym)
+        fast_info = getattr(t, "fast_info", None)
+        if fast_info:
+            lp = getattr(fast_info, "last_price", None)
+            if lp and not pd.isna(lp) and float(lp) > 0:
+                today_date = trading_now().date()
+                today_ts = pd.Timestamp(today_date)
+
+                df_clean = df.dropna(how="all")
+                today_mask = df_clean.index.date == today_date
+                if today_mask.any():
+                    idx_loc = df_clean.index[today_mask][0]
+                    df_clean.loc[idx_loc, "Close"] = round(float(lp), 2)
+                    op = getattr(fast_info, "open", None)
+                    hi = getattr(fast_info, "day_high", None)
+                    lo = getattr(fast_info, "day_low", None)
+                    if op and not pd.isna(op):
+                        df_clean.loc[idx_loc, "Open"] = round(float(op), 2)
+                    if hi and not pd.isna(hi):
+                        df_clean.loc[idx_loc, "High"] = round(float(hi), 2)
+                    if lo and not pd.isna(lo):
+                        df_clean.loc[idx_loc, "Low"] = round(float(lo), 2)
+                else:
+                    op = getattr(fast_info, "open", lp) or lp
+                    hi = getattr(fast_info, "day_high", lp) or lp
+                    lo = getattr(fast_info, "day_low", lp) or lp
+                    new_row = pd.DataFrame(
+                        [
+                            {
+                                "Open": round(float(op), 2),
+                                "High": round(float(hi), 2),
+                                "Low": round(float(lo), 2),
+                                "Close": round(float(lp), 2),
+                                "Volume": getattr(fast_info, "last_volume", 0) or 0,
+                            }
+                        ],
+                        index=[today_ts],
+                    )
+                    df_clean = pd.concat([df_clean, new_row])
+                df = df_clean
+    except Exception as e:
+        logger.debug(f"Live price sync failed for {symbol}: {e}")
+    cols = [c for c in ["Open", "High", "Low", "Close", "Volume"] if c in df.columns]
+    return df[cols].dropna(subset=["Close"])
+
+
 def fetch_historical_data_cached(
     symbol: str,
     period: str = "2y",
@@ -186,17 +265,7 @@ def fetch_historical_data_cached(
     force_refresh: bool = False,
     min_rows: Optional[int] = None,
 ) -> pd.DataFrame:
-    """Fetch historical OHLCV data with single-file caching.
-
-    One parquet file per symbol ({symbol}.parquet).
-    Cache is used if:
-    1. File exists
-    2. Data is recent (last row matches the actual last trading day from NIFTY 50)
-
-    Row count is secondary: if cache is recent, it's accepted even for newer stocks
-    that don't have full history for the requested period.
-    Re-fetched only when data is stale (newer trading day exists).
-    """
+    """Fetch historical OHLCV data with single-file caching."""
     cache_path = _cache_path(symbol, interval)
 
     yf_sym = f"{symbol}.NS" if not symbol.startswith("^") else symbol
@@ -211,6 +280,9 @@ def fetch_historical_data_cached(
                 has_enough_rows = len(df) >= needed if period != "max" else is_recent
 
                 if is_recent:
+                    # Sync live price for current day if cache row lacks today's close
+                    if not is_replay() and df.index[-1].date() < trading_now().date():
+                        df = _sync_live_price(df, yf_sym, symbol)
                     logger.debug(f"Cache hit for {symbol}: {len(df)} rows, recent data")
                     return df
                 elif has_enough_rows:
@@ -229,9 +301,9 @@ def fetch_historical_data_cached(
     if df is None or df.empty:
         raise ValueError(f"No historical data returned for {symbol}")
 
-    df = df[["Open", "High", "Low", "Close", "Volume"]].dropna()
+    df = _sync_live_price(df, yf_sym, symbol)
     if df.empty:
-        raise ValueError(f"Data for {symbol} became empty after dropping NaNs.")
+        raise ValueError(f"Data for {symbol} became empty after live price sync.")
 
     df.index = pd.to_datetime(df.index)
 

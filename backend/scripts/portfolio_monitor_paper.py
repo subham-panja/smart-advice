@@ -173,7 +173,7 @@ class PortfolioMonitor:
                 current_sl = new_sl
 
             # 8. Time Stop (Sideways)
-            days_held = (trading_now(timezone.utc).replace(tzinfo=None) - entry_date).days
+            days_held = max(0, (trading_now(timezone.utc).replace(tzinfo=None) - entry_date).days)
             if days_held >= time_stop_days:
                 pnl_pct = ((current_price - entry_price) / entry_price) * 100
                 if pnl_pct < 2.0:

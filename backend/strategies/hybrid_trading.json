@@ -183,11 +183,11 @@
     "TREND_GATE": {
       "enabled": true,
       "params": {
-        "adx_min": 15,
+        "adx_min": 20,
         "sma_period": 50,
         "require_price_above_sma": true,
-        "require_sma_stack": false,
-        "require_di_alignment": false,
+        "require_sma_stack": true,
+        "require_di_alignment": true,
         "min_di_diff": 0
       }
     },

@@ -160,25 +160,25 @@ class FilterTracker:
 def _prepare_index_data(strategy: dict, symbols_data: dict, period: str) -> Optional[pd.DataFrame]:
     """Pre-fetch index data for regime detection and remove from symbols_data.
 
-    Returns the index DataFrame, and removes it from symbols_data so it
-    doesn't inflate the common-date union.
+    Always fetches 5y of index history to ensure at least 250 index trading days
+    are available for SMA(200) market regime detection.
     """
     regime_enabled = strategy.get("analysis_config", {}).get("market_regime_detection", False)
     if not regime_enabled:
         return None
 
     index_symbol = strategy.get("market_regime_config", {}).get("index", "^NSEI")
-    if index_symbol in symbols_data:
-        # Pop it from symbols_data (caller will set engine._index_data_override)
-        return symbols_data.pop(index_symbol, None)
+    pop_df = symbols_data.pop(index_symbol, None)
 
-    # Fetch it separately
     try:
-        index_data = fetch_multiple_symbols_cached({index_symbol: index_symbol}, period=period, verbose=False)
-        return index_data.get(index_symbol)
+        index_data = fetch_multiple_symbols_cached({index_symbol: index_symbol}, period="5y", verbose=False)
+        res_df = index_data.get(index_symbol)
+        if res_df is not None and not res_df.empty:
+            return res_df
     except Exception as e:
         logger.warning(f"Failed to pre-fetch index data for {index_symbol}: {e}")
-        return None
+
+    return pop_df
 
 
 def _run_with_filter_tracking(

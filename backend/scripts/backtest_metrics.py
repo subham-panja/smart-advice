@@ -159,19 +159,23 @@ def check_market_regime(
             full_data.index = full_data.index.tz_localize(date.tzinfo)
         index_hist = full_data.loc[:date]
 
-    if len(index_hist) < 250:
-        raise RuntimeError(f"Insufficient index data for regime detection: {len(index_hist)} days < 250 required.")
-
-    rule = regime_config.get("bull_market_rule", "latest close > sma(50)")
+    rule = regime_config.get("bull_market_rule", "latest close > sma(200)")
     import re
 
     sma_match = re.search(r"sma\((\d+)\)", rule)
-    if not sma_match:
-        raise RuntimeError(f"Invalid bull_market_rule: '{rule}'. Expected 'latest close > sma(N)'.")
+    sma_period = int(sma_match.group(1)) if sma_match else 200
 
-    sma_period = int(sma_match.group(1))
+    min_required = min(250, sma_period)
+    if len(index_hist) < min_required:
+        if len(index_hist) < 30:
+            raise RuntimeError(f"Insufficient index data for regime detection: {len(index_hist)} days < 30 required.")
+        logger_obj.warning(
+            f"Index history {len(index_hist)} days < {min_required} for regime check; using available {len(index_hist)} bars."
+        )
+
     current_price = index_hist["Close"].iloc[-1]
-    sma_value = index_hist["Close"].rolling(sma_period).mean().iloc[-1]
+    effective_window = min(sma_period, len(index_hist))
+    sma_value = index_hist["Close"].rolling(effective_window, min_periods=30).mean().iloc[-1]
 
     is_bull = current_price > sma_value
     regime_status = "BULL" if is_bull else "BEAR"

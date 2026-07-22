@@ -184,16 +184,18 @@ def run_historical_with_realistic_costs(
         print(f"  → Excluded {excluded} stocks with < {MIN_DAYS} days")
     print(f"  → Remaining: {len(symbols_data)} stocks")
 
-    # Calculate simulation date range
-    sim_end = pd.Timestamp(end_date, tz="Asia/Kolkata")
-    sim_start = sim_end - pd.DateOffset(months=months)
+    # Calculate simulation date range (tz-naive for universal compatibility)
+    sim_end = pd.Timestamp(end_date).tz_localize(None)
+    sim_start = (sim_end - pd.DateOffset(months=months)).tz_localize(None)
 
     # Advance sim_start if needed for regime warmup (needs 250 days of index data)
     if index_data is not None:
         stock_only = {
             k: v for k, v in symbols_data.items() if k != strategy.get("market_regime_config", {}).get("index", "^NSEI")
         }
-        all_sets = [set(df.index) for df in stock_only.values()]
+        all_sets = [
+            set(df.index.tz_localize(None) if df.index.tz is not None else df.index) for df in stock_only.values()
+        ]
         if all_sets:
             union_dates = sorted(set.union(*all_sets))
             for d in union_dates:
@@ -242,7 +244,10 @@ def run_historical_with_realistic_costs(
     # Count trading days in simulation range
     if symbols_data:
         first_sym = next(iter(symbols_data))
-        num_days = len([d for d in symbols_data[first_sym].index if sim_start <= d <= sim_end])
+        first_idx = symbols_data[first_sym].index
+        if first_idx.tz is not None:
+            first_idx = first_idx.tz_localize(None)
+        num_days = len([d for d in first_idx if sim_start <= d <= sim_end])
     else:
         num_days = "?"
     print(f"\n▶ Running day-by-day simulation ({num_days} trading days) with pre-computed signals...")

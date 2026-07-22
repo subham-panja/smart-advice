@@ -167,10 +167,12 @@ class ExecutionEngine:
                         day_row = hist[hist.index.date == entry_date_obj]
                         if not day_row.empty:
                             exec_price = round(day_row["Open"].iloc[0], 2)
-                        elif not hist.empty:
-                            exec_price = round(hist["Close"].iloc[-1], 2)
                         else:
-                            exec_price = round(exec_price, 2)
+                            last_hist_date = hist.index[-1].date()
+                            if abs((entry_date_obj - last_hist_date).days) <= 3:
+                                exec_price = round(hist["Close"].iloc[-1], 2)
+                            else:
+                                exec_price = round(exec_price, 2)
                     else:
                         exec_price = round(exec_price, 2)
                 except Exception:

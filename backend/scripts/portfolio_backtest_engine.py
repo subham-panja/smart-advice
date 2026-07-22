@@ -270,7 +270,7 @@ class PortfolioBacktestSession:
         if sim_end_date is not None:
             common_dates = common_dates[common_dates <= sim_end_date]
 
-        if len(common_dates) < 60:
+        if len(common_dates) < 5:
             raise ValueError(f"Insufficient common trading days after date filter: {len(common_dates)}")
 
         self.start_date = common_dates[0]

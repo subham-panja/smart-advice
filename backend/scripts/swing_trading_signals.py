@@ -70,14 +70,23 @@ class SwingTradingSignalAnalyzer:
             )
             sma = ta.SMA(df["Close"], sma_p).iloc[-1]
 
-        trend_ok = adx > t_cfg["adx_min"]
+        trend_ok = adx > t_cfg.get("adx_min", 20)
         if t_cfg.get("require_di_alignment", True):
             trend_ok = trend_ok and pdi > mdi
         if t_cfg.get("require_price_above_sma", True):
             trend_ok = trend_ok and c > sma
 
+        # Additional long-term trend & slope safety checks
+        if use_store:
+            sma200 = indicator_store.get(symbol, "sma_200", df.index[-1])
+        else:
+            sma200 = ta.SMA(df["Close"], 200).iloc[-1] if len(df) >= 200 else sma
+
+        if not np.isnan(sma200):
+            trend_ok = trend_ok and (c > sma200)
+
         # SMA Stack Check: 50 > 150 > 200
-        if t_cfg.get("require_sma_stack"):
+        if t_cfg.get("require_sma_stack", True):
             if use_store:
                 sma50 = indicator_store.get(symbol, "sma_50", df.index[-1])
                 sma150 = indicator_store.get(symbol, "sma_150", df.index[-1])
@@ -86,7 +95,8 @@ class SwingTradingSignalAnalyzer:
                 sma50 = ta.SMA(df["Close"], 50).iloc[-1]
                 sma150 = ta.SMA(df["Close"], 150).iloc[-1]
                 sma200 = ta.SMA(df["Close"], 200).iloc[-1]
-            trend_ok = trend_ok and (sma50 > sma150 > sma200)
+            if not (np.isnan(sma50) or np.isnan(sma150) or np.isnan(sma200)):
+                trend_ok = trend_ok and (sma50 > sma150 > sma200)
 
         # Volume Gate
         vol_ok = True

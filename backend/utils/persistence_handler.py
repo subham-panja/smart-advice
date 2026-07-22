@@ -210,10 +210,18 @@ class PersistenceHandler:
         """
 
         def sanitize(d):
+            import numpy as np
+
             if isinstance(d, dict):
                 return {str(k): sanitize(v) for k, v in d.items()}
             elif isinstance(d, list):
                 return [sanitize(x) for x in d]
+            elif isinstance(d, (np.bool_, bool)):
+                return bool(d)
+            elif isinstance(d, (np.integer, int)):
+                return int(d)
+            elif isinstance(d, (np.floating, float)):
+                return float(d)
             return d
 
         try:

@@ -571,36 +571,37 @@ def run_replay(num_days: int):
     print(f"{'=' * 60}\n")
 
     all_stats = []
-    for i, day in enumerate(replay_dates):
-        sim_dt = datetime(day.year, day.month, day.day, 15, 30, 0, tzinfo=timezone.utc)
-        set_simulated_date(sim_dt)
+    try:
+        for i, day in enumerate(replay_dates):
+            sim_dt = datetime(day.year, day.month, day.day, 15, 30, 0, tzinfo=timezone.utc)
+            set_simulated_date(sim_dt)
 
-        print(f"\n{'─' * 40}")
-        print(f"[{i+1}/{num_days}] Replaying {day.strftime('%Y-%m-%d (%a)')}")
-        print(f"{'─' * 40}")
+            print(f"\n{'─' * 40}")
+            print(f"[{i+1}/{num_days}] Replaying {day.strftime('%Y-%m-%d (%a)')}")
+            print(f"{'─' * 40}")
 
-        try:
-            stats = run_trading_cycle()
-            stats["date"] = day.strftime("%Y-%m-%d")
-            all_stats.append(stats)
-        except Exception as e:
-            logger.error(f"Replay failed for {day}: {e}")
-            all_stats.append(
-                {
-                    "date": day.strftime("%Y-%m-%d"),
-                    "executed": 0,
-                    "exits": 0,
-                    "closed": [],
-                    "opened": [],
-                    "positions": 0,
-                    "equity": all_stats[-1]["equity"] if all_stats else initial_cap,
-                    "cash": 0,
-                    "pnl_pct": 0,
-                }
-            )
-
-    # Reset simulated date
-    set_simulated_date(None)
+            try:
+                stats = run_trading_cycle()
+                stats["date"] = day.strftime("%Y-%m-%d")
+                all_stats.append(stats)
+            except Exception as e:
+                logger.error(f"Replay failed for {day}: {e}")
+                all_stats.append(
+                    {
+                        "date": day.strftime("%Y-%m-%d"),
+                        "executed": 0,
+                        "exits": 0,
+                        "closed": [],
+                        "opened": [],
+                        "positions": 0,
+                        "equity": all_stats[-1]["equity"] if all_stats else initial_cap,
+                        "cash": 0,
+                        "pnl_pct": 0,
+                    }
+                )
+    finally:
+        # Reset simulated date
+        set_simulated_date(None)
 
     # Clear replay indicator cache to free memory
     from run_analysis import clear_replay_cache
@@ -629,11 +630,12 @@ def run_single_date(date_str: str):
     sim_dt = datetime(day.year, day.month, day.day, 15, 30, 0, tzinfo=timezone.utc)
     set_simulated_date(sim_dt)
 
-    print(f"\nRunning trading cycle for date: {date_str}")
-    stats = run_trading_cycle()
-
-    set_simulated_date(None)
-    return stats
+    try:
+        print(f"\nRunning trading cycle for date: {date_str}")
+        stats = run_trading_cycle()
+        return stats
+    finally:
+        set_simulated_date(None)
 
 
 if __name__ == "__main__":

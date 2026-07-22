@@ -126,8 +126,8 @@ def run_regime_tests(
     for test in REGIME_TEST_PERIODS:
         print(f"\n--- {test['name']} ---")
 
-        sim_end = pd.Timestamp(test["end_date"], tz="Asia/Kolkata")
-        sim_start = sim_end - pd.DateOffset(months=test["months"])
+        sim_end = pd.Timestamp(test["end_date"]).tz_localize(None)
+        sim_start = (sim_end - pd.DateOffset(months=test["months"])).tz_localize(None)
 
         # Regime warmup
         if index_data is not None:
@@ -236,8 +236,8 @@ def run_param_sensitivity(
         if len(df) < MIN_DAYS:
             del symbols_data[sym]
 
-    sim_end = pd.Timestamp(end_date, tz="Asia/Kolkata")
-    sim_start = sim_end - pd.DateOffset(months=test_months)
+    sim_end = pd.Timestamp(end_date).tz_localize(None)
+    sim_start = (sim_end - pd.DateOffset(months=test_months)).tz_localize(None)
 
     # Regime warmup
     if index_data is not None:
@@ -460,8 +460,8 @@ def run_cost_sensitivity(
         if len(df) < MIN_DAYS:
             del symbols_data[sym]
 
-    sim_end = pd.Timestamp(end_date, tz="Asia/Kolkata")
-    sim_start = sim_end - pd.DateOffset(months=test_months)
+    sim_end = pd.Timestamp(end_date).tz_localize(None)
+    sim_start = (sim_end - pd.DateOffset(months=test_months)).tz_localize(None)
 
     # Regime warmup
     if index_data is not None:
