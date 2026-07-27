@@ -33,7 +33,13 @@ class FilterTranslator:
 
             elif f_type == "rsi":
                 op = f["op"]
-                clauses.append(f"latest rsi( {f['period']} ) {op} {f['value']}")
+                if op == "between":
+                    clauses.append(f"latest rsi( {f['period']} ) > {f['min']}")
+                    clauses.append(f"latest rsi( {f['period']} ) < {f['max']}")
+                elif op == ">":
+                    clauses.append(f"latest rsi( {f['period']} ) > {f['value']}")
+                elif op == "<":
+                    clauses.append(f"latest rsi( {f['period']} ) < {f['value']}")
 
             elif f_type == "moving_average":
                 kind = f["kind"].lower()

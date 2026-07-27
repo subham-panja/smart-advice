@@ -51,7 +51,9 @@ def compute_stock_prefilter(
             period = f.get("period", 14)
             rsi_val = indicators.rsi_9 if period == 9 else indicators.rsi_14
             passed = passed & ~rsi_val.isna()
-            if op == ">":
+            if op == "between":
+                passed = passed & (rsi_val >= f["min"]) & (rsi_val <= f["max"])
+            elif op == ">":
                 passed = passed & (rsi_val > f["value"])
             elif op == "<":
                 passed = passed & (rsi_val < f["value"])
@@ -417,6 +419,14 @@ def compute_signal_matrix(
                 vol_mult = pat.get("min_volume_multiplier", 1.5)
                 vol_ok = v >= v.rolling(20).mean() * vol_mult
                 breakout = breakout & vol_ok
+            if pat.get("max_distance_from_21ema_pct") is not None:
+                max_dist = pat["max_distance_from_21ema_pct"] / 100.0
+                dist = (c - indicators.ema_21) / indicators.ema_21
+                breakout = breakout & (dist <= max_dist)
+            if pat.get("retest_required", False):
+                recent_low_5 = low.rolling(5).min()
+                retest_ok = (recent_low_5 <= high_20 * 1.025) & (recent_low_5 >= high_20 * 0.97)
+                breakout = breakout & retest_ok
             hit = breakout
 
         elif pat_name == "nr7_volatility_squeeze":

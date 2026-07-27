@@ -202,6 +202,8 @@ def diagnose_mismatches(
                         op = f["op"]
                         if pd.isna(val):
                             reasons.append("RSI=NaN")
+                        elif op == "between" and (val < f["min"] or val > f["max"]):
+                            reasons.append(f"RSI={val:.1f} not in [{f['min']}, {f['max']}]")
                         elif op == ">" and val <= f["value"]:
                             reasons.append(f"RSI={val:.1f} <= {f['value']}")
                     elif f_type == "moving_average":

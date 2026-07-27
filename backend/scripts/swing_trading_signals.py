@@ -441,13 +441,33 @@ class SwingTradingSignalAnalyzer:
 
             elif pat_name == "twenty_day_high_breakout":
                 high_20 = df["High"].iloc[-21:-1].max()
-                if c > high_20:
-                    if pat.get("volume_confirm"):
-                        vol_ma20 = df["Volume"].tail(20).mean()
-                        if df["Volume"].iloc[-1] >= vol_ma20 * pat.get("min_volume_multiplier", 1.5):
-                            entry_signals[pat_name] = 1
+                breakout_ok = c > high_20
+
+                if breakout_ok and pat.get("volume_confirm"):
+                    vol_ma20 = df["Volume"].tail(20).mean()
+                    if df["Volume"].iloc[-1] < vol_ma20 * pat.get("min_volume_multiplier", 1.5):
+                        breakout_ok = False
+
+                if breakout_ok and pat.get("max_distance_from_21ema_pct") is not None:
+                    if use_store:
+                        ema21_series = indicator_store.get_full_series(symbol, "ema_21")
+                        ema21_val = ema21_series.iloc[-1] if len(ema21_series) > 0 else np.nan
                     else:
-                        entry_signals[pat_name] = 1
+                        ema21_val = ta.EMA(df["Close"], 21).iloc[-1]
+                    if not np.isnan(ema21_val) and ema21_val > 0:
+                        dist_pct = (c - ema21_val) / ema21_val * 100.0
+                        if dist_pct > pat["max_distance_from_21ema_pct"]:
+                            breakout_ok = False
+
+                if breakout_ok and pat.get("retest_required", False):
+                    if len(df) >= 5:
+                        recent_low = df["Low"].iloc[-5:].min()
+                        retest_ok = (recent_low <= high_20 * 1.025) and (recent_low >= high_20 * 0.97)
+                        if not retest_ok:
+                            breakout_ok = False
+
+                if breakout_ok:
+                    entry_signals[pat_name] = 1
 
             elif pat_name == "nr7_volatility_squeeze":
                 lb = pat.get("lookback", 7)

@@ -65,9 +65,10 @@
     },
     {
       "type": "rsi",
-      "op": ">",
+      "op": "between",
       "period": 14,
-      "value": 55
+      "min": 50,
+      "max": 68
     },
     {
       "type": "moving_average",
@@ -168,7 +169,7 @@
     },
     "Volume_Breakout": {
       "enabled": true,
-      "is_bonus": false,
+      "is_bonus": true,
       "period": 20,
       "threshold": 2.0,
       "regime_override": null
@@ -190,7 +191,7 @@
         "adx_min": 20,
         "sma_period": 50,
         "require_price_above_sma": true,
-        "require_sma_stack": true,
+        "require_sma_stack": false,
         "require_di_alignment": true
       }
     },
@@ -268,7 +269,9 @@
       "name": "twenty_day_high_breakout",
       "enabled": true,
       "volume_confirm": true,
-      "min_volume_multiplier": 1.5
+      "min_volume_multiplier": 1.5,
+      "retest_required": true,
+      "max_distance_from_21ema_pct": 3.5
     },
     {
       "name": "nr7_volatility_squeeze",
@@ -281,17 +284,17 @@
     "targets": [
       {
         "name": "Target 1",
-        "atr_multiplier": 3.0,
-        "sell_percentage": 0.5
+        "atr_multiplier": 3.5,
+        "sell_percentage": 0.3
       },
       {
         "name": "Target 2",
-        "atr_multiplier": 5.0,
+        "atr_multiplier": 7.0,
         "sell_percentage": 1.0
       }
     ],
-    "atr_stop_multiplier": 3.0,
-    "trail_stop_atr": 4.0,
+    "atr_stop_multiplier": 2.4,
+    "trail_stop_atr": 2.5,
     "time_stop_bars": 12,
     "breakeven_at_target_1": true,
     "max_daily_loss_pct": 1.5,
@@ -299,12 +302,12 @@
       "bull": {
         "t1_sell_percentage": 0.25,
         "trail_stop_type": "atr",
-        "trail_stop_atr_multiplier": 2.5,
+        "trail_stop_atr_multiplier": 2.2,
         "trail_stop_ma_period": 20,
         "time_stop_bars": 15,
         "pyramiding_allowed": true,
         "oneil_target_pct": 25.0,
-        "stop_loss_pct": 8.0
+        "stop_loss_pct": 7.0
       },
       "bear": {
         "t1_sell_percentage": 0.5,

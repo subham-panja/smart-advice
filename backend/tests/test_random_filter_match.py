@@ -432,6 +432,8 @@ def run_logic_verification(
                     last = rsi[-1]
                     if np.isnan(last):
                         passes = False
+                    elif f["op"] == "between":
+                        passes = passes and (last >= f["min"]) and (last <= f["max"])
                     elif f["op"] == ">":
                         passes = passes and (last > f["value"])
                     elif f["op"] == "<":
