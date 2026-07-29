@@ -92,14 +92,14 @@ def run_trading_cycle():
     positions_before = get_open_positions()
     symbols_before = {p["symbol"] for p in positions_before}
 
+    # Phase 1: Monitor
+    logger.important("Phase 1: Monitoring existing positions...")
+    PortfolioMonitor().monitor_all_positions()
+
     for strategy in all_strategies:
         strat_name = strategy["name"]
 
         logger.important(f"\nProcessing Strategy: {strat_name}")
-
-        # Phase 1: Monitor
-        logger.important("Phase 1: Monitoring existing positions...")
-        PortfolioMonitor().monitor_all_positions()
 
         # Phase 1b: Advanced exits
         exit_engine = ExecutionEngine(strategy_config=strategy)

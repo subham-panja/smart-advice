@@ -8,7 +8,7 @@ to ensure consistency with portfolio backtesting.
 """
 
 import logging
-from datetime import timezone
+from datetime import timedelta, timezone
 
 import pandas as pd
 
@@ -166,7 +166,20 @@ class ExecutionEngine:
                             hist = hist[hist.index.date <= entry_date_obj]
                         day_row = hist[hist.index.date == entry_date_obj]
                         if not day_row.empty:
-                            exec_price = round(day_row["Open"].iloc[0], 2)
+                            if is_replay():
+                                exec_price = round(day_row["Open"].iloc[0], 2)
+                            else:
+                                now_dt = trading_now(timezone.utc)
+                                now_ist = now_dt + timedelta(hours=5, minutes=30)
+                                is_after_hours = (
+                                    now_ist.hour > 15
+                                    or (now_ist.hour == 15 and now_ist.minute >= 30)
+                                    or now_ist.weekday() >= 5
+                                )
+                                if is_after_hours and "Close" in day_row:
+                                    exec_price = round(day_row["Close"].iloc[-1], 2)
+                                else:
+                                    exec_price = round(day_row["Open"].iloc[0], 2)
                         else:
                             last_hist_date = hist.index[-1].date()
                             if abs((entry_date_obj - last_hist_date).days) <= 3:

@@ -158,19 +158,7 @@ class PortfolioMonitor:
                         engine.execute_sell(symbol, current_price, f"FINAL_{target_obj['name']}")
                         return
 
-            # 7. VTT-Style Trailing SL Update
-            from scripts.risk_management import RiskManager
-
-            rm = RiskManager()
-            sl_info = rm.calculate_stop_loss(
-                data, current_price, method="atr", atr_multiplier=exit_rules["trail_stop_atr"]
-            )
-
-            new_sl = sl_info["stop_loss"]
-            if new_sl > current_sl:
-                logger.info(f"📉 VTT UPDATE: Trailing {symbol} SL from {current_sl:.2f} to {new_sl:.2f}")
-                update_position(symbol, {"current_stop_loss": new_sl})
-                current_sl = new_sl
+            # 7. Trailing SL is managed exclusively by ExecutionEngine.manage_exits() (Phase 1b)
 
             # 8. Time Stop (Sideways)
             days_held = max(0, (trading_now(timezone.utc).replace(tzinfo=None) - entry_date).days)
