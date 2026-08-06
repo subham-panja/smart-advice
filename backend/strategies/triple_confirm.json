@@ -11,13 +11,9 @@
   },
   "multitimeframe_execution": {
     "enabled": true,
-    "higher_timeframe": "1d",
     "lower_timeframe": "60m",
-    "shortlist_top_n": 10,
-    "intraday_sl_trailing": true,
-    "intraday_pyramiding": true
+    "shortlist_top_n": 10
   },
-
   "analysis_weights": {
     "technical": 0.8,
     "fundamental": 0.1,
@@ -69,9 +65,7 @@
     "technical_minimum": 0.25,
     "fundamental_minimum": 0.05,
     "min_risk_reward_ratio": 2.0,
-    "min_backtest_return": -10.0,
-    "backtest_period": "2y",
-    "min_data_required_days": 400
+    "backtest_period": "2y"
   },
   "strategy_config": {
     "RSI_Overbought_Oversold": {

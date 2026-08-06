@@ -2,7 +2,6 @@
   "name": "Swing_Trading_Minimal",
   "enabled": false,
   "description": "Minimal swing trading strategy: 2 entry patterns, 2 hard indicators, TREND_GATE only. No overfitting gates or filters.",
-  "version": "1.0-minimal",
   "analysis_config": {
     "technical_analysis": true,
     "fundamental_analysis": true,
@@ -14,13 +13,9 @@
   },
   "multitimeframe_execution": {
     "enabled": true,
-    "higher_timeframe": "1d",
     "lower_timeframe": "60m",
-    "shortlist_top_n": 10,
-    "intraday_sl_trailing": true,
-    "intraday_pyramiding": true
+    "shortlist_top_n": 10
   },
-
   "analysis_weights": {
     "technical": 0.65,
     "fundamental": 0.2,
@@ -28,23 +23,18 @@
     "sector": 0.15
   },
   "rs_config": {
-    "benchmark_index": "^NSEI",
     "period": 55,
     "threshold": 1.0
   },
   "market_regime_config": {
     "index": "^NSEI",
     "bull_market_rule": "latest close > sma(200)",
-    "pause_buying_if_bearish": false,
-    "adaptive_mode": true
+    "pause_buying_if_bearish": false
   },
   "options_oi_config": {
     "enabled": true,
     "weight": 0.15,
-    "min_unwinding_pct": 5.0,
-    "pcr_bullish_threshold": 1.0,
-    "pcr_bearish_threshold": 1.3,
-    "expiry_type": "CURRENT"
+    "pcr_bullish_threshold": 1.0
   },
   "stock_filters": [
     {
@@ -108,11 +98,8 @@
     "buy_combined": 0.6,
     "technical_minimum": 0.35,
     "fundamental_minimum": 0.1,
-    "require_all_gates": true,
     "min_risk_reward_ratio": 1.0,
-    "min_backtest_return": 0.0,
-    "backtest_period": "5y",
-    "min_data_required_days": 252
+    "backtest_period": "5y"
   },
   "strategy_config": {
     "RSI_Overbought_Oversold": {
@@ -225,7 +212,6 @@
         "stop_loss_pct": 5.0
       }
     },
-    "oneil_profit_target_pct": 25.0,
     "oneil_stop_loss_pct": 8.0,
     "leader_exception": {
       "enabled": true,
@@ -261,7 +247,6 @@
   },
   "pyramiding": {
     "enabled": true,
-    "max_steps": 2,
     "steps": [
       {
         "name": "First Add",
@@ -282,10 +267,6 @@
     "min_profit_growth_3y": 10.0,
     "min_profit_growth_5y": 10.0,
     "min_quarterly_eps_growth": 0.1
-  },
-  "chartink_config": {
-    "enabled": true,
-    "cache_ttl_minutes": 60
   },
   "rsi_momentum_filter": {
     "enabled": true,
