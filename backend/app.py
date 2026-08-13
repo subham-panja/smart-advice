@@ -19,7 +19,7 @@ def create_app():
         resources={
             r"/*": {
                 "origins": "*",
-                "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+                "methods": ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
                 "allow_headers": ["Content-Type", "Authorization"],
             }
         },

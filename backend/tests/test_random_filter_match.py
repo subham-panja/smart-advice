@@ -451,6 +451,25 @@ def run_logic_verification(
                         passes = passes and (close[-1] > last)
                     elif f["op"] == "<":
                         passes = passes and (close[-1] < last)
+                elif f_type == "price_distance_sma":
+                    period = f.get("period", 20)
+                    op = f.get("op", "<=")
+                    max_dist_pct = f.get("max_distance_pct", 5.0)
+                    sma = talib.SMA(close, timeperiod=period)
+                    last = sma[-1]
+                    c = close[-1]
+                    if np.isnan(last) or np.isnan(c):
+                        passes = False
+                    else:
+                        dist_pct = abs(c - last) / last * 100.0
+                        if op == "<=":
+                            passes = passes and (dist_pct <= max_dist_pct)
+                        elif op == "<":
+                            passes = passes and (dist_pct < max_dist_pct)
+                        elif op == ">=":
+                            passes = passes and (dist_pct >= max_dist_pct)
+                        elif op == ">":
+                            passes = passes and (dist_pct > max_dist_pct)
                 elif f_type == "volume_spike_lookup":
                     lookback = f["lookback_days"]
                     multiplier = f["multiplier"]

@@ -101,11 +101,17 @@ class StockAnalyzer:
                 res["technical_score"] = 0.0
 
             # Smart Money & Options
-            from scripts.smart_money_tracker import SmartMoneyTracker
+            try:
+                if not hasattr(self, "smart_money_tracker") or self.smart_money_tracker is None:
+                    from scripts.smart_money_tracker import SmartMoneyTracker
 
-            dpct = SmartMoneyTracker().get_delivery_volume(symbol)
-            if dpct > 40:
-                res["technical_score"] += 0.05
+                    self.smart_money_tracker = SmartMoneyTracker()
+
+                dpct = self.smart_money_tracker.get_delivery_volume(symbol)
+                if dpct > 40:
+                    res["technical_score"] += 0.05
+            except Exception as e:
+                logger.debug(f"Delivery volume check skipped for {symbol}: {e}")
 
             if ana_cfg.get("options_oi", False):
                 from scripts.options_analyzer import analyze_oi

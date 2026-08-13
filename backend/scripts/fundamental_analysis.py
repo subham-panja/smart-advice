@@ -1,9 +1,25 @@
 import logging
 from typing import Any, Dict
 
+import requests
 import yfinance as yf
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 logger = logging.getLogger(__name__)
+
+_session = None
+
+
+def _get_fundamental_session():
+    global _session
+    if _session is None:
+        _session = requests.Session()
+        retries = Retry(total=3, backoff_factor=1, status_forcelist=[500, 502, 503, 504])
+        adapter = HTTPAdapter(max_retries=retries, pool_connections=20, pool_maxsize=50)
+        _session.mount("https://", adapter)
+        _session.mount("http://", adapter)
+    return _session
 
 
 class FundamentalAnalysis:
@@ -12,9 +28,16 @@ class FundamentalAnalysis:
     @staticmethod
     def get_data(symbol: str) -> Dict[str, Any]:
         """Fetches fundamental data or raises error."""
-        ticker = yf.Ticker(f"{symbol}.NS" if ".NS" not in symbol else symbol)
-        info = ticker.info
-        if not info or "regularMarketPrice" not in info and "previousClose" not in info:
+        session = _get_fundamental_session()
+        ticker_symbol = f"{symbol}.NS" if ".NS" not in symbol else symbol
+        try:
+            ticker = yf.Ticker(ticker_symbol, session=session)
+            info = ticker.info
+        except Exception:
+            ticker = yf.Ticker(ticker_symbol)
+            info = ticker.info
+
+        if not info or ("regularMarketPrice" not in info and "previousClose" not in info):
             raise ValueError(f"No fundamental info found for {symbol}")
 
         return {

@@ -228,6 +228,45 @@ class SwingTradingSignalAnalyzer:
                     "reason": f"Price > {proximity_pct}% below 52-week high",
                 }
 
+        # Stock Filters Check (price_distance_sma, rsi range, etc.)
+        stock_filters = strategy_config.get("stock_filters", [])
+        for f in stock_filters:
+            f_type = f.get("type")
+            if f_type == "price_distance_sma":
+                period = f.get("period", 20)
+                max_dist_pct = f.get("max_distance_pct", 5.0)
+                op = f.get("op", "<=")
+                if use_store:
+                    sma_val = indicator_store.get(symbol, f"sma_{period}", df.index[-1])
+                else:
+                    sma_val = ta.SMA(df["Close"], period).iloc[-1] if len(df) >= period else np.nan
+
+                if np.isnan(sma_val) or np.isnan(c):
+                    return {"symbol": symbol, "all_gates_passed": False, "gates": gates, "reason": f"SMA({period}) NaN"}
+                dist_pct = abs(c - sma_val) / sma_val * 100.0
+                if op in ("<=", "<") and dist_pct > max_dist_pct:
+                    return {
+                        "symbol": symbol,
+                        "all_gates_passed": False,
+                        "gates": gates,
+                        "reason": f"Price distance from SMA({period}) {dist_pct:.2f}% > {max_dist_pct}%",
+                    }
+            elif f_type == "rsi":
+                op = f.get("op")
+                period = f.get("period", 14)
+                if use_store:
+                    rsi_val = indicator_store.get(symbol, f"rsi_{period}", df.index[-1])
+                else:
+                    rsi_val = ta.RSI(df["Close"], period).iloc[-1] if len(df) >= period else np.nan
+                if not np.isnan(rsi_val):
+                    if op == "between" and (rsi_val < f.get("min", 0) or rsi_val > f.get("max", 100)):
+                        return {
+                            "symbol": symbol,
+                            "all_gates_passed": False,
+                            "gates": gates,
+                            "reason": f"RSI({period}) {rsi_val:.1f} not in [{f.get('min')}, {f.get('max')}]",
+                        }
+
         if not all_gates_passed:
             return {"symbol": symbol, "all_gates_passed": False, "gates": gates, "reason": "Gates failed"}
 

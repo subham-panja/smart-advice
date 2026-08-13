@@ -225,6 +225,30 @@ def diagnose_mismatches(
                                 reasons.append(f"Close({close_val:.2f}) <= SMA{period}({sma_val:.2f})")
                         else:
                             reasons.append(f"SMA{period}=NOT COMPUTED")
+                    elif f_type == "price_distance_sma":
+                        period = f.get("period", 20)
+                        op = f.get("op", "<=")
+                        max_dist_pct = f.get("max_distance_pct", 5.0)
+                        sma_map = {
+                            20: indicators.sma_20,
+                            50: indicators.sma_50,
+                            150: indicators.sma_150,
+                            200: indicators.sma_200,
+                        }
+                        sma_df = sma_map.get(period)
+                        if sma_df is not None and sym in sma_df.columns:
+                            close_val = indicators.close.loc[target_date, sym]
+                            sma_val = sma_df.loc[target_date, sym]
+                            if pd.isna(sma_val) or pd.isna(close_val):
+                                reasons.append(f"PRICE_DIST_SMA{period}=NaN")
+                            else:
+                                dist_pct = abs(close_val - sma_val) / sma_val * 100.0
+                                if op == "<=" and dist_pct > max_dist_pct:
+                                    reasons.append(f"DIST_SMA{period}={dist_pct:.2f}% > {max_dist_pct}%")
+                                elif op == "<" and dist_pct >= max_dist_pct:
+                                    reasons.append(f"DIST_SMA{period}={dist_pct:.2f}% >= {max_dist_pct}%")
+                        else:
+                            reasons.append(f"SMA{period}=NOT COMPUTED")
                     elif f_type == "volume_spike_lookup":
                         lookback = f["lookback_days"]
                         multiplier = f["multiplier"]

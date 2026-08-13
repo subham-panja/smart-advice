@@ -2,6 +2,8 @@ import logging
 from typing import Dict
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 logger = logging.getLogger(__name__)
 
@@ -11,6 +13,10 @@ class ScreenerFilter:
 
     def __init__(self):
         self.session = requests.Session()
+        retries = Retry(total=3, backoff_factor=1, status_forcelist=[500, 502, 503, 504])
+        adapter = HTTPAdapter(max_retries=retries, pool_connections=10, pool_maxsize=20)
+        self.session.mount("https://", adapter)
+        self.session.mount("http://", adapter)
         self.session.headers.update({"User-Agent": "Mozilla/5.0", "X-Requested-With": "XMLHttpRequest"})
 
     def get_filtered_symbols(self, scan_clause: str = None, max_stocks: int = None) -> Dict[str, str]:

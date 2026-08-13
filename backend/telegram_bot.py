@@ -2,7 +2,6 @@ import sys
 from datetime import datetime, timezone
 
 import telebot
-from pymongo import MongoClient
 from telebot.types import ReplyKeyboardMarkup
 
 import config
@@ -146,7 +145,9 @@ def run_trading_cycle(m):
 def view_recs(m, today=False):
     if not check(m):
         return
-    db = MongoClient(f"mongodb://{config.MONGODB_HOST}:{config.MONGODB_PORT}/")[config.MONGODB_DATABASE]
+    from database import get_mongodb
+
+    db = get_mongodb()
     query = {}
     if today:
         query["recommendation_date"] = {"$gte": datetime.now(timezone.utc).replace(hour=0, minute=0, second=0)}
@@ -210,7 +211,9 @@ def balance(m):
 def view_positions(m):
     if not check(m):
         return
-    db = MongoClient(f"mongodb://{config.MONGODB_HOST}:{config.MONGODB_PORT}/")[config.MONGODB_DATABASE]
+    from database import get_mongodb
+
+    db = get_mongodb()
     positions = list(db.positions.find({"status": "OPEN"}))
 
     # Load strategy to get paper trading mode

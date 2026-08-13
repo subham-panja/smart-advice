@@ -60,6 +60,26 @@ class FilterTranslator:
 
                 clauses.append(f"latest {target} {op} latest {kind}( close,{period} )")
 
+            elif f_type == "price_distance_sma":
+                period = f.get("period", 20)
+                max_dist = f.get("max_distance_pct", 5.0)
+                op = f.get("op", "<=")
+
+                upper_mult = 1.0 + (max_dist / 100.0)
+                lower_mult = 1.0 - (max_dist / 100.0)
+
+                if op in ("<=", "<"):
+                    clauses.append(
+                        f"latest close <= latest sma( close,{period} ) * {upper_mult:.4f}".rstrip("0").rstrip(".")
+                    )
+                    clauses.append(
+                        f"latest close >= latest sma( close,{period} ) * {lower_mult:.4f}".rstrip("0").rstrip(".")
+                    )
+                elif op in (">=", ">"):
+                    clauses.append(
+                        f"latest close >= latest sma( close,{period} ) * {upper_mult:.4f}".rstrip("0").rstrip(".")
+                    )
+
             elif f_type == "volume_spike_lookup":
                 # This specific filter type does not require an 'op' key as it defines its own internal logic
                 lookback = f["lookback_days"]

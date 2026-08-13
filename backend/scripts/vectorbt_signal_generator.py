@@ -87,6 +87,36 @@ def compute_stock_prefilter(
                 elif op == "<":
                     passed = passed & ~sma.isna() & (c < sma)
 
+        elif f_type == "price_distance_sma":
+            period = f.get("period", 20)
+            op = f.get("op", "<=")
+            max_dist_pct = f.get("max_distance_pct", 5.0)
+
+            if period == 20:
+                sma = indicators.sma_20
+            elif period == 50:
+                sma = indicators.sma_50
+            elif period == 150:
+                sma = indicators.sma_150
+            elif period == 200:
+                sma = indicators.sma_200
+            else:
+                import vectorbt as vbt
+
+                sma = vbt.talib("SMA").run(c, timeperiod=period).real
+                sma.columns = symbols
+
+            dist_pct = ((c - sma) / sma).abs() * 100.0
+            passed = passed & ~sma.isna() & ~c.isna()
+            if op == "<=":
+                passed = passed & (dist_pct <= max_dist_pct)
+            elif op == "<":
+                passed = passed & (dist_pct < max_dist_pct)
+            elif op == ">=":
+                passed = passed & (dist_pct >= max_dist_pct)
+            elif op == ">":
+                passed = passed & (dist_pct > max_dist_pct)
+
         elif f_type == "volume_spike_lookup":
             lookback = f["lookback_days"]
             multiplier = f["multiplier"]

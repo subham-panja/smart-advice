@@ -1,6 +1,6 @@
 {
   "name": "Swing_Trading",
-  "enabled": true,
+  "enabled": false,
   "description": "Swing trading strategy with trend-volatility-volume gates, multi-target exits, and pyramid compounding. Optimized for NSE mid-to-large cap stocks.",
   "analysis_config": {
     "technical_analysis": true,

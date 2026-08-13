@@ -10,18 +10,28 @@ from utils.trading_clock import trading_now
 logger = logging.getLogger(__name__)
 
 
+_standalone_client = None
+
+
 def get_db():
     """Flask-specific DB connection."""
     if "db" not in g:
-        g.client = MongoClient(current_app.config["MONGODB_HOST"], current_app.config["MONGODB_PORT"])
+        g.client = MongoClient(current_app.config["MONGODB_HOST"], current_app.config["MONGODB_PORT"], maxPoolSize=50)
         g.db = g.client[current_app.config["MONGODB_DATABASE"]]
     return g.db
 
 
 def get_mongodb():
-    """Standalone DB connection."""
-    client = MongoClient(config.MONGODB_HOST, config.MONGODB_PORT)
-    return client[config.MONGODB_DATABASE]
+    """Standalone DB connection using connection pool singleton."""
+    global _standalone_client
+    if _standalone_client is None:
+        _standalone_client = MongoClient(
+            config.MONGODB_HOST,
+            config.MONGODB_PORT,
+            maxPoolSize=50,
+            serverSelectionTimeoutMS=5000,
+        )
+    return _standalone_client[config.MONGODB_DATABASE]
 
 
 def _get_db_internal():

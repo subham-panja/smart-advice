@@ -28,8 +28,8 @@ class SmartMoneyTracker:
             net = float(fii["netValue"].replace(",", ""))
             return {"fii_net": net, "is_bullish": net > -2000}
         except Exception as e:
-            logger.error(f"FII/DII status fetch failed: {e}")
-            raise e
+            logger.warning(f"FII/DII status fetch failed: {e}. Defaulting to neutral.")
+            return {"fii_net": 0.0, "is_bullish": False}
 
     def get_delivery_volume(self, symbol: str) -> float:
         try:
