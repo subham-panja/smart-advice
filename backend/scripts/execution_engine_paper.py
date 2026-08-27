@@ -251,8 +251,6 @@ class ExecutionEngine:
         max_daily_loss_pct = exit_cfg.get("max_daily_loss_pct", None)
         if max_daily_loss_pct:
             try:
-                from database import get_open_positions
-
                 open_positions = get_open_positions()
                 total_pnl_pct = 0.0
                 for pos in open_positions:

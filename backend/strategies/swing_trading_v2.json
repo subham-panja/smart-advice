@@ -1,110 +1,52 @@
 {
   "name": "Swing_Trading_v2",
   "enabled": true,
-  "description": "Swing trading strategy optimized for early pullback entries, trend-volatility-volume gates, multi-target exits, and pyramid compounding on NSE mid-to-large cap stocks.",
+  "description": "Institutional-grade swing trading system based on Mark Minervini's Stage 2 Trend Template. Uses strict price/SMA alignment, VCP/EMA Pullback entries, and ATR-based risk management.",
   "analysis_config": {
     "technical_analysis": true,
-    "fundamental_analysis": true,
+    "fundamental_analysis": false,
     "sentiment_analysis": false,
     "sector_analysis": true,
     "market_regime_detection": true,
     "risk_management": true,
-    "options_oi": true
+    "options_oi": false
   },
   "multitimeframe_execution": {
     "enabled": true,
     "lower_timeframe": "60m",
-    "shortlist_top_n": 10
+    "shortlist_top_n": 5
   },
   "analysis_weights": {
-    "technical": 0.65,
-    "fundamental": 0.2,
-    "sentiment": 0.0,
-    "sector": 0.15
+    "technical": 0.80,
+    "sector": 0.20,
+    "fundamental": 0.0,
+    "sentiment": 0.0
+  },
+  "market_regime_config": {
+    "index": "^NSEI",
+    "bull_market_rule": "latest close > sma(50)",
+    "pause_buying_if_bearish": false
   },
   "rs_config": {
     "period": 55,
     "threshold": 1.0
   },
-  "market_regime_config": {
-    "index": "^NSEI",
-    "bull_market_rule": "latest close > sma(200)",
-    "pause_buying_if_bearish": false
-  },
   "options_oi_config": {
-    "enabled": true,
+    "enabled": false,
     "weight": 0.15,
     "pcr_bullish_threshold": 1.0
   },
-  "stock_filters": [
-    {
-      "type": "price",
-      "op": "between",
-      "min": 50.0,
-      "max": 8000.0
-    },
-    {
-      "type": "volume",
-      "op": ">",
-      "value": 150000
-    },
-    {
-      "type": "market_cap",
-      "op": ">",
-      "value": 1000.0
-    },
-    {
-      "type": "rsi",
-      "op": "between",
-      "period": 14,
-      "min": 45,
-      "max": 58
-    },
-    {
-      "type": "moving_average",
-      "kind": "SMA",
-      "period": 20,
-      "op": ">",
-      "target": "close"
-    },
-    {
-      "type": "moving_average",
-      "kind": "SMA",
-      "period": 50,
-      "op": ">",
-      "target": "close"
-    },
-    {
-      "type": "moving_average",
-      "kind": "SMA",
-      "period": 150,
-      "op": ">",
-      "target": "close"
-    },
-    {
-      "type": "moving_average",
-      "kind": "SMA",
-      "period": 200,
-      "op": ">",
-      "target": "close"
-    },
-    {
-      "type": "price_distance_sma",
-      "period": 20,
-      "op": "<=",
-      "max_distance_pct": 5.0
-    },
-    {
-      "type": "volume_spike_lookup",
-      "lookback_days": 10,
-      "multiplier": 1.2,
-      "ma_period": 50
-    }
-  ],
+  "fundamental_gate": {
+    "enabled": true,
+    "description": "Used ONLY as a hard pre-filter to avoid junk stocks. Not used as a scored weight to override bad charts.",
+    "min_roce": 15.0,
+    "max_debt_to_equity": 1.5,
+    "min_profit_growth_3y": 10.0
+  },
   "recommendation_thresholds": {
-    "buy_combined": 0.70,
-    "technical_minimum": 0.55,
-    "fundamental_minimum": 0.1,
+    "buy_combined": 0.55,
+    "technical_minimum": 0.45,
+    "fundamental_minimum": 0.0,
     "min_risk_reward_ratio": 1.5,
     "backtest_period": "5y",
     "proximity_to_52_week_high_pct": 25.0
@@ -147,12 +89,6 @@
       "atr_multiplier": 1.5,
       "volatility_limit": 2.5
     },
-    "Relative_Strength_Comparison": {
-      "enabled": false,
-      "is_bonus": true,
-      "period": 55,
-      "threshold": 0.0
-    },
     "Pocket_Pivot_Entry": {
       "enabled": true,
       "is_bonus": true,
@@ -166,15 +102,6 @@
       "period": 20,
       "threshold": 1.4,
       "regime_override": null
-    },
-    "Candlestick_Patterns": {
-      "enabled": false,
-      "is_bonus": true,
-      "patterns": {
-        "bullish_engulfing": true,
-        "hammer": true,
-        "morning_star": true
-      }
     }
   },
   "swing_trading_gates": {
@@ -214,69 +141,96 @@
       }
     }
   },
+  "stock_filters": [
+    {
+      "type": "price",
+      "op": "between",
+      "min": 100.0,
+      "max": 10000.0
+    },
+    {
+      "type": "volume",
+      "op": ">",
+      "value": 150000
+    },
+    {
+      "type": "market_cap",
+      "op": ">",
+      "value": 1000.0
+    },
+    {
+      "type": "rsi",
+      "op": "between",
+      "period": 14,
+      "min": 45,
+      "max": 68
+    },
+    {
+      "type": "moving_average",
+      "kind": "SMA",
+      "period": 20,
+      "op": ">",
+      "target": "close"
+    },
+    {
+      "type": "moving_average",
+      "kind": "SMA",
+      "period": 50,
+      "op": ">",
+      "target": "close"
+    },
+    {
+      "type": "moving_average",
+      "kind": "SMA",
+      "period": 150,
+      "op": ">",
+      "target": "close"
+    },
+    {
+      "type": "moving_average",
+      "kind": "SMA",
+      "period": 200,
+      "op": ">",
+      "target": "close"
+    },
+    {
+      "type": "price_distance_sma",
+      "period": 20,
+      "op": "<=",
+      "max_distance_pct": 5.0
+    },
+    {
+      "type": "volume_spike_lookup",
+      "lookback_days": 10,
+      "multiplier": 1.2,
+      "ma_period": 50
+    }
+  ],
   "entry_patterns": [
     {
-      "name": "pullback_to_ema",
+      "name": "ema_21_pullback",
       "enabled": true,
       "ema_period": 21,
-      "rsi_range": [
-        40,
-        55
+      "max_distance_pct": 2.0,
+      "rsi_14_range": [
+        45,
+        60
       ],
-      "bullish_candle_required": true,
-      "max_distance_pct": 1.5
+      "bullish_reversal_candle": true
     },
     {
-      "name": "bollinger_squeeze_breakout",
+      "name": "minervini_vcp_breakout",
       "enabled": true,
-      "bb_period": 20,
-      "bb_std": 2,
-      "squeeze_threshold": 0.1,
-      "retest_required": false,
-      "max_squeeze_duration_days": 20
-    },
-    {
-      "name": "macd_zero_cross",
-      "enabled": false,
-      "fast": 12,
-      "slow": 26,
-      "signal": 9,
-      "above_zero_only": true,
-      "require_histogram_expansion": true
-    },
-    {
-      "name": "higher_low_structure",
-      "enabled": true,
-      "pivot_lookback": 7,
-      "min_swings": 3,
-      "require_volume_confirmation": true
-    },
-    {
-      "name": "volatility_contraction",
-      "enabled": true,
-      "min_contractions": 3,
+      "consolidation_days_min": 10,
+      "consolidation_days_max": 45,
       "volume_dry_up_required": true,
-      "max_atr_pct_of_price": 3.0
-    },
-    {
-      "name": "twenty_day_high_breakout",
-      "enabled": false,
-      "volume_confirm": true,
-      "min_volume_multiplier": 1.5,
-      "retest_required": true,
-      "max_distance_from_21ema_pct": 3.5
-    },
-    {
-      "name": "nr7_volatility_squeeze",
-      "enabled": true,
-      "lookback": 7,
-      "volume_dry_up": true
+      "breakout_volume_multiplier": 1.5
     }
   ],
   "exit_rules": {
     "targets": [
       {
-        "name": "Target 1",
+        "name": "Target 1 (Partial Profit)",
         "atr_multiplier": 3.5,
         "sell_percentage": 0.3
       },
@@ -287,9 +241,11 @@
       }
     ],
     "atr_stop_multiplier": 2.4,
+    "hard_stop_loss_pct": 8.0,
     "trail_stop_atr": 2.5,
-    "time_stop_bars": 12,
+    "trail_stop_ma_period": 20,
     "breakeven_at_target_1": true,
+    "time_stop_bars": 12,
     "max_daily_loss_pct": 1.5,
     "regime_adaptive_exits": {
       "bull": {
@@ -369,21 +325,10 @@
     "regime_controlled": true
   },
   "fundamental_config": {
-    "min_roce": 18.0,
-    "max_debt_to_equity": 1.0,
+    "min_roce": 15.0,
+    "max_debt_to_equity": 1.5,
     "min_profit_growth_3y": 10.0,
     "min_profit_growth_5y": 10.0,
     "min_quarterly_eps_growth": 0.1
-  },
-  "rsi_momentum_filter": {
-    "enabled": true,
-    "min_rsi": 50,
-    "require_rising": false
-  },
-  "market_breadth_filter": {
-    "enabled": true,
-    "sma_period": 20,
-    "min_advance_pct": 35,
-    "description": "Block new buys when <35% of stocks are above 20-SMA (broad market weakness)"
   }
 }

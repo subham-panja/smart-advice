@@ -51,7 +51,26 @@ def create_position(data: dict):
     return insert_position(data)
 
 
+def _get_original_position_metrics(symbol: str, existing: dict):
+    try:
+        from database import get_mongodb
+
+        db = get_mongodb()
+        log = db.activity_logs.find_one({"symbol": symbol, "action": "POSITION_OPENED"})
+        if log and "details" in log:
+            d = log["details"]
+            orig_entry = d.get("entry_price", existing.get("entry_price"))
+            orig_sl = d.get("stop_loss", existing.get("stop_loss"))
+            orig_target = d.get("target", existing.get("target"))
+            return orig_entry, orig_sl, orig_target
+    except Exception as e:
+        logger.warning(f"Failed to fetch POSITION_OPENED log for {symbol}: {e}")
+
+    return existing.get("entry_price"), existing.get("stop_loss"), existing.get("target")
+
+
 def update_position(symbol: str, data: dict):
+    import config
     from database import get_position_by_symbol
     from database import update_position as db_update
 
@@ -59,13 +78,39 @@ def update_position(symbol: str, data: dict):
     if not existing:
         return None
 
-    if "entry_price" in data and "total_investment" not in data:
-        qty = existing.get("quantity", 0)
-        data["total_investment"] = round(qty * data["entry_price"], 2)
+    if "entry_price" in data:
+        new_entry = float(data["entry_price"])
+        data["entry_price"] = new_entry
+        qty = data.get("quantity", existing.get("quantity", 1))
+
+        # Recalculate total investment with brokerage (0.20%)
+        if "total_investment" not in data:
+            brokerage_pct = config.TRADING_OPTIONS.get("brokerage_charges", 0.0020)
+            data["total_investment"] = round(qty * new_entry * (1 + brokerage_pct), 2)
+
+        # Get original position metrics to accurately derive risk & target distances
+        orig_entry, orig_sl, orig_target = _get_original_position_metrics(symbol, existing)
+
+        if orig_entry and orig_sl and orig_target:
+            sl_dist = float(orig_entry) - float(orig_sl)
+            target_dist = float(orig_target) - float(orig_entry)
+
+            if "stop_loss" not in data:
+                new_sl = round(new_entry - sl_dist, 2)
+                data["stop_loss"] = new_sl
+                data["current_stop_loss"] = new_sl
+
+            if "target" not in data:
+                new_target = round(new_entry + target_dist, 2)
+                data["target"] = new_target
+                data["current_target"] = new_target
+
         logger.info(
             f"Entry correction for {symbol}: "
-            f"₹{existing.get('entry_price', 0):.2f} → ₹{data['entry_price']:.2f}, "
-            f"new investment: ₹{data['total_investment']:.2f}"
+            f"₹{existing.get('entry_price', 0):.2f} → ₹{new_entry:.2f}, "
+            f"new investment: ₹{data.get('total_investment', 0):.2f}, "
+            f"new SL: ₹{data.get('current_stop_loss', 0):.2f}, "
+            f"new Target: ₹{data.get('current_target', 0):.2f}"
         )
 
     db_update(symbol, data)

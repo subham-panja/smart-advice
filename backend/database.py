@@ -365,3 +365,46 @@ def get_portfolio_backtest_snapshots(session_id: str):
 
 
 # ---------------------------------------------------------------------------
+# Pending Exit Confirmations
+# ---------------------------------------------------------------------------
+
+
+def insert_pending_exit_confirmation(doc: dict):
+    """Record a pending exit that awaits user price confirmation."""
+    db = _get_db_internal()
+    now = trading_now(timezone.utc).replace(tzinfo=None)
+    doc["created_at"] = doc.get("created_at", now)
+    doc["status"] = "PENDING"
+    col_name = config.MONGODB_COLLECTIONS["pending_exit_confirmations"]
+    return db[col_name].insert_one(doc)
+
+
+def get_pending_exit_confirmations():
+    """Get all pending exit confirmations awaiting user response."""
+    db = _get_db_internal()
+    col_name = config.MONGODB_COLLECTIONS["pending_exit_confirmations"]
+    return list(db[col_name].find({"status": "PENDING"}))
+
+
+def resolve_pending_exit_confirmation(symbol: str, confirmed_price: float):
+    """Mark a pending exit confirmation as resolved and update with confirmed price."""
+    db = _get_db_internal()
+    now = trading_now(timezone.utc).replace(tzinfo=None)
+    col_name = config.MONGODB_COLLECTIONS["pending_exit_confirmations"]
+    return db[col_name].update_one(
+        {"symbol": symbol, "status": "PENDING"},
+        {
+            "$set": {
+                "status": "CONFIRMED",
+                "confirmed_price": confirmed_price,
+                "confirmed_at": now,
+            }
+        },
+    )
+
+
+def delete_pending_exit_confirmation(symbol: str):
+    """Remove a pending exit confirmation entry."""
+    db = _get_db_internal()
+    col_name = config.MONGODB_COLLECTIONS["pending_exit_confirmations"]
+    return db[col_name].delete_one({"symbol": symbol, "status": "PENDING"})

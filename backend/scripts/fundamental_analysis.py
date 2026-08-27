@@ -40,10 +40,14 @@ class FundamentalAnalysis:
         if not info or ("regularMarketPrice" not in info and "previousClose" not in info):
             raise ValueError(f"No fundamental info found for {symbol}")
 
+        de_raw = info.get("debtToEquity")
+        if de_raw is not None and de_raw > 5.0:
+            de_raw = de_raw / 100.0
+
         return {
             "pe": info.get("forwardPE") or info.get("trailingPE"),
             "pb": info.get("priceToBook"),
-            "de": info.get("debtToEquity"),
+            "de": de_raw,
             "eps_g": info.get("earningsGrowth"),
             "rev_g": info.get("revenueGrowth"),
             "roe": info.get("returnOnEquity"),

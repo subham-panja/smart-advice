@@ -57,6 +57,8 @@ MONGODB_COLLECTIONS = {
     "portfolio_backtest_trades": "portfolio_backtest_trades",
     "portfolio_backtest_daily_snapshots": "portfolio_backtest_snapshots",
     "activity_logs": "activity_logs",
+    "settlement_ledger": "settlement_ledger",
+    "pending_exit_confirmations": "pending_exit_confirmations",
 }
 
 TELEGRAM_CONFIG = {
@@ -82,7 +84,7 @@ FIVEPAISA_CONFIG = {
 # TRADING & EXECUTION OPTIONS (app-level, not strategy-specific)
 TRADING_OPTIONS = {
     "is_paper_trading": True,
-    "initial_capital": 100000.0,
+    "initial_capital": 10000.0,
     "brokerage_charges": 0.0020,
     "allow_multiple_positions_same_stock": False,
     "time_stop_days": 15,

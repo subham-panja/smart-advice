@@ -22,13 +22,18 @@ def get_trading_config():
 
 
 def get_cycle_stats():
-    from database import get_open_positions
+    from database import get_mongodb, get_open_positions
+    from utils.settlement import get_available_cash
 
+    db = get_mongodb()
     positions = get_open_positions()
+    closed_positions = list(db[config.MONGODB_COLLECTIONS["positions"]].find({"status": "CLOSED"}))
     initial_cap = config.TRADING_OPTIONS.get("initial_capital", 100000.0)
     total_invested = sum(p.get("total_investment", p["quantity"] * p["entry_price"]) for p in positions)
     total_mkt_val = sum(p.get("current_price", p["entry_price"]) * p["quantity"] for p in positions)
-    cash_remaining = initial_cap - total_invested
+
+    cash_info = get_available_cash(initial_cap, positions, closed_positions)
+    cash_remaining = cash_info["available_cash"]
     total_equity = total_mkt_val + cash_remaining
     pnl_pct = ((total_equity - initial_cap) / initial_cap) * 100 if initial_cap > 0 else 0
 
@@ -36,6 +41,7 @@ def get_cycle_stats():
         "open_positions": len(positions),
         "total_invested": round(total_invested, 2),
         "cash_remaining": round(cash_remaining, 2),
+        "unsettled_funds": round(cash_info["unsettled_funds"], 2),
         "total_equity": round(total_equity, 2),
         "pnl_pct": round(pnl_pct, 2),
         "initial_capital": initial_cap,
@@ -54,7 +60,13 @@ def get_dashboard_stats():
 
     total_invested = sum(p.get("total_investment", p["quantity"] * p["entry_price"]) for p in open_positions)
     total_mkt_val = sum(p.get("current_price", p["entry_price"]) * p["quantity"] for p in open_positions)
-    cash_remaining = initial_cap - total_invested
+
+    # Settlement-aware cash calculation
+    from utils.settlement import get_available_cash
+
+    cash_info = get_available_cash(initial_cap, open_positions, closed_positions)
+    cash_remaining = cash_info["available_cash"]
+    unsettled_funds = cash_info["unsettled_funds"]
     total_equity = total_mkt_val + cash_remaining
 
     realized_pnl = sum(
@@ -140,6 +152,7 @@ def get_dashboard_stats():
             "total_equity": round(total_equity, 2),
             "total_invested": round(total_invested, 2),
             "cash_remaining": round(cash_remaining, 2),
+            "unsettled_funds": round(unsettled_funds, 2),
             "deployed_pct": round(deployed_pct, 1),
             "initial_capital": initial_cap,
             "total_pnl": round(total_pnl, 2),

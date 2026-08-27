@@ -5,9 +5,10 @@ from datetime import datetime, timedelta, timezone
 import requests
 
 import config
-from database import get_mongodb, get_open_positions
+from database import get_mongodb, get_open_positions, insert_pending_exit_confirmation
 from run_analysis import AutomatedStockAnalysis
 from utils.logger import setup_logging
+from utils.settlement import get_available_cash, record_sale_proceeds, settle_pending_funds
 from utils.strategy_loader import StrategyLoader
 from utils.trading_clock import is_replay, set_simulated_date, trading_now
 
@@ -89,6 +90,15 @@ def run_trading_cycle():
             db_close(pos["symbol"], cp, "ZERO_QUANTITY_CLEANUP")
             logger.info(f"Auto-closed {pos['symbol']}: quantity was 0")
 
+    # Phase 0: Settle T+1 funds from previous day's exits
+    if not is_replay():
+        try:
+            released = settle_pending_funds()
+            if released > 0:
+                logger.important(f"Phase 0: Released ₹{released:.2f} from T+1 settlement")
+        except Exception as e:
+            logger.error(f"Settlement check failed: {e}")
+
     positions_before = get_open_positions()
     symbols_before = {p["symbol"] for p in positions_before}
 
@@ -154,9 +164,17 @@ def run_trading_cycle():
         slots_left = max_pos - len(open_positions)
         executed_count = 0
 
-        total_invested = sum(p.get("total_investment", 0) for p in open_positions)
         initial_capital = trading_opts.get("initial_capital", 100000.0)
-        remaining_capital = initial_capital - total_invested
+
+        # Use settlement-aware capital calculation
+        closed_positions = list(db.positions.find({"status": "CLOSED"}))
+        cash_info = get_available_cash(initial_capital, open_positions, closed_positions)
+        remaining_capital = cash_info["available_cash"]
+
+        if cash_info["unsettled_funds"] > 0:
+            logger.info(
+                f"💰 Available: ₹{remaining_capital:.2f} | " f"Unsettled (T+1): ₹{cash_info['unsettled_funds']:.2f}"
+            )
 
         for r in recs:
             if executed_count >= slots_left:
@@ -200,18 +218,68 @@ def run_trading_cycle():
     new_symbols = symbols_after - symbols_before
     total_exits = len(closed_symbols)
 
+    # Phase 4: Exit Confirmation + Settlement Recording
+    if closed_symbols:
+        db = get_mongodb()
+        for sym in closed_symbols:
+            closed_pos = db[config.MONGODB_COLLECTIONS["positions"]].find_one(
+                {"symbol": sym, "status": "CLOSED"},
+                sort=[("exit_date", -1)],
+            )
+            if not closed_pos:
+                continue
+
+            system_exit_price = closed_pos.get("exit_price", 0)
+            exit_reason = closed_pos.get("exit_reason", "UNKNOWN")
+            quantity = closed_pos.get("quantity", 0)
+            entry_price = closed_pos.get("entry_price", 0)
+            exit_date = closed_pos.get("exit_date")
+            pnl_pct = closed_pos.get("pnl_pct", 0)
+
+            if is_replay():
+                # Auto-confirm in replay mode — no user interaction possible
+                brokerage_pct = trading_opts.get("brokerage_charges", 0.0020)
+                gross_proceeds = system_exit_price * quantity
+                net_proceeds = gross_proceeds * (1 - brokerage_pct)
+                entry_date = closed_pos.get("entry_date")
+                record_sale_proceeds(sym, net_proceeds, exit_date, exit_reason, entry_date)
+                db[config.MONGODB_COLLECTIONS["positions"]].update_one(
+                    {"_id": closed_pos["_id"]},
+                    {"$set": {"exit_confirmed": True}},
+                )
+            else:
+                # Create pending exit confirmation for user to verify
+                insert_pending_exit_confirmation(
+                    {
+                        "symbol": sym,
+                        "system_exit_price": system_exit_price,
+                        "exit_reason": exit_reason,
+                        "quantity": quantity,
+                        "entry_price": entry_price,
+                        "entry_date": closed_pos.get("entry_date"),
+                        "exit_date": exit_date,
+                        "pnl_pct": round(pnl_pct, 2),
+                    }
+                )
+
+                # Emit SSE event for frontend terminal to show confirmation prompt
+                logger.important(
+                    f"EXIT_CONFIRM:{sym}:{system_exit_price:.2f}:{exit_reason}:{quantity}:{entry_price:.2f}:{pnl_pct:.2f}"
+                )
+                logger.important(
+                    f"🛑 EXIT DETECTED: {sym} @ ₹{system_exit_price:.2f} | "
+                    f"Reason: {exit_reason} | PnL: {pnl_pct:+.2f}% | "
+                    f"⚠️ Please confirm exit price on the dashboard."
+                )
+
     # Compute final state
     final_positions = positions_after
     initial_cap = trading_opts.get("initial_capital", 100000.0)
     total_mkt_val = sum(p.get("current_price", p["entry_price"]) * p["quantity"] for p in final_positions)
-    total_invested = sum(p.get("total_investment", p["quantity"] * p["entry_price"]) for p in final_positions)
 
-    realized_pnl = sum(
-        (p.get("exit_price", 0) - p.get("entry_price", 0)) * p.get("quantity", 0)
-        for p in db.positions.find({"status": "CLOSED"})
-    )
-
-    cash_left = initial_cap + realized_pnl - total_invested
+    closed_positions = list(db.positions.find({"status": "CLOSED"}))
+    cash_info = get_available_cash(initial_cap, final_positions, closed_positions)
+    cash_left = cash_info["available_cash"]
     total_equity = total_mkt_val + cash_left
 
     cycle_stats = {
