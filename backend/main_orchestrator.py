@@ -78,11 +78,15 @@ def _handle_exit_confirmations(trading_opts: dict):
                 {"$set": {"exit_confirmed": True}},
             )
         else:
+            pos_id = closed_pos["_id"]
             # Check if it's already pending user confirmation
-            is_pending = pending_col.find_one({"symbol": sym, "status": "PENDING"})
+            is_pending = pending_col.find_one({"position_id": pos_id, "status": "PENDING"}) or pending_col.find_one(
+                {"symbol": sym, "status": "PENDING"}
+            )
             if not is_pending:
                 insert_pending_exit_confirmation(
                     {
+                        "position_id": pos_id,
                         "symbol": sym,
                         "system_exit_price": system_exit_price,
                         "exit_reason": exit_reason,

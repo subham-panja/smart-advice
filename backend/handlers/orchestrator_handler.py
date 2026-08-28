@@ -137,22 +137,56 @@ def confirm_exit(symbol: str, confirmed_price: float):
     new_pnl_pct = ((confirmed_price - entry_price) / entry_price) * 100 if entry_price > 0 else 0
 
     # Update the closed position in DB with the confirmed price
+    from datetime import datetime, timezone
+
     db = get_mongodb()
     col_name = config.MONGODB_COLLECTIONS["positions"]
-    db[col_name].update_one(
-        {"symbol": symbol, "status": "CLOSED"},
-        {
-            "$set": {
-                "exit_price": confirmed_price,
-                "pnl_pct": round(new_pnl_pct, 2),
-                "exit_confirmed": True,
-                "exit_confirmed_at": __import__("datetime")
-                .datetime.now(__import__("datetime").timezone.utc)
-                .replace(tzinfo=None),
-            }
-        },
-        # Sort by exit_date descending to update the most recent closed position
-    )
+    now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
+
+    target_pos_id = pending_entry.get("position_id")
+    if target_pos_id:
+        db[col_name].update_one(
+            {"_id": target_pos_id},
+            {
+                "$set": {
+                    "exit_price": confirmed_price,
+                    "pnl_pct": round(new_pnl_pct, 2),
+                    "exit_confirmed": True,
+                    "exit_confirmed_at": now_utc,
+                }
+            },
+        )
+    else:
+        unconfirmed = db[col_name].find_one(
+            {"symbol": symbol, "status": "CLOSED", "exit_confirmed": {"$ne": True}},
+            sort=[("exit_date", -1)],
+        )
+        if unconfirmed:
+            db[col_name].update_one(
+                {"_id": unconfirmed["_id"]},
+                {
+                    "$set": {
+                        "exit_price": confirmed_price,
+                        "pnl_pct": round(new_pnl_pct, 2),
+                        "exit_confirmed": True,
+                        "exit_confirmed_at": now_utc,
+                    }
+                },
+            )
+        else:
+            latest = db[col_name].find_one({"symbol": symbol, "status": "CLOSED"}, sort=[("exit_date", -1)])
+            if latest:
+                db[col_name].update_one(
+                    {"_id": latest["_id"]},
+                    {
+                        "$set": {
+                            "exit_price": confirmed_price,
+                            "pnl_pct": round(new_pnl_pct, 2),
+                            "exit_confirmed": True,
+                            "exit_confirmed_at": now_utc,
+                        }
+                    },
+                )
 
     # Record sale proceeds in settlement ledger (80% immediate, 20% T+1, or 0/100 for BTST)
     brokerage_pct = config.TRADING_OPTIONS.get("brokerage_charges", 0.0020)
@@ -164,7 +198,7 @@ def confirm_exit(symbol: str, confirmed_price: float):
     )
 
     # Mark the pending confirmation as resolved
-    resolve_pending_exit_confirmation(symbol, confirmed_price)
+    resolve_pending_exit_confirmation(symbol, confirmed_price, position_id=target_pos_id)
 
     price_diff = confirmed_price - system_price
     diff_str = f"+₹{price_diff:.2f}" if price_diff >= 0 else f"-₹{abs(price_diff):.2f}"

@@ -386,13 +386,16 @@ def get_pending_exit_confirmations():
     return list(db[col_name].find({"status": "PENDING"}))
 
 
-def resolve_pending_exit_confirmation(symbol: str, confirmed_price: float):
+def resolve_pending_exit_confirmation(symbol: str, confirmed_price: float, position_id=None):
     """Mark a pending exit confirmation as resolved and update with confirmed price."""
     db = _get_db_internal()
     now = trading_now(timezone.utc).replace(tzinfo=None)
     col_name = config.MONGODB_COLLECTIONS["pending_exit_confirmations"]
+    query = (
+        {"position_id": position_id, "status": "PENDING"} if position_id else {"symbol": symbol, "status": "PENDING"}
+    )
     return db[col_name].update_one(
-        {"symbol": symbol, "status": "PENDING"},
+        query,
         {
             "$set": {
                 "status": "CONFIRMED",
