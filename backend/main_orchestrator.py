@@ -219,14 +219,20 @@ def run_trading_cycle():
     total_exits = len(closed_symbols)
 
     # Phase 4: Exit Confirmation + Settlement Recording
-    if closed_symbols:
-        db = get_mongodb()
-        for sym in closed_symbols:
-            closed_pos = db[config.MONGODB_COLLECTIONS["positions"]].find_one(
-                {"symbol": sym, "status": "CLOSED"},
-                sort=[("exit_date", -1)],
-            )
-            if not closed_pos:
+    db = get_mongodb()
+    unconfirmed_exits = list(
+        db[config.MONGODB_COLLECTIONS["positions"]].find({"status": "CLOSED", "exit_confirmed": {"$ne": True}})
+    )
+
+    if unconfirmed_exits:
+        pending_col = db[config.MONGODB_COLLECTIONS["pending_exit_confirmations"]]
+
+        for closed_pos in unconfirmed_exits:
+            sym = closed_pos["symbol"]
+
+            # Check if it's already pending user confirmation
+            is_pending = pending_col.find_one({"symbol": sym})
+            if is_pending:
                 continue
 
             system_exit_price = closed_pos.get("exit_price", 0)
@@ -258,7 +264,7 @@ def run_trading_cycle():
                         "entry_price": entry_price,
                         "entry_date": closed_pos.get("entry_date"),
                         "exit_date": exit_date,
-                        "pnl_pct": round(pnl_pct, 2),
+                        "pnl_pct": round(pnl_pct, 2) if pnl_pct is not None else 0.0,
                     }
                 )
 
