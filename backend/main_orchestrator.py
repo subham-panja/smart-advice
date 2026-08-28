@@ -5,7 +5,12 @@ from datetime import datetime, timedelta, timezone
 import requests
 
 import config
-from database import get_mongodb, get_open_positions, insert_pending_exit_confirmation
+from database import (
+    get_mongodb,
+    get_open_positions,
+    get_pending_exit_confirmations,
+    insert_pending_exit_confirmation,
+)
 from run_analysis import AutomatedStockAnalysis
 from utils.logger import setup_logging
 from utils.settlement import get_available_cash, record_sale_proceeds, settle_pending_funds
@@ -38,6 +43,103 @@ def _send_telegram(message: str):
                 logger.error("Telegram API error: %s %s" % (resp.status_code, resp.text))
         except Exception as e:
             logger.error("Telegram send failed: %s" % e)
+
+
+def _handle_exit_confirmations(trading_opts: dict):
+    """Detect unconfirmed exits, prompt user, and wait for confirmation before continuing."""
+    db = get_mongodb()
+    unconfirmed_exits = list(
+        db[config.MONGODB_COLLECTIONS["positions"]].find({"status": "CLOSED", "exit_confirmed": {"$ne": True}})
+    )
+
+    if not unconfirmed_exits:
+        return
+
+    pending_col = db[config.MONGODB_COLLECTIONS["pending_exit_confirmations"]]
+
+    for closed_pos in unconfirmed_exits:
+        sym = closed_pos["symbol"]
+        system_exit_price = closed_pos.get("exit_price", 0)
+        exit_reason = closed_pos.get("exit_reason", "UNKNOWN")
+        quantity = closed_pos.get("quantity", 0)
+        entry_price = closed_pos.get("entry_price", 0)
+        exit_date = closed_pos.get("exit_date")
+        pnl_pct = closed_pos.get("pnl_pct", 0)
+
+        if is_replay():
+            # Auto-confirm in replay mode — no user interaction possible
+            brokerage_pct = trading_opts.get("brokerage_charges", 0.0020)
+            gross_proceeds = system_exit_price * quantity
+            net_proceeds = gross_proceeds * (1 - brokerage_pct)
+            entry_date = closed_pos.get("entry_date")
+            record_sale_proceeds(sym, net_proceeds, exit_date, exit_reason, entry_date)
+            db[config.MONGODB_COLLECTIONS["positions"]].update_one(
+                {"_id": closed_pos["_id"]},
+                {"$set": {"exit_confirmed": True}},
+            )
+        else:
+            # Check if it's already pending user confirmation
+            is_pending = pending_col.find_one({"symbol": sym, "status": "PENDING"})
+            if not is_pending:
+                insert_pending_exit_confirmation(
+                    {
+                        "symbol": sym,
+                        "system_exit_price": system_exit_price,
+                        "exit_reason": exit_reason,
+                        "quantity": quantity,
+                        "entry_price": entry_price,
+                        "entry_date": closed_pos.get("entry_date"),
+                        "exit_date": exit_date,
+                        "pnl_pct": round(pnl_pct, 2) if pnl_pct is not None else 0.0,
+                    }
+                )
+                logger.important(
+                    f"EXIT_CONFIRM:{sym}:{system_exit_price:.2f}:{exit_reason}:{quantity}:{entry_price:.2f}:{pnl_pct:.2f}"
+                )
+                logger.important(
+                    f"🛑 EXIT DETECTED: {sym} @ ₹{system_exit_price:.2f} | "
+                    f"Reason: {exit_reason} | PnL: {pnl_pct:+.2f}% | "
+                    f"⚠️ Please confirm exit price on the dashboard."
+                )
+
+    if not is_replay():
+        import sys
+        import time
+
+        pending_list = get_pending_exit_confirmations()
+        if not pending_list:
+            return
+
+        if sys.stdin.isatty():
+            from handlers.orchestrator_handler import confirm_exit
+
+            for p in pending_list:
+                p_sym = p["symbol"]
+                p_sys_price = p.get("system_exit_price", 0)
+                try:
+                    user_val = input(
+                        f"\n[?] Did you exit {p_sym} at ₹{p_sys_price:.2f}? [Press Enter to accept, or type actual price]: "
+                    ).strip()
+                    chosen_price = float(user_val) if user_val else p_sys_price
+                except Exception:
+                    chosen_price = p_sys_price
+                confirm_exit(p_sym, chosen_price)
+        else:
+            pending_syms_str = ", ".join([p["symbol"] for p in pending_list])
+            logger.important(
+                f"⏳ Waiting for user confirmation of exit price for: {pending_syms_str}... (Confirm on Terminal Dashboard)"
+            )
+            last_reminder = time.time()
+            while True:
+                current_pending = get_pending_exit_confirmations()
+                if not current_pending:
+                    logger.important("✅ All exit confirmations received! Proceeding with updated available capital...")
+                    break
+                time.sleep(1)
+                if time.time() - last_reminder >= 15:
+                    rem_syms = ", ".join([p["symbol"] for p in current_pending])
+                    logger.info(f"⏳ Still waiting for exit confirmation on: {rem_syms}...")
+                    last_reminder = time.time()
 
 
 def run_trading_cycle():
@@ -106,6 +208,9 @@ def run_trading_cycle():
     logger.important("Phase 1: Monitoring existing positions...")
     PortfolioMonitor().monitor_all_positions()
 
+    # Process & wait for exit confirmations from Phase 1
+    _handle_exit_confirmations(trading_opts)
+
     for strategy in all_strategies:
         strat_name = strategy["name"]
 
@@ -114,6 +219,9 @@ def run_trading_cycle():
         # Phase 1b: Advanced exits
         exit_engine = ExecutionEngine(strategy_config=strategy)
         exit_engine.manage_exits()
+
+        # Process & wait for exit confirmations from Phase 1b
+        _handle_exit_confirmations(trading_opts)
 
         # Phase 2: Analysis (use all NSE symbols in replay mode for per-date local filtering)
         logger.important(f"Phase 2: Running analysis for {strat_name}...")
@@ -218,65 +326,8 @@ def run_trading_cycle():
     new_symbols = symbols_after - symbols_before
     total_exits = len(closed_symbols)
 
-    # Phase 4: Exit Confirmation + Settlement Recording
-    db = get_mongodb()
-    unconfirmed_exits = list(
-        db[config.MONGODB_COLLECTIONS["positions"]].find({"status": "CLOSED", "exit_confirmed": {"$ne": True}})
-    )
-
-    if unconfirmed_exits:
-        pending_col = db[config.MONGODB_COLLECTIONS["pending_exit_confirmations"]]
-
-        for closed_pos in unconfirmed_exits:
-            sym = closed_pos["symbol"]
-
-            # Check if it's already pending user confirmation
-            is_pending = pending_col.find_one({"symbol": sym})
-            if is_pending:
-                continue
-
-            system_exit_price = closed_pos.get("exit_price", 0)
-            exit_reason = closed_pos.get("exit_reason", "UNKNOWN")
-            quantity = closed_pos.get("quantity", 0)
-            entry_price = closed_pos.get("entry_price", 0)
-            exit_date = closed_pos.get("exit_date")
-            pnl_pct = closed_pos.get("pnl_pct", 0)
-
-            if is_replay():
-                # Auto-confirm in replay mode — no user interaction possible
-                brokerage_pct = trading_opts.get("brokerage_charges", 0.0020)
-                gross_proceeds = system_exit_price * quantity
-                net_proceeds = gross_proceeds * (1 - brokerage_pct)
-                entry_date = closed_pos.get("entry_date")
-                record_sale_proceeds(sym, net_proceeds, exit_date, exit_reason, entry_date)
-                db[config.MONGODB_COLLECTIONS["positions"]].update_one(
-                    {"_id": closed_pos["_id"]},
-                    {"$set": {"exit_confirmed": True}},
-                )
-            else:
-                # Create pending exit confirmation for user to verify
-                insert_pending_exit_confirmation(
-                    {
-                        "symbol": sym,
-                        "system_exit_price": system_exit_price,
-                        "exit_reason": exit_reason,
-                        "quantity": quantity,
-                        "entry_price": entry_price,
-                        "entry_date": closed_pos.get("entry_date"),
-                        "exit_date": exit_date,
-                        "pnl_pct": round(pnl_pct, 2) if pnl_pct is not None else 0.0,
-                    }
-                )
-
-                # Emit SSE event for frontend terminal to show confirmation prompt
-                logger.important(
-                    f"EXIT_CONFIRM:{sym}:{system_exit_price:.2f}:{exit_reason}:{quantity}:{entry_price:.2f}:{pnl_pct:.2f}"
-                )
-                logger.important(
-                    f"🛑 EXIT DETECTED: {sym} @ ₹{system_exit_price:.2f} | "
-                    f"Reason: {exit_reason} | PnL: {pnl_pct:+.2f}% | "
-                    f"⚠️ Please confirm exit price on the dashboard."
-                )
+    # Phase 4: Final Exit Confirmation Check
+    _handle_exit_confirmations(trading_opts)
 
     # Compute final state
     final_positions = positions_after
