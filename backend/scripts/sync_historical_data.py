@@ -1,3 +1,4 @@
+import argparse
 import logging
 import os
 import sys
@@ -11,12 +12,10 @@ from config import DATA_FETCH_THREADS
 from scripts.data_fetcher import get_all_nse_symbols, refresh_nse_symbols
 from utils.data_cache import fetch_historical_data_cached, get_cache_stats
 
-DEFAULT_HISTORICAL_PERIOD = "5y"
-
 logger = logging.getLogger(__name__)
 
 
-def sync_all_historical_data():
+def sync_all_historical_data(period: str = "5y", max_workers: int = None):
     """Sync historical data for all NSE symbols into the parquet cache.
 
     Uses the same parquet cache (data_cache.py) that the backtest and
@@ -24,7 +23,7 @@ def sync_all_historical_data():
     fetches only missing recent days, appends.
     """
     start_time = datetime.now()
-    logger.info(f"Starting historical data sync for all NSE symbols (Period: {DEFAULT_HISTORICAL_PERIOD})")
+    logger.info(f"Starting historical data sync for all NSE symbols (Period: {period})")
 
     logger.info("Refreshing NSE symbol list...")
     refresh_nse_symbols()
@@ -41,12 +40,11 @@ def sync_all_historical_data():
     success_count = 0
     fail_count = 0
 
-    max_workers = min(DATA_FETCH_THREADS, 5)
+    workers = max_workers or min(DATA_FETCH_THREADS, 5)
 
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+    with ThreadPoolExecutor(max_workers=workers) as executor:
         future_to_symbol = {
-            executor.submit(fetch_historical_data_cached, symbol, period=DEFAULT_HISTORICAL_PERIOD): symbol
-            for symbol in symbols
+            executor.submit(fetch_historical_data_cached, symbol, period=period): symbol for symbol in symbols
         }
 
         for i, future in enumerate(as_completed(future_to_symbol)):
@@ -79,5 +77,10 @@ def sync_all_historical_data():
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Sync historical NSE data to local parquet cache")
+    parser.add_argument("--period", type=str, default="5y", help="Historical data period (e.g. 1y, 2y, 5y, 10y, max)")
+    parser.add_argument("--workers", type=int, default=None, help="Number of worker threads (default from config)")
+    args = parser.parse_args()
+
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
-    sync_all_historical_data()
+    sync_all_historical_data(period=args.period, max_workers=args.workers)

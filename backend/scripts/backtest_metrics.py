@@ -124,6 +124,49 @@ def check_market_breadth(
     return advance_pct >= min_advance_pct
 
 
+def _calculate_series_adx(high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14) -> float:
+    """Calculate ADX on price series."""
+    try:
+        import talib
+
+        adx = talib.ADX(
+            high.astype(float).values, low.astype(float).values, close.astype(float).values, timeperiod=period
+        )
+        val = adx[-1]
+        if not np.isnan(val):
+            return float(val)
+    except Exception:
+        pass
+
+    if len(close) < period * 2:
+        return 25.0
+
+    tr1 = high - low
+    tr2 = (high - close.shift(1)).abs()
+    tr3 = (low - close.shift(1)).abs()
+    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+
+    up_move = high - high.shift(1)
+    down_move = low.shift(1) - low
+
+    plus_dm = np.where((up_move > down_move) & (up_move > 0), up_move, 0.0)
+    minus_dm = np.where((down_move > up_move) & (down_move > 0), down_move, 0.0)
+
+    atr = pd.Series(tr).ewm(alpha=1 / period, adjust=False).mean()
+    plus_di = 100 * (
+        pd.Series(plus_dm, index=high.index).ewm(alpha=1 / period, adjust=False).mean() / atr.replace(0, np.nan)
+    )
+    minus_di = 100 * (
+        pd.Series(minus_dm, index=high.index).ewm(alpha=1 / period, adjust=False).mean() / atr.replace(0, np.nan)
+    )
+
+    di_sum = (plus_di + minus_di).replace(0, np.nan)
+    dx = ((plus_di - minus_di).abs() / di_sum) * 100
+    adx = dx.ewm(alpha=1 / period, adjust=False).mean()
+    val = adx.iloc[-1]
+    return float(val) if not np.isnan(val) else 25.0
+
+
 def check_market_regime(
     regime_enabled: bool,
     regime_config: dict,
@@ -175,13 +218,31 @@ def check_market_regime(
 
     current_price = index_hist["Close"].iloc[-1]
     effective_window = min(sma_period, len(index_hist))
-    sma_value = index_hist["Close"].rolling(effective_window, min_periods=30).mean().iloc[-1]
+    sma_series = index_hist["Close"].rolling(effective_window, min_periods=30).mean()
+    sma_value = sma_series.iloc[-1]
 
     is_bull = current_price > sma_value
+
+    # Check SMA slope if required
+    require_slope = regime_config.get("require_sma_slope_up", False)
+    slope_bars = int(regime_config.get("sma_slope_lookback_bars", 5))
+    if is_bull and require_slope and len(sma_series) > slope_bars:
+        past_sma = sma_series.iloc[-1 - slope_bars]
+        if not np.isnan(past_sma) and past_sma > 0:
+            if sma_value < past_sma:
+                is_bull = False
+
+    # Check Index ADX trend strength if configured
+    min_adx = float(regime_config.get("min_adx", 0))
+    if is_bull and min_adx > 0 and "High" in index_hist and "Low" in index_hist:
+        idx_adx = _calculate_series_adx(index_hist["High"], index_hist["Low"], index_hist["Close"], 14)
+        if idx_adx < min_adx:
+            is_bull = False
+
     regime_status = "BULL" if is_bull else "BEAR"
 
     if not is_bull:
-        logger_obj.info(f"🔴 MACRO REGIME: BEARISH on {date.date()} - {index_symbol} below SMA({sma_period})")
+        logger_obj.info(f"🔴 MACRO REGIME: BEARISH on {date.date()} - {index_symbol} condition not met")
 
     return regime_status
 

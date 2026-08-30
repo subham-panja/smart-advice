@@ -374,19 +374,21 @@ class SwingTradingSignalAnalyzer:
             pat_name = pat["name"]
             entry_signals[pat_name] = 0
 
-            if pat_name == "pullback_to_ema":
-                if use_store:
+            if pat_name in ("pullback_to_ema", "ema_21_pullback"):
+                ema_p = pat.get("ema_period", 21)
+                if use_store and ema_p == 21:
                     ema = indicator_store.get(symbol, "ema_21", df.index[-1])
                     rsi = indicator_store.get(symbol, "rsi_14", df.index[-1])
                 else:
-                    ema = ta.EMA(df["Close"], pat["ema_period"]).iloc[-1]
+                    ema = ta.EMA(df["Close"], ema_p).iloc[-1]
                     rsi = ta.RSI(df["Close"], 14).iloc[-1]
                 max_distance = pat.get("max_distance_pct", 3.0) / 100.0
                 is_near_ema = abs(c - ema) / ema < max_distance
-                rsi_min, rsi_max = pat["rsi_range"]
+                rsi_bounds = pat.get("rsi_14_range") or pat.get("rsi_range", [35, 65])
+                rsi_min, rsi_max = rsi_bounds[0], rsi_bounds[1]
 
                 bullish_candle_ok = True
-                if pat.get("bullish_candle_required", False):
+                if pat.get("bullish_candle_required", False) or pat.get("bullish_reversal_candle", False):
                     bullish_candle_ok = df["Close"].iloc[-1] > df["Open"].iloc[-1]
 
                 if is_near_ema and rsi_min <= rsi <= rsi_max and bullish_candle_ok:
@@ -477,6 +479,38 @@ class SwingTradingSignalAnalyzer:
 
                 if contraction_ok and volume_dry_ok and atr_pct_ok:
                     entry_signals[pat_name] = 1
+
+            elif pat_name == "minervini_vcp_breakout":
+                c_min = pat.get("consolidation_days_min", 10)
+                c_max = pat.get("consolidation_days_max", 45)
+                breakout_vol_mult = pat.get("breakout_volume_multiplier", 1.5)
+                vol_dry_req = pat.get("volume_dry_up_required", True)
+
+                if len(df) >= c_min + 5:
+                    lookback = min(len(df) - 1, c_max)
+                    consolidation_high = df["High"].iloc[-lookback:-1].max()
+                    is_breakout = c >= consolidation_high
+
+                    vol_ma50 = df["Volume"].tail(min(len(df), 50)).mean()
+                    recent_vol = df["Volume"].iloc[-4:-1]
+                    vol_dry_ok = True
+                    if vol_dry_req:
+                        vol_dry_ok = (recent_vol < vol_ma50 * 1.0).any() or (df["Volume"].iloc[-2] < vol_ma50 * 0.9)
+
+                    curr_vol = df["Volume"].iloc[-1]
+                    vol_breakout_ok = curr_vol >= (vol_ma50 * breakout_vol_mult)
+
+                    if len(df) >= 20:
+                        if use_store:
+                            atr_series = indicator_store.get_full_series(symbol, "atr_14")
+                        else:
+                            atr_series = ta.ATR(df["High"], df["Low"], df["Close"], 14)
+                        atr_contracting = atr_series.iloc[-2] <= atr_series.iloc[-10:].mean() * 1.15
+                    else:
+                        atr_contracting = True
+
+                    if is_breakout and vol_dry_ok and vol_breakout_ok and atr_contracting:
+                        entry_signals[pat_name] = 1
 
             elif pat_name == "twenty_day_high_breakout":
                 high_20 = df["High"].iloc[-21:-1].max()
@@ -635,8 +669,13 @@ class SwingTradingSignalAnalyzer:
                 final_reasons.append(name if name != "Candlesticks" else f"Candle({', '.join(candle_pats)})")
 
         active_entry_patterns = [p for p in entry_signals.values() if p == 1]
-        if not active_entry_patterns and entry_signals:
-            pass
+        if entry_signals and not active_entry_patterns:
+            return {
+                "symbol": symbol,
+                "all_gates_passed": False,
+                "gates": gates,
+                "reason": "No entry pattern triggered",
+            }
 
         for p_name, p_val in entry_signals.items():
             if p_val == 1:

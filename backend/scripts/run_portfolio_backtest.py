@@ -171,7 +171,7 @@ def _prepare_index_data(strategy: dict, symbols_data: dict, period: str) -> Opti
     pop_df = symbols_data.pop(index_symbol, None)
 
     try:
-        index_data = fetch_multiple_symbols_cached({index_symbol: index_symbol}, period="5y", verbose=False)
+        index_data = fetch_multiple_symbols_cached({index_symbol: index_symbol}, period=period, verbose=False)
         res_df = index_data.get(index_symbol)
         if res_df is not None and not res_df.empty:
             return res_df

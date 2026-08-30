@@ -25,7 +25,10 @@
   "market_regime_config": {
     "index": "^NSEI",
     "bull_market_rule": "latest close > sma(50)",
-    "pause_buying_if_bearish": false
+    "pause_buying_if_bearish": true,
+    "min_adx": 18,
+    "require_sma_slope_up": true,
+    "sma_slope_lookback_bars": 5
   },
   "rs_config": {
     "period": 55,
@@ -231,32 +234,32 @@
     "targets": [
       {
         "name": "Target 1 (Partial Profit)",
-        "atr_multiplier": 3.5,
-        "sell_percentage": 0.3
+        "atr_multiplier": 2.5,
+        "sell_percentage": 0.4
       },
       {
         "name": "Target 2",
-        "atr_multiplier": 7.0,
+        "atr_multiplier": 6.0,
         "sell_percentage": 1.0
       }
     ],
     "atr_stop_multiplier": 2.4,
     "hard_stop_loss_pct": 8.0,
-    "trail_stop_atr": 2.5,
+    "trail_stop_atr": 2.2,
     "trail_stop_ma_period": 20,
     "breakeven_at_target_1": true,
     "time_stop_bars": 12,
     "max_daily_loss_pct": 1.5,
     "regime_adaptive_exits": {
       "bull": {
-        "t1_sell_percentage": 0.25,
+        "t1_sell_percentage": 0.35,
         "trail_stop_type": "atr",
-        "trail_stop_atr_multiplier": 2.2,
+        "trail_stop_atr_multiplier": 2.0,
         "trail_stop_ma_period": 20,
         "time_stop_bars": 15,
         "pyramiding_allowed": true,
-        "oneil_target_pct": 25.0,
-        "stop_loss_pct": 7.0
+        "oneil_target_pct": 20.0,
+        "stop_loss_pct": 6.5
       },
       "bear": {
         "t1_sell_percentage": 0.5,
@@ -265,11 +268,11 @@
         "trail_stop_ma_period": 10,
         "time_stop_bars": 8,
         "pyramiding_allowed": false,
-        "oneil_target_pct": 15.0,
-        "stop_loss_pct": 5.0
+        "oneil_target_pct": 12.0,
+        "stop_loss_pct": 4.5
       }
     },
-    "oneil_stop_loss_pct": 8.0,
+    "oneil_stop_loss_pct": 7.0,
     "leader_exception": {
       "enabled": true,
       "min_gain_pct": 20.0,

@@ -396,19 +396,28 @@ def compute_signal_matrix(
         strategy_hits += vb_hit.astype(int)
 
     # --- ENTRY PATTERNS ---
+    has_enabled_patterns = False
+    pattern_hits = pd.DataFrame(0, index=dates, columns=symbols, dtype=int)
+
     for pat in entry_patterns:
         if not pat.get("enabled"):
             continue
 
+        has_enabled_patterns = True
         pat_name = pat["name"]
         signal_count += 1
 
-        if pat_name == "pullback_to_ema":
+        if pat_name in ("pullback_to_ema", "ema_21_pullback"):
             ema_distance = (c - indicators.ema_21).abs() / indicators.ema_21
             max_dist = pat.get("max_distance_pct", 3.0) / 100.0
-            rsi_min, rsi_max = pat["rsi_range"]
+            rsi_bounds = pat.get("rsi_14_range") or pat.get("rsi_range", [35, 65])
+            rsi_min, rsi_max = rsi_bounds[0], rsi_bounds[1]
             rsi_in_range = (indicators.rsi_14 >= rsi_min) & (indicators.rsi_14 <= rsi_max)
-            bullish = c > o if pat.get("bullish_candle_required", False) else True
+            bullish = (
+                c > o
+                if (pat.get("bullish_candle_required", False) or pat.get("bullish_reversal_candle", False))
+                else True
+            )
             hit = (ema_distance < max_dist) & rsi_in_range & bullish
 
         elif pat_name == "bollinger_squeeze_breakout":
@@ -442,6 +451,24 @@ def compute_signal_matrix(
             atr_pct = indicators.atr_14 / c < pat.get("max_atr_pct_of_price", 3.0) / 100.0
             hit = contractions & vol_dry & atr_pct
 
+        elif pat_name == "minervini_vcp_breakout":
+            c_min = pat.get("consolidation_days_min", 10)
+            c_max = pat.get("consolidation_days_max", 45)
+            vol_mult = pat.get("breakout_volume_multiplier", 1.5)
+            vol_50_ma = v.rolling(50, min_periods=20).mean()
+            consolidation_high = h.rolling(c_max, min_periods=c_min).max().shift(1)
+            is_breakout = c >= consolidation_high
+            vol_dry = (
+                (v.shift(1) < vol_50_ma.shift(1) * 1.0) | (v.shift(2) < vol_50_ma.shift(2) * 1.0)
+                if pat.get("volume_dry_up_required", True)
+                else True
+            )
+            vol_exp = v >= vol_50_ma * vol_mult
+            atr_ratio = (
+                indicators.atr_14.shift(1) <= indicators.atr_14.rolling(20, min_periods=10).mean().shift(1) * 1.15
+            )
+            hit = is_breakout & vol_dry & vol_exp & atr_ratio
+
         elif pat_name == "twenty_day_high_breakout":
             high_20 = c.rolling(21).max().shift(1)
             breakout = c > high_20
@@ -472,6 +499,7 @@ def compute_signal_matrix(
             hit = pd.DataFrame(False, index=dates, columns=symbols, dtype=bool)
 
         signal_hits += hit.astype(int)
+        pattern_hits += hit.astype(int)
 
     # --- RSI MOMENTUM FILTER ---
     rsi_filter_cfg = strategy_config.get("rsi_momentum_filter", {})
@@ -482,6 +510,7 @@ def compute_signal_matrix(
             rsi_ok = rsi_ok & (indicators.rsi_14 > indicators.rsi_14.shift(5))
         # Clear entry patterns where RSI filter fails
         signal_hits = signal_hits.where(rsi_ok, 0)
+        pattern_hits = pattern_hits.where(rsi_ok, 0)
 
     # --- TECHNICAL SCORE ---
     # Use strategy-only scoring to match live StrategyEvaluator (pos/total_strategies)
@@ -493,8 +522,11 @@ def compute_signal_matrix(
     tech_min = thresholds.get("technical_minimum", 0.35)
     is_buy = technical_score >= tech_min
 
-    # Final: all gates + buy recommendation
-    pass_matrix = all_gates & is_buy
+    # Final: all gates + buy recommendation + mandatory pattern trigger (if configured)
+    pattern_ok = (
+        (pattern_hits > 0) if has_enabled_patterns else pd.DataFrame(True, index=dates, columns=symbols, dtype=bool)
+    )
+    pass_matrix = all_gates & is_buy & pattern_ok
     score_matrix = technical_score.where(pass_matrix, 0.0)
 
     return pass_matrix, score_matrix

@@ -11,6 +11,7 @@ Cache location: backend/data/historical/
 Cache format: {symbol}.parquet
 """
 
+import json
 import logging
 import os
 import re
@@ -29,6 +30,26 @@ logger = logging.getLogger(__name__)
 
 CACHE_DIR = config.DATA_CACHE_CONFIG.get("cache_dir", os.path.join(config.BACKEND_DIR, "data", "historical"))
 os.makedirs(CACHE_DIR, exist_ok=True)
+
+DELISTED_CACHE_FILE = os.path.join(config.BACKEND_DIR, "data", "delisted_symbols.json")
+_delisted_symbols = set()
+if os.path.exists(DELISTED_CACHE_FILE):
+    try:
+        with open(DELISTED_CACHE_FILE, "r") as f:
+            _delisted_symbols = set(json.load(f))
+    except Exception:
+        pass
+
+
+def mark_symbol_delisted(symbol: str):
+    """Mark a symbol as delisted/inactive to prevent repeated network queries."""
+    _delisted_symbols.add(symbol)
+    try:
+        with open(DELISTED_CACHE_FILE, "w") as f:
+            json.dump(sorted(list(_delisted_symbols)), f, indent=2)
+    except Exception:
+        pass
+
 
 CACHE_ENABLED = config.DATA_CACHE_CONFIG.get("enabled", True)
 
@@ -264,8 +285,12 @@ def fetch_historical_data_cached(
     interval: str = "1d",
     force_refresh: bool = False,
     min_rows: Optional[int] = None,
+    sync_live: bool = False,
 ) -> pd.DataFrame:
     """Fetch historical OHLCV data with single-file caching."""
+    if symbol in _delisted_symbols:
+        return pd.DataFrame()
+
     cache_path = _cache_path(symbol, interval)
 
     yf_sym = f"{symbol}.NS" if not symbol.startswith("^") else symbol
@@ -280,12 +305,22 @@ def fetch_historical_data_cached(
                 has_enough_rows = len(df) >= needed if period != "max" else is_recent
 
                 if is_recent and has_enough_rows:
-                    # Sync live price for current day if cache row lacks today's close
-                    if not is_replay() and df.index[-1].date() < trading_now().date():
+                    # Sync live price for current day if cache row lacks today's close and explicitly requested
+                    if sync_live and not is_replay() and df.index[-1].date() < trading_now().date():
                         df = _sync_live_price(df, yf_sym, symbol)
                     logger.debug(f"Cache hit for {symbol}: {len(df)} rows, recent data")
                     return df
-                elif is_recent and not has_enough_rows:
+
+                # If cache was updated within the last 24h, it already holds all available lifetime history (e.g. IPO stocks / SMEs)
+                mtime = os.path.getmtime(cache_path)
+                is_synced_recently = (time.time() - mtime) < 86400
+                if is_synced_recently and len(df) >= 1:
+                    logger.debug(f"Using full available history for {symbol} ({len(df)} rows, cached recently)")
+                    if sync_live and not is_replay() and df.index[-1].date() < trading_now().date():
+                        df = _sync_live_price(df, yf_sym, symbol)
+                    return df
+
+                if is_recent and not has_enough_rows:
                     logger.info(
                         f"Cache for {symbol} has {len(df)} rows, need {needed} for {period}. Re-fetching longer period..."
                     )
@@ -300,13 +335,40 @@ def fetch_historical_data_cached(
     logger.info(f"Fetching {symbol} ({period})...")
     time.sleep(config.REQUEST_DELAY)
 
-    df = _fetch_with_retry(yf_sym, period=period, interval=interval)
+    try:
+        df_fresh = _fetch_with_retry(yf_sym, period=period, interval=interval)
+    except Exception as e:
+        err_msg = str(e).lower()
+        if "delisted" in err_msg or "404" in err_msg or "no data found" in err_msg:
+            mark_symbol_delisted(symbol)
+        # Fallback to existing cache if available rather than crashing
+        if os.path.exists(cache_path):
+            try:
+                cached_df = pd.read_parquet(cache_path)
+                if not cached_df.empty:
+                    logger.warning(
+                        f"Fetch failed for {symbol} ({e}), falling back to cached data ({len(cached_df)} rows)"
+                    )
+                    return cached_df
+            except Exception:
+                pass
+        raise e
 
-    if df is None or df.empty:
+    if df_fresh is None or df_fresh.empty:
+        mark_symbol_delisted(symbol)
+        if os.path.exists(cache_path):
+            try:
+                cached_df = pd.read_parquet(cache_path)
+                if not cached_df.empty:
+                    return cached_df
+            except Exception:
+                pass
         raise ValueError(f"No historical data returned for {symbol}")
 
-    df = _sync_live_price(df, yf_sym, symbol)
+    df = _sync_live_price(df_fresh, yf_sym, symbol)
     if df.empty:
+        if os.path.exists(cache_path):
+            return pd.read_parquet(cache_path)
         raise ValueError(f"Data for {symbol} became empty after live price sync.")
 
     df.index = pd.to_datetime(df.index)
