@@ -428,8 +428,8 @@ class ExecutionEngine:
     def _check_market_breadth_paper(self, strategy_config: dict) -> bool:
         """Market breadth filter for paper trading — mirrors backtest behavior.
 
-        Checks what percentage of stocks in the scanner universe are above their
-        20-day SMA. If fewer than min_advance_pct% are above, block new buys.
+        Checks market breadth (% stocks above SMA), then Nifty ADX + SMA slope
+        using the same logic as backtest_metrics.check_market_regime().
         """
         bread_cfg = strategy_config.get("market_breadth_filter", {})
         if not bread_cfg.get("enabled", True):
@@ -439,51 +439,89 @@ class ExecutionEngine:
         min_advance_pct = bread_cfg.get("min_advance_pct", 35)
 
         try:
-            from database import get_mongodb
+            import re
 
-            db = get_mongodb()
-            today_start = (
-                trading_now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).replace(tzinfo=None)
-            )
+            import numpy as np
 
-            # Get all stocks that were recently analyzed (last 7 days)
-            week_ago = today_start - pd.Timedelta(days=7)
-            recent_analyses = list(
-                db.stock_analysis_results.find(
-                    {"analysis_date": {"$gte": week_ago}},
-                    {"symbol": 1, "analysis_date": 1, "_id": 0},
-                )
-            )
-
-            if len(recent_analyses) < 5:
-                return True  # Too few data points
-
-            symbols = list(set(r["symbol"] for r in recent_analyses))
-
+            from scripts.backtest_metrics import _calculate_series_adx
             from scripts.data_fetcher import get_historical_data
 
-            above_count = 0
-            total = 0
-            for symbol in symbols:
-                try:
-                    hist = get_historical_data(symbol, period="60d")
-                    if hist is None or hist.empty or len(hist) < sma_period:
-                        continue
-                    total += 1
-                    sma = hist["Close"].tail(sma_period).mean()
-                    if hist["Close"].iloc[-1] > sma:
-                        above_count += 1
-                except Exception:
-                    continue
+            # ── 1. Market Breadth: % of stocks above SMA ──────────────────────
+            try:
+                from database import get_mongodb
 
-            if total < 5:
-                return True
+                db = get_mongodb()
+                today_start = (
+                    trading_now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).replace(tzinfo=None)
+                )
+                week_ago = today_start - pd.Timedelta(days=7)
+                recent_analyses = list(
+                    db.stock_analysis_results.find({"analysis_date": {"$gte": week_ago}}, {"symbol": 1, "_id": 0})
+                )
+                if len(recent_analyses) >= 5:
+                    symbols = list(set(r["symbol"] for r in recent_analyses))
+                    above_count = 0
+                    valid_total = 0
+                    for symbol in symbols:
+                        try:
+                            hist = get_historical_data(symbol, period="60d")
+                            if hist is not None and len(hist) >= sma_period:
+                                valid_total += 1
+                                if hist["Close"].iloc[-1] > hist["Close"].tail(sma_period).mean():
+                                    above_count += 1
+                        except Exception:
+                            continue
+                    if valid_total >= 5 and (above_count / valid_total) * 100 < min_advance_pct:
+                        logger.info("📉 LIVE: Market breadth weak — blocking new buys")
+                        return False
+            except Exception as e:
+                logger.debug(f"Market breadth sub-check failed: {e}")
 
-            advance_pct = (above_count / total) * 100
-            return advance_pct >= min_advance_pct
+            # ── 2. Index ADX + SMA Slope (mirrors backtest_metrics.check_market_regime) ──
+            regime_cfg = strategy_config.get("market_regime_config", {})
+            if not regime_cfg.get("pause_buying_if_bearish", False):
+                return True  # Regime gate not configured — allow through
+
+            index_symbol = regime_cfg.get("index", "^NSEI")
+            min_adx = float(regime_cfg.get("min_adx", 0))
+            require_slope = regime_cfg.get("require_sma_slope_up", False)
+            slope_bars = int(regime_cfg.get("sma_slope_lookback_bars", 5))
+
+            rule = regime_cfg.get("bull_market_rule", "latest close > sma(50)")
+            sma_match = re.search(r"sma\((\d+)\)", rule)
+            sma_period_idx = int(sma_match.group(1)) if sma_match else 50
+
+            index_hist = get_historical_data(index_symbol, period="1y")
+            if index_hist is None or len(index_hist) < 30:
+                return True  # Can't fetch — allow through
+
+            effective_window = min(sma_period_idx, len(index_hist))
+            sma_series = index_hist["Close"].rolling(effective_window, min_periods=30).mean()
+            sma_value = sma_series.iloc[-1]
+            is_bull = index_hist["Close"].iloc[-1] > sma_value
+
+            # SMA slope check
+            if is_bull and require_slope and len(sma_series) > slope_bars:
+                past_sma = sma_series.iloc[-1 - slope_bars]
+                if not np.isnan(past_sma) and past_sma > 0 and sma_value < past_sma:
+                    is_bull = False
+                    logger.info(f"🔴 LIVE REGIME: {index_symbol} SMA slope DOWN — pausing new buys")
+
+            # ADX check
+            if is_bull and min_adx > 0 and "High" in index_hist.columns and "Low" in index_hist.columns:
+                idx_adx = _calculate_series_adx(index_hist["High"], index_hist["Low"], index_hist["Close"], 14)
+                if idx_adx < min_adx:
+                    is_bull = False
+                    logger.info(f"🔴 LIVE REGIME: {index_symbol} ADX={idx_adx:.1f} < {min_adx} — pausing new buys")
+
+            if not is_bull:
+                return False
+
+            logger.debug("🟢 LIVE REGIME: BULLISH — breadth + ADX + slope all passed")
+            return True
 
         except Exception as e:
-            logger.debug(f"Market breadth check failed: {e}")
+            logger.debug(f"Market breadth/regime check failed: {e}")
             return True
 
     def execute_sell(self, symbol, price, reason, quantity=None):
