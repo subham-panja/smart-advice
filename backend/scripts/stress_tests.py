@@ -122,6 +122,9 @@ def run_regime_tests(
         if len(df) < MIN_DAYS:
             del symbols_data[sym]
 
+    # Point-in-time universe builder (shared across regime tests)
+    from scripts.universe_builder import get_point_in_time_symbols
+
     results = []
     for test in REGIME_TEST_PERIODS:
         print(f"\n--- {test['name']} ---")
@@ -129,11 +132,22 @@ def run_regime_tests(
         sim_end = pd.Timestamp(test["end_date"]).tz_localize(None)
         sim_start = (sim_end - pd.DateOffset(months=test["months"])).tz_localize(None)
 
-        # Regime warmup
+        # Use point-in-time universe for this regime's start year
+        pit_symbols = get_point_in_time_symbols(sim_start, strategy, max_stocks=max_stocks)
+        # Restrict symbols_data to the point-in-time universe (keep index sym)
+        index_sym = strategy.get("market_regime_config", {}).get("index", "^NSEI")
+        regime_symbols_data = {sym: df for sym, df in symbols_data.items() if sym in pit_symbols or sym == index_sym}
+        if len(regime_symbols_data) < 5:
+            # Fallback: use full symbols_data if PIT filtered too aggressively
+            regime_symbols_data = symbols_data
+            print(f"  ⚠️  PIT universe too small ({len(pit_symbols)} matched) — using full data")
+        else:
+            print(f"  📅 PIT universe ({sim_start.year}): {len(regime_symbols_data)} stocks matched in local data")
+
         if index_data is not None:
             stock_only = {
                 k: v
-                for k, v in symbols_data.items()
+                for k, v in regime_symbols_data.items()
                 if k != strategy.get("market_regime_config", {}).get("index", "^NSEI")
             }
             all_sets = [set(df.index) for df in stock_only.values()]
@@ -153,10 +167,10 @@ def run_regime_tests(
 
         if precomputed_signals:
             result = engine.run_with_signals(
-                symbols_data, precomputed_signals, sim_start_date=sim_start, sim_end_date=sim_end, verbose=False
+                regime_symbols_data, precomputed_signals, sim_start_date=sim_start, sim_end_date=sim_end, verbose=False
             )
         else:
-            result = engine.run(symbols_data, sim_start_date=sim_start, sim_end_date=sim_end)
+            result = engine.run(regime_symbols_data, sim_start_date=sim_start, sim_end_date=sim_end)
 
         cagr = result["cagr"]
         max_dd = result["max_drawdown_pct"]
@@ -304,28 +318,38 @@ def run_param_sensitivity(
         else:
             result = engine.run(symbols_data, sim_start_date=sim_start, sim_end_date=sim_end)
         test_cagr = result["cagr"]
-        atr_cagrs.append((atr_val, test_cagr))
-        results.append({"param": "atr_stop_multiplier", "value": atr_val, "cagr": round(test_cagr, 2), "passed": True})
+        test_trades = result.get("total_trades", -1)
+        atr_cagrs.append((atr_val, test_cagr, test_trades))
+        results.append(
+            {
+                "param": "atr_stop_multiplier",
+                "value": atr_val,
+                "cagr": round(test_cagr, 2),
+                "total_trades": test_trades,
+                "passed": test_trades > 0,  # 0-trade result = invalid, not a real pass/fail
+            }
+        )
 
     # Print ATR sweep table with cliff detection
-    print(f"  {'ATR':>5}  {'CAGR':>8}  {'Delta%':>8}  {'Cliff?':>7}")
+    # A result with 0 trades means the position sizer couldn't allocate even
+    # 1 share — this is a sizing constraint, NOT a strategy cliff.
+    print(f"  {'ATR':>5}  {'CAGR':>8}  {'Delta%':>8}  {'Note':>14}")
     cliff_detected = False
     prev_cagr = None
-    for atr_val, test_cagr in atr_cagrs:
-        if prev_cagr is not None and base_cagr != 0:
+    prev_trades = None
+    for atr_val, test_cagr, test_trades in atr_cagrs:
+        note = ""
+        delta = 0.0
+        if test_trades == 0:
+            note = "ZERO_TRADES"
+        elif prev_cagr is not None and base_cagr != 0 and prev_trades and prev_trades > 0:
             delta = ((test_cagr - prev_cagr) / abs(base_cagr)) * 100
-            is_cliff = abs(delta) > 50
-            if is_cliff:
+            if abs(delta) > 50:
                 cliff_detected = True
-            cliff_flag = "CLIFF!" if is_cliff else ""
-        else:
-            delta = 0
-            cliff_flag = ""
-        if prev_cagr is None:
-            prev_cagr = test_cagr
-        else:
-            prev_cagr = test_cagr
-        print(f"  {atr_val:>5.1f}  {test_cagr:>7.1f}%  {delta:>+7.1f}%  {cliff_flag:>7}")
+                note = "CLIFF!"
+        prev_cagr = test_cagr
+        prev_trades = test_trades
+        print(f"  {atr_val:>5.1f}  {test_cagr:>7.1f}%  {delta:>+7.1f}%  {note:>14}")
     if cliff_detected:
         print("  *** CLIFF DETECTED: ATR stop multiplier is a fragile parameter ***")
     print()
@@ -391,8 +415,27 @@ def _deep_copy_strategy(strategy: dict) -> dict:
 
 def _apply_param_change(strategy: dict, param_name: str, value: Any):
     """Apply a parameter change to the strategy config."""
+
+    def _apply_atr_stop(s, v):
+        """Patch all ATR-stop keys so the sweep is internally consistent.
+
+        When only exit_rules.atr_stop_multiplier is changed but
+        trail_stop_atr_multiplier is left at its original (lower) value,
+        the trailing stop fires before the initial stop — producing 0 trades
+        and a false CLIFF signal. We scale all trailing stop references
+        proportionally to the new value.
+        """
+        _set_nested(s, ["exit_rules", "atr_stop_multiplier"], v)
+        # Also sync trail_stop_atr (base trailing stop)
+        _set_nested(s, ["exit_rules", "trail_stop_atr"], v)
+        # Sync regime-adaptive trailing stops proportionally
+        regime_exits = s.get("exit_rules", {}).get("regime_adaptive_exits", {})
+        for _regime, cfg in regime_exits.items():
+            if "trail_stop_atr_multiplier" in cfg:
+                cfg["trail_stop_atr_multiplier"] = round(v * 0.9, 2)  # 10% tighter than initial
+
     param_map = {
-        "atr_stop_multiplier": lambda s, v: _set_nested(s, ["exit_rules", "atr_stop_multiplier"], v),
+        "atr_stop_multiplier": _apply_atr_stop,
         "time_stop_bars": lambda s, v: _set_nested(s, ["exit_rules", "time_stop_bars"], v),
         "min_rsi": lambda s, v: _set_nested(s, ["rsi_momentum_filter", "min_rsi"], v),
         "min_volume_ratio": lambda s, v: _set_nested(

@@ -216,8 +216,11 @@ test-results.xml
 
 # Super Advice specific
 data/
+!data/historical_constituents.json
+!backend/data/historical_constituents.json
 logs/
 cache/
 backtest_results/
 historical_data/
 news_cache/
+

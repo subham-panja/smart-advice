@@ -139,30 +139,33 @@ def run_historical_with_realistic_costs(
     # Enable market regime detection (bull/bear/sideways filter)
     strategy.setdefault("analysis_config", {})["market_regime_detection"] = True
 
-    # Use full NSE universe (realistic universe, no artificial cap)
-    print("[2/6] Loading full NSE universe...")
-    from scripts.data_fetcher import get_all_nse_symbols
+    # ── Use point-in-time universe to eliminate survivorship bias ────────────
+    # For backtests starting before 2025, use stocks that were actually in the
+    # index at that time — not the 2026 winners we can see with hindsight.
+    print("[2/6] Building point-in-time universe...")
+    from scripts.universe_builder import get_point_in_time_symbols
 
-    all_nse = get_all_nse_symbols()
-    symbols = {s: s for s in all_nse} if isinstance(all_nse, list) else dict(all_nse)
-    print(f"  → Using full NSE universe: {len(symbols)} stocks")
+    pit_start = (pd.Timestamp(end_date) - pd.DateOffset(months=months)).tz_localize(None)
+    symbols = get_point_in_time_symbols(pit_start, strategy, max_stocks=200)
+    print(f"  → Point-in-time universe ({pit_start.year}): {len(symbols)} stocks")
 
-    # Pre-filter by strategy market cap to save massive memory/compute
-    min_cap = next(
-        (
-            f.get("value")
-            for f in strategy.get("stock_filters", [])
-            if f.get("type") == "market_cap" and f.get("op") == ">"
-        ),
-        None,
-    )
-    if min_cap is not None:
-        print(f"  → Pre-filtering universe by strategy market cap > {min_cap}...")
-        from scripts.data_fetcher import get_market_caps
+    # If we got the fallback live universe, also apply market cap pre-filter
+    if pit_start.year >= 2025:
+        min_cap = next(
+            (
+                f.get("value")
+                for f in strategy.get("stock_filters", [])
+                if f.get("type") == "market_cap" and f.get("op") == ">"
+            ),
+            None,
+        )
+        if min_cap is not None:
+            print(f"  → Pre-filtering by market cap > {min_cap}...")
+            from scripts.data_fetcher import get_market_caps
 
-        mc_cache = get_market_caps(list(symbols.keys()))
-        symbols = {sym: symbols[sym] for sym in symbols.keys() if mc_cache.get(sym, 0) > min_cap}
-        print(f"  → Filtered universe: {len(symbols)} stocks remaining")
+            mc_cache = get_market_caps(list(symbols.keys()))
+            symbols = {sym: symbols[sym] for sym in symbols.keys() if mc_cache.get(sym, 0) > min_cap}
+            print(f"  → Filtered: {len(symbols)} stocks remaining")
 
     # Scanned symbols returned in results["_scanned_symbols"] for reuse
 
@@ -339,8 +342,13 @@ def main():
     parser.add_argument(
         "--mc-iterations",
         type=int,
-        default=None,
-        help="Walk-forward MC iterations per window. Pass this flag to enable walk-forward (e.g. --mc-iterations 8)",
+        default=8,
+        help="Walk-forward MC iterations per window (default: 8). Set 0 to skip walk-forward.",
+    )
+    parser.add_argument(
+        "--skip-wf",
+        action="store_true",
+        help="Skip walk-forward Monte Carlo validation (Phase 3). Saves ~10 minutes.",
     )
     parser.add_argument(
         "--skip-phases",
@@ -360,7 +368,7 @@ def main():
     setup_logging()
     timer = Timer()
     end_date = datetime.now().strftime("%Y-%m-%d")
-    run_wf = (args.mc_iterations is not None) and (3 not in skipped_phases)
+    run_wf = (not args.skip_wf) and (args.mc_iterations > 0) and (3 not in skipped_phases)
 
     print(f"\n{'='*70}")
     print(f"ULTIMATE BACKTEST — {args.strategy}")
