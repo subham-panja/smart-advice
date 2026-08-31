@@ -58,9 +58,19 @@ class PortfolioMonitor:
                 trading_cfg.get("time_stop_days", self.default_time_stop_days),
             )
             # 1. Fetch latest data (Live Price Sync)
-            data = get_historical_data(symbol, period="1mo")
-            if data.empty:
+            from utils.trading_clock import is_replay
+
+            fetch_period = "5y" if is_replay() else "1mo"
+            data = get_historical_data(symbol, period=fetch_period)
+            if data is None or data.empty:
                 raise ValueError(f"Could not fetch data for {symbol}")
+
+            if is_replay():
+                sim_dt = trading_now().replace(tzinfo=None)
+                sim_date = sim_dt.date() if hasattr(sim_dt, "date") else sim_dt
+                data = data[data.index.date <= sim_date]
+                if data.empty:
+                    raise ValueError(f"Could not find historical data for {symbol} on/before {sim_date}")
 
             current_price = round(data["Close"].iloc[-1], 2)
             entry_price = pos["entry_price"]

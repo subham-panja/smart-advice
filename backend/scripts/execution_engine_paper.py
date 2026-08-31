@@ -301,9 +301,18 @@ class ExecutionEngine:
 
             # Fetch current price and ATR
             try:
-                hist = get_historical_data(symbol, period="60d")
+                from utils.trading_clock import is_replay
+
+                fetch_p = "5y" if is_replay() else "60d"
+                hist = get_historical_data(symbol, period=fetch_p)
                 if hist is None or hist.empty or len(hist) < 14:
                     continue
+                if is_replay():
+                    sim_dt = trading_now(timezone.utc).replace(tzinfo=None)
+                    sim_date = sim_dt.date() if hasattr(sim_dt, "date") else sim_dt
+                    hist = hist[hist.index.date <= sim_date]
+                    if hist.empty or len(hist) < 14:
+                        continue
                 current_price = hist["Close"].iloc[-1]
                 atr = ta.ATR(hist["High"], hist["Low"], hist["Close"], timeperiod=14).iloc[-1]
             except Exception as e:
@@ -491,12 +500,22 @@ class ExecutionEngine:
             sma_match = re.search(r"sma\((\d+)\)", rule)
             sma_period_idx = int(sma_match.group(1)) if sma_match else 50
 
-            index_hist = get_historical_data(index_symbol, period="1y")
+            from utils.trading_clock import is_replay
+
+            fetch_period = "10y" if is_replay() else "1y"
+            index_hist = get_historical_data(index_symbol, period=fetch_period)
             if index_hist is None or len(index_hist) < 30:
                 return True  # Can't fetch — allow through
 
+            if is_replay():
+                sim_dt = trading_now().replace(tzinfo=None)
+                sim_date = sim_dt.date() if hasattr(sim_dt, "date") else sim_dt
+                index_hist = index_hist[index_hist.index.date <= sim_date]
+                if len(index_hist) < 30:
+                    return True
+
             effective_window = min(sma_period_idx, len(index_hist))
-            sma_series = index_hist["Close"].rolling(effective_window, min_periods=30).mean()
+            sma_series = index_hist["Close"].rolling(effective_window, min_periods=min(30, effective_window)).mean()
             sma_value = sma_series.iloc[-1]
             is_bull = index_hist["Close"].iloc[-1] > sma_value
 
