@@ -244,18 +244,27 @@ def check_position_exit_signal(
                     return target_cfg["name"], current_price, sell_qty
                 return f"FINAL_{target_cfg['name']}", current_price, None
 
-    # Trailing Stop update
-    trail_type = regime_params.get("trail_stop_type", "atr")
-    if trail_type == "ma" and len(df) >= regime_params.get("trail_stop_ma_period", 20):
-        ma_period = regime_params.get("trail_stop_ma_period", 20)
-        ma_value = df["Close"].rolling(ma_period).mean().iloc[-1]
-        if ma_value > pos.current_stop_loss:
-            pos.current_stop_loss = ma_value
-    elif atr > 0:
-        trail_mult = regime_params.get("trail_stop_atr_multiplier", exit_cfg.get("trail_stop_atr", 2.0))
-        new_sl = current_price - (atr * trail_mult)
-        if new_sl > pos.current_stop_loss:
-            pos.current_stop_loss = new_sl
+    # Trailing Stop update (Gated: only trail after Target 1 is hit or min gain reached)
+    trail_only_after_t1 = exit_cfg.get("trail_only_after_t1", True)
+    trail_min_gain_pct = exit_cfg.get("trail_min_gain_pct", 5.0)
+    targets_hit = getattr(pos, "targets_hit", getattr(pos, "current_target_idx", 0))
+
+    can_trail = True
+    if trail_only_after_t1 and targets_hit == 0 and gain_pct < trail_min_gain_pct:
+        can_trail = False
+
+    if can_trail:
+        trail_type = regime_params.get("trail_stop_type", "atr")
+        if trail_type == "ma" and len(df) >= regime_params.get("trail_stop_ma_period", 20):
+            ma_period = regime_params.get("trail_stop_ma_period", 20)
+            ma_value = df["Close"].rolling(ma_period).mean().iloc[-1]
+            if ma_value > pos.current_stop_loss:
+                pos.current_stop_loss = ma_value
+        elif atr > 0:
+            trail_mult = regime_params.get("trail_stop_atr_multiplier", exit_cfg.get("trail_stop_atr", 2.8))
+            new_sl = current_price - (atr * trail_mult)
+            if new_sl > pos.current_stop_loss:
+                pos.current_stop_loss = new_sl
 
     return None
 

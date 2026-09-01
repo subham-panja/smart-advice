@@ -322,20 +322,30 @@ class BacktraderStrategy(bt.Strategy, metaclass=BacktraderStrategyMeta):
                             self.close(reason=f"FINAL_{target_cfg['name']}")
                         return
 
-            # 5. Trailing Stop (regime-adaptive: ATR or MA-based)
-            trail_type = regime_params.get("trail_stop_type", "atr")
-            if trail_type == "ma" and len(close) >= regime_params.get("trail_stop_ma_period", 20):
-                ma_period = regime_params.get("trail_stop_ma_period", 20)
-                ma_value = pd.Series(close).rolling(ma_period).mean().iloc[-1]
-                if ma_value > self.current_stop_loss:
-                    logger.info(f"📉 {self.symbol}: MA{ma_period} trail SL updated to ₹{ma_value:.2f}")
-                    self.current_stop_loss = ma_value
-            elif atr > 0:
-                trail_mult = regime_params.get("trail_stop_atr_multiplier", exit_cfg.get("trail_stop_atr", 2.0))
-                new_sl = current_price - (atr * trail_mult)
-                if new_sl > self.current_stop_loss:
-                    logger.info(f"📉 {self.symbol}: Trailing SL updated {self.current_stop_loss:.2f} → {new_sl:.2f}")
-                    self.current_stop_loss = new_sl
+            # 5. Trailing Stop (Gated: only trail after Target 1 is hit or min gain reached)
+            trail_only_after_t1 = exit_cfg.get("trail_only_after_t1", True)
+            trail_min_gain_pct = exit_cfg.get("trail_min_gain_pct", 5.0)
+
+            can_trail = True
+            if trail_only_after_t1 and self.targets_hit == 0 and gain_pct < trail_min_gain_pct:
+                can_trail = False
+
+            if can_trail:
+                trail_type = regime_params.get("trail_stop_type", "atr")
+                if trail_type == "ma" and len(close) >= regime_params.get("trail_stop_ma_period", 20):
+                    ma_period = regime_params.get("trail_stop_ma_period", 20)
+                    ma_value = pd.Series(close).rolling(ma_period).mean().iloc[-1]
+                    if ma_value > self.current_stop_loss:
+                        logger.info(f"📉 {self.symbol}: MA{ma_period} trail SL updated to ₹{ma_value:.2f}")
+                        self.current_stop_loss = ma_value
+                elif atr > 0:
+                    trail_mult = regime_params.get("trail_stop_atr_multiplier", exit_cfg.get("trail_stop_atr", 2.8))
+                    new_sl = current_price - (atr * trail_mult)
+                    if new_sl > self.current_stop_loss:
+                        logger.info(
+                            f"📉 {self.symbol}: Trailing SL updated {self.current_stop_loss:.2f} → {new_sl:.2f}"
+                        )
+                        self.current_stop_loss = new_sl
 
             # 5b. RSI Divergence Exit (bearish divergence: price HH but RSI LH)
             rsi_div_cfg = exit_cfg.get("rsi_divergence_exit", {})

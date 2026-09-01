@@ -384,23 +384,36 @@ class ExecutionEngine:
                             self.execute_sell(symbol, current_price, f"FINAL_{target_cfg['name']}")
                         continue
 
-            # --- 4. Trailing Stop Update ---
-            trail_type = regime_params.get("trail_stop_type", "atr")
+            # --- 4. Trailing Stop Update (Gated: only trail after Target 1 is hit or min gain reached) ---
+            trail_only_after_t1 = exit_cfg.get("trail_only_after_t1", True)
+            trail_min_gain_pct = exit_cfg.get("trail_min_gain_pct", 5.0)
 
-            if trail_type == "ma" and len(hist) >= regime_params.get("trail_stop_ma_period", 20):
-                ma_period = regime_params.get("trail_stop_ma_period", 20)
-                ma_value = hist["Close"].rolling(ma_period).mean().iloc[-1]
-                if ma_value > current_stop_loss:
-                    logger.info(
-                        f"📉 {symbol}: MA{ma_period} trail SL updated ₹{current_stop_loss:.2f} → ₹{ma_value:.2f}"
-                    )
-                    update_position(symbol, {"current_stop_loss": round(ma_value, 2)})
-            elif atr > 0:
-                trail_mult = regime_params.get("trail_stop_atr_multiplier", exit_cfg.get("trail_stop_atr", 2.0))
-                new_sl = current_price - (atr * trail_mult)
-                if new_sl > current_stop_loss:
-                    logger.info(f"📉 {symbol}: Trailing SL updated ₹{current_stop_loss:.2f} → ₹{new_sl:.2f}")
-                    update_position(symbol, {"current_stop_loss": round(new_sl, 2)})
+            # Check gating condition
+            can_trail = True
+            if trail_only_after_t1 and targets_hit == 0 and gain_pct < trail_min_gain_pct:
+                can_trail = False
+
+            if can_trail:
+                trail_type = regime_params.get("trail_stop_type", "atr")
+
+                if trail_type == "ma" and len(hist) >= regime_params.get("trail_stop_ma_period", 20):
+                    ma_period = regime_params.get("trail_stop_ma_period", 20)
+                    ma_value = hist["Close"].rolling(ma_period).mean().iloc[-1]
+                    if ma_value > current_stop_loss:
+                        logger.info(
+                            f"📉 {symbol}: MA{ma_period} trail SL updated ₹{current_stop_loss:.2f} → ₹{ma_value:.2f}"
+                        )
+                        update_position(symbol, {"current_stop_loss": round(ma_value, 2)})
+                elif atr > 0:
+                    trail_mult = regime_params.get("trail_stop_atr_multiplier", exit_cfg.get("trail_stop_atr", 2.8))
+                    new_sl = current_price - (atr * trail_mult)
+                    if new_sl > current_stop_loss:
+                        logger.info(f"📉 {symbol}: Trailing SL updated ₹{current_stop_loss:.2f} → ₹{new_sl:.2f}")
+                        update_position(symbol, {"current_stop_loss": round(new_sl, 2)})
+            else:
+                logger.debug(
+                    f"🔒 {symbol}: Trailing SL gated (Gain: {gain_pct:.2f}%, Targets Hit: {targets_hit}). Initial SL kept."
+                )
 
         logger.info(f"Exit management complete. Checked {len(open_positions)} open positions.")
 

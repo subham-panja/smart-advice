@@ -267,6 +267,8 @@
       }
     ],
     "atr_stop_multiplier": 3.0,
+    "trail_only_after_t1": true,
+    "trail_min_gain_pct": 5.0,
     "trail_stop_atr": 4.0,
     "time_stop_bars": 40,
     "breakeven_at_target_1": false,
@@ -275,7 +277,7 @@
       "bull": {
         "t1_sell_percentage": 0.25,
         "trail_stop_type": "atr",
-        "trail_stop_atr_multiplier": 2.5,
+        "trail_stop_atr_multiplier": 3.0,
         "trail_stop_ma_period": 20,
         "time_stop_bars": 20,
         "pyramiding_allowed": true,

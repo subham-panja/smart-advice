@@ -77,10 +77,15 @@ class PortfolioMonitor:
             entry_date = pos["entry_date"]
             current_sl = pos.get("current_stop_loss", pos["stop_loss"])
 
-            # Correct entry price to opening price if position is from a previous day
+            # Correct entry price to opening price ONLY for unadjusted paper positions once
             entry_date_obj = entry_date.date() if hasattr(entry_date, "date") else entry_date
             today_date = trading_now().date()
-            if entry_date_obj < today_date:
+            if (
+                entry_date_obj < today_date
+                and not pos.get("entry_adjusted_manually", False)
+                and not pos.get("is_entry_corrected", False)
+                and pos.get("is_paper", True)
+            ):
                 entry_row = data[data.index.date == entry_date_obj]
                 if not entry_row.empty:
                     open_price = round(entry_row["Open"].iloc[0], 2)
@@ -108,6 +113,7 @@ class PortfolioMonitor:
                                 "current_stop_loss": max(adjusted_sl, current_sl),
                                 "initial_risk": new_initial_risk,
                                 "risk_pct_of_cap": round((new_initial_risk / 100000.0) * 100, 2),
+                                "is_entry_corrected": True,
                             },
                         )
                         entry_price = open_price

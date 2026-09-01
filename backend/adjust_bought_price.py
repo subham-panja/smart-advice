@@ -133,6 +133,7 @@ def adjust_single_entry(pos):
             "current_target": new_target,
             "initial_risk": new_initial_risk,
             "risk_pct_of_cap": new_risk_pct,
+            "entry_adjusted_manually": True,
             "updated_at": trading_now(timezone.utc).replace(tzinfo=None),
         }
         update_position(symbol, update_dict)
@@ -234,6 +235,7 @@ def adjust_pyramid_position(pos):
             "current_target": new_target,
             "initial_risk": new_initial_risk,
             "risk_pct_of_cap": new_risk_pct,
+            "entry_adjusted_manually": True,
             "updated_at": trading_now(timezone.utc).replace(tzinfo=None),
         }
         update_position(symbol, update_dict)
