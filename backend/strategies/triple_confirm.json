@@ -10,7 +10,7 @@
     "options_oi": false
   },
   "multitimeframe_execution": {
-    "enabled": true,
+    "enabled": false,
     "lower_timeframe": "60m",
     "shortlist_top_n": 10
   },

@@ -169,7 +169,7 @@ class SwingTradingSignalAnalyzer:
                         else:
                             mtf_ok = False
 
-                        rsi_alignment_min = mtf_cfg.get("rsi_alignment_min", 60)
+                        rsi_alignment_min = mtf_cfg.get("rsi_alignment_min", 45)
                         if np.isnan(weekly_rsi_val) or weekly_rsi_val < rsi_alignment_min:
                             mtf_ok = False
 
@@ -190,7 +190,7 @@ class SwingTradingSignalAnalyzer:
                             if sma_fast.iloc[-1] <= sma_slow.iloc[-1]:
                                 mtf_ok = False
 
-                            rsi_alignment_min = mtf_cfg.get("rsi_alignment_min", 60)
+                            rsi_alignment_min = mtf_cfg.get("rsi_alignment_min", 45)
                             weekly_rsi = ta.RSI(weekly_data["Close"], 14)
                             if weekly_rsi.iloc[-1] < rsi_alignment_min:
                                 mtf_ok = False

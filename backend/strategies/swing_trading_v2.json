@@ -12,7 +12,7 @@
     "options_oi": false
   },
   "multitimeframe_execution": {
-    "enabled": true,
+    "enabled": false,
     "lower_timeframe": "60m",
     "shortlist_top_n": 5
   },
@@ -135,7 +135,7 @@
       }
     },
     "MTF_GATE": {
-      "enabled": true,
+      "enabled": false,
       "params": {
         "weekly_trend_check": true,
         "weekly_sma_fast": 10,
