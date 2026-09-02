@@ -135,6 +135,7 @@ class RiskManager:
         elif position_sizing_method == "fixed_pct":
             # Fixed percentage of capital per trade
             fixed_pct = risk_cfg.get("risk_per_trade_pct", 2.0) / 100.0
+            effective_risk_pct = fixed_pct
             allocation = self.balance * fixed_pct
             size = int(allocation / entry)
         elif position_sizing_method == "volatility_weighted":

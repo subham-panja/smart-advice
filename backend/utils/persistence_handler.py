@@ -44,6 +44,8 @@ class PersistenceHandler:
                 "company_name": res["company_name"],
                 "technical_score": res["technical_score"],
                 "combined_score": res["combined_score"],
+                "composite_score": res.get("composite_score", res["combined_score"]),
+                "entry_atr": res.get("entry_atr", res.get("trade_plan", {}).get("entry_atr", 0.0)),
                 "recommendation_strength": res["recommendation_strength"],
                 "reason": res["reason"],
                 "buy_price": res["trade_plan"]["buy_price"],

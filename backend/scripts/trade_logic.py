@@ -36,6 +36,7 @@ class TradeLogic:
             "buy_price": round(c, 2),
             "sell_price": round(tp, 2),
             "stop_loss": round(sl, 2),
+            "entry_atr": round(atr, 2) if not pd.isna(atr) else 0.0,
             "recommendation": rec,
             "confidence": round(0.7 if rec == "BUY" else 0.4, 2),
             "risk_reward_ratio": round((tp - c) / (c - sl), 2) if c > sl else 0,

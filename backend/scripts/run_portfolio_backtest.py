@@ -160,8 +160,8 @@ class FilterTracker:
 def _prepare_index_data(strategy: dict, symbols_data: dict, period: str) -> Optional[pd.DataFrame]:
     """Pre-fetch index data for regime detection and remove from symbols_data.
 
-    Always fetches 5y of index history to ensure at least 250 index trading days
-    are available for SMA(200) market regime detection.
+    Always fetches 10y of index history to ensure at least 250 index trading days
+    are available for SMA(200) market regime detection from day 1.
     """
     regime_enabled = strategy.get("analysis_config", {}).get("market_regime_detection", False)
     if not regime_enabled:
@@ -171,7 +171,7 @@ def _prepare_index_data(strategy: dict, symbols_data: dict, period: str) -> Opti
     pop_df = symbols_data.pop(index_symbol, None)
 
     try:
-        index_data = fetch_multiple_symbols_cached({index_symbol: index_symbol}, period=period, verbose=False)
+        index_data = fetch_multiple_symbols_cached({index_symbol: index_symbol}, period="10y", verbose=False)
         res_df = index_data.get(index_symbol)
         if res_df is not None and not res_df.empty:
             return res_df
@@ -267,16 +267,17 @@ def run_portfolio_backtest(
     if not symbols:
         raise RuntimeError("No symbols to backtest")
 
-    # 3. Fetch Data
-    logger.info(f"Fetching {period} historical data for {len(symbols)} symbols...")
-    symbols_data = fetch_symbols_data(symbols, period=period, verbose=verbose)
+    # 3. Fetch Data with warmup buffer for technical indicators
+    fetch_period = "10y" if period in ("5y", "2y", "1y", "6mo", "3mo") else "max"
+    logger.info(f"Fetching historical data ({fetch_period} for indicator warmup) for {len(symbols)} symbols...")
+    symbols_data = fetch_symbols_data(symbols, period=fetch_period, verbose=verbose)
     logger.info(f"Successfully loaded data for {len(symbols_data)} symbols")
 
     if len(symbols_data) < 5:
         raise RuntimeError(f"Too few symbols with valid data: {len(symbols_data)}")
 
     # 4. Prepare index data for regime detection
-    index_data = _prepare_index_data(strategy, symbols_data, period)
+    index_data = _prepare_index_data(strategy, symbols_data, fetch_period)
 
     # 5. Pre-compute indicators using vectorbt
     start_time = datetime.now()
@@ -325,39 +326,32 @@ def run_portfolio_backtest(
     if prefilter_matrix is not None:
         engine._stock_prefilter = prefilter_matrix
 
+    index_symbol = strategy.get("market_regime_config", {}).get("index", "^NSEI")
+    stock_only = {k: v for k, v in symbols_data.items() if k != index_symbol}
+    all_sets = [set(df.index) for df in stock_only.values()]
+    union_dates = sorted(set.union(*all_sets)) if all_sets else []
+
+    # Determine simulation start date based on requested period while keeping prior data for warmup
+    if union_dates and period.endswith("y"):
+        years_back = int(period[:-1])
+        target_start = union_dates[-1] - pd.DateOffset(years=years_back)
+        sim_start = next((d for d in union_dates if d >= target_start), union_dates[0])
+    elif union_dates and period.endswith("mo"):
+        months_back = int(period[:-2])
+        target_start = union_dates[-1] - pd.DateOffset(months=months_back)
+        sim_start = next((d for d in union_dates if d >= target_start), union_dates[0])
+    else:
+        sim_start = None
+
     if track_filters:
         tracker = FilterTracker()
         tracker.scanner_total = len(symbols)
         tracker.data_valid = len(symbols_data)
         tracker.data_rejected = tracker.scanner_total - tracker.data_valid
-        sim_start = None
-        if index_data is not None:
-            index_symbol = strategy.get("market_regime_config", {}).get("index", "^NSEI")
-            stock_only = {k: v for k, v in symbols_data.items() if k != index_symbol}
-            all_sets = [set(df.index) for df in stock_only.values()]
-            union_dates = sorted(set.union(*all_sets))
-            for d in union_dates:
-                if len(index_data.loc[:d]) >= 250:
-                    sim_start = d
-                    break
         results = _run_with_filter_tracking(engine, symbols_data, strategy, tracker, index_data, sim_start)
     else:
-        sim_start = None
         if index_data is not None:
             engine._index_data_override = index_data
-            # Skip early dates where index has < 250 rows (regime detection needs warmup)
-            stock_only = {
-                k: v
-                for k, v in symbols_data.items()
-                if k != (strategy.get("market_regime_config", {}).get("index", "^NSEI"))
-            }
-            all_sets = [set(df.index) for df in stock_only.values()]
-            union_dates = sorted(set.union(*all_sets))
-            # Find the first date where index_data has 250+ rows
-            for d in union_dates:
-                if len(index_data.loc[:d]) >= 250:
-                    sim_start = d
-                    break
 
         results = engine.run(symbols_data, sim_start_date=sim_start)
 

@@ -130,10 +130,10 @@ class SwingTradingSignalAnalyzer:
 
         # Volatility Gate
         volatility_ok = True
-        if gates_cfg["VOLATILITY_GATE"]["enabled"]:
-            lb = v_cfg["lookback_days"]
-            max_pctile = v_cfg.get("max_percentile", 60)
-            min_pctile = v_cfg.get("min_percentile", 20)
+        if gates_cfg.get("VOLATILITY_GATE", {}).get("enabled", False):
+            lb = v_cfg.get("lookback_days", 100)
+            max_pctile = v_cfg.get("max_percentile", 95)
+            min_pctile = v_cfg.get("min_percentile", 5)
             if use_store:
                 atr_recent = self._get_series(symbol, df, indicator_store, "atr_14", lookback=lb)
                 atr_recent = atr_recent.dropna()

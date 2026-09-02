@@ -311,15 +311,6 @@ def fetch_historical_data_cached(
                     logger.debug(f"Cache hit for {symbol}: {len(df)} rows, recent data")
                     return df
 
-                # If cache was updated within the last 24h, it already holds all available lifetime history (e.g. IPO stocks / SMEs)
-                mtime = os.path.getmtime(cache_path)
-                is_synced_recently = (time.time() - mtime) < 86400
-                if is_synced_recently and len(df) >= 1:
-                    logger.debug(f"Using full available history for {symbol} ({len(df)} rows, cached recently)")
-                    if sync_live and not is_replay() and df.index[-1].date() < trading_now().date():
-                        df = _sync_live_price(df, yf_sym, symbol)
-                    return df
-
                 if is_recent and not has_enough_rows:
                     logger.info(
                         f"Cache for {symbol} has {len(df)} rows, need {needed} for {period}. Re-fetching longer period..."

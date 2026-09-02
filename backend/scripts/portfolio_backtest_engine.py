@@ -408,12 +408,11 @@ class PortfolioBacktestSession:
             return False
         else:
             bars_paused = self.bar_count - (self._dd_pause_start_bar or self.bar_count)
-            if dd_pct <= resume_threshold and bars_paused >= pause_days_min:
+            cooldown_bars = cfg.get("cooldown_bars", cfg.get("pause_days_min", 20))
+            if (dd_pct <= resume_threshold or bars_paused >= cooldown_bars) and bars_paused >= pause_days_min:
                 self._dd_pause_active = False
                 self._dd_pause_start_bar = None
-                logger.info(
-                    f"▶️ DRAWDOWN PAUSE lifted on {date.date()}: DD recovered to {dd_pct:.1f}%, paused {bars_paused} bars"
-                )
+                logger.info(f"▶️ DRAWDOWN PAUSE lifted on {date.date()}: DD at {dd_pct:.1f}%, paused {bars_paused} bars")
                 return False
             return True
 
@@ -497,12 +496,6 @@ class PortfolioBacktestSession:
         # --- Phase 5: Record Snapshot ---
         if self.save_snapshots:
             self._record_snapshot(date, symbols_data)
-
-    def _simulate_day_with_signals(
-        self, date: pd.Timestamp, symbols_data: Dict[str, pd.DataFrame], precomputed_signals: Dict[str, Dict]
-    ):
-        """Process a single trading day using pre-computed signals."""
-        self._simulate_day(date, symbols_data, use_precomputed_signals=True)
 
     def _process_exits(self, date: pd.Timestamp, symbols_data: Dict[str, pd.DataFrame]) -> List[PortfolioTrade]:
         """Check all open positions for SL, target, time-stop, O'Neil rules, or delisted."""
@@ -623,7 +616,14 @@ class PortfolioBacktestSession:
                 )
 
                 if swing.get("all_gates_passed") and swing.get("recommendation") == "BUY":
-                    score = swing.get("technical_score", 0.0)
+                    c_now = hist["Close"].iloc[-1]
+                    c_past = hist["Close"].iloc[-63] if len(hist) >= 63 else hist["Close"].iloc[0]
+                    mom_3m = (c_now / c_past) if c_past > 0 else 1.0
+                    h52 = hist["High"].tail(252).max() if len(hist) >= 20 else c_now
+                    prox_score = (c_now / h52) if h52 > 0 else 1.0
+                    tech_score = swing.get("technical_score", 0.0)
+                    score = (mom_3m * 2.0) + prox_score + tech_score
+
                     candidates.append(
                         {
                             "symbol": symbol,
@@ -690,6 +690,7 @@ class PortfolioBacktestSession:
         self._cached_pv = None
 
         # Create position
+        entry_atr = self._calculate_atr_from_store(symbol, date) or self._calculate_atr(df, date)
         position = PortfolioPosition(
             symbol=symbol,
             entry_date=date,
@@ -699,6 +700,7 @@ class PortfolioBacktestSession:
             current_stop_loss=risk["stop_loss"],
             bar_executed=self.bar_count,
             entry_pattern=entry_pattern,
+            entry_atr=entry_atr if entry_atr else 0.0,
         )
         self.positions[symbol] = position
 

@@ -265,6 +265,9 @@ def run_trading_cycle():
             )
         )
 
+        # Sort recommendations by multi-factor momentum leadership score (market leaders first)
+        recs.sort(key=lambda r: r.get("composite_score", r.get("combined_score", 0.0)), reverse=True)
+
         if not recs:
             logger.important(f"No new recommendations for {strat_name}")
             continue
@@ -315,6 +318,7 @@ def run_trading_cycle():
                     target=r["sell_price"],
                     recomm_id=r["_id"],
                     strategy_name=strat_name,
+                    entry_atr=r.get("entry_atr"),
                 )
                 if success:
                     executed_count += 1

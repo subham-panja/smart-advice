@@ -24,6 +24,7 @@ class PortfolioPosition:
     is_scaled_out: bool = False
     status: str = "OPEN"
     entry_pattern: str = "unknown"
+    entry_atr: float = 0.0
 
     def __post_init__(self):
         if self.current_stop_loss == 0.0:
@@ -195,8 +196,8 @@ def check_position_exit_signal(
         return f"ONEIL_TARGET_{oneil_target_pct:.0f}%", current_price, None
 
     if not (is_leader and leader_cfg.get("action") == "hold_and_trail"):
-        # 2. Time Stop
-        if bars_held >= time_stop:
+        # 2. Time Stop - only exit if trade is stagnant/losing (gain < 2.0%)
+        if bars_held >= time_stop and gain_pct < 2.0:
             return "TIME_STOP", current_price, None
 
         # 3. Stop Loss
@@ -236,7 +237,8 @@ def check_position_exit_signal(
             if pos.current_target_idx == 0:
                 target_cfg["sell_percentage"] = t1_pct
 
-            target_price = pos.entry_price + (target_cfg["atr_multiplier"] * atr)
+            pos_atr = pos.entry_atr if getattr(pos, "entry_atr", 0.0) > 0 else atr
+            target_price = pos.entry_price + (target_cfg["atr_multiplier"] * pos_atr)
             if current_price >= target_price:
                 sell_pct = target_cfg["sell_percentage"]
                 sell_qty = int(pos.quantity * sell_pct)

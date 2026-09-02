@@ -32,7 +32,7 @@ def calculate_portfolio_metrics(
 
     max_dd_pct = min((s["drawdown_from_peak_pct"] for s in daily_snapshots), default=0)
 
-    completed_trades = [t for t in trades if getattr(t, "trade_type", "") == "SELL"]
+    completed_trades = [t for t in trades if getattr(t, "trade_type", "") in ("SELL", "PARTIAL_SELL")]
     winning_trades = [t for t in completed_trades if getattr(t, "pnl", 0) > 0]
     total_trades = len(completed_trades)
     win_rate = (len(winning_trades) / total_trades * 100) if total_trades > 0 else 0
@@ -211,7 +211,7 @@ def check_market_regime(
     min_required = min(250, sma_period)
     if len(index_hist) < min_required:
         if len(index_hist) < 30:
-            raise RuntimeError(f"Insufficient index data for regime detection: {len(index_hist)} days < 30 required.")
+            return "BULL"
         logger_obj.warning(
             f"Index history {len(index_hist)} days < {min_required} for regime check; using available {len(index_hist)} bars."
         )

@@ -43,11 +43,11 @@ class StrategyLoader:
     @staticmethod
     def get_strategy_by_name(name: str) -> Dict[str, Any]:
         """Fetch a specific strategy by its name."""
-        all_strats = StrategyLoader.load_all_strategies()
+        all_strats = StrategyLoader.load_all_strategies_including_disabled()
         for s in all_strats:
-            if s["name"] == name:
+            if s.get("name") == name or s.get("name", "").lower() == name.lower():
                 return s
-        raise ValueError(f"Strategy '{name}' not found or not enabled.")
+        raise ValueError(f"Strategy '{name}' not found.")
 
     @staticmethod
     def load_all_strategies_including_disabled() -> List[Dict[str, Any]]:

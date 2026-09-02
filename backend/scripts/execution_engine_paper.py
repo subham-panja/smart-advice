@@ -67,7 +67,17 @@ class ExecutionEngine:
             logger.warning(f"Regime check for pyramiding failed: {e}")
             return True  # Default to allowing pyramiding if regime check fails
 
-    def execute_buy(self, symbol, quantity, price, stop_loss, target, recomm_id=None, strategy_name="UNKNOWN"):
+    def execute_buy(
+        self,
+        symbol,
+        quantity,
+        price,
+        stop_loss,
+        target,
+        recomm_id=None,
+        strategy_name="UNKNOWN",
+        entry_atr=None,
+    ):
         """Execute a buy order with detailed metadata and pyramiding support."""
         if self.circuit_breaker:
             logger.warning(f"🛑 CIRCUIT BREAKER: Buy order for {symbol} blocked.")
@@ -204,6 +214,7 @@ class ExecutionEngine:
                     "quantity": quantity,
                     "initial_quantity": quantity,
                     "entry_price": round(exec_price, 2),
+                    "entry_atr": round(entry_atr, 2) if entry_atr is not None else 0.0,
                     "total_investment": total_investment,
                     "allocation_pct": allocation_pct,
                     "stop_loss": adjusted_stop_loss,
@@ -344,9 +355,9 @@ class ExecutionEngine:
             if is_leader and leader_cfg.get("action") == "hold_and_trail":
                 logger.debug(f"🏆 LEADER: {symbol} | Gain: {gain_pct:.1f}% in {weeks_held:.1f}w | Holding & trailing")
             else:
-                # --- 2. Time Stop ---
+                # --- 2. Time Stop (Only exit stagnant positions if gain < 2%) ---
                 time_stop = regime_params.get("time_stop_bars", exit_cfg.get("time_stop_bars", 20))
-                if days_held >= time_stop:
+                if days_held >= time_stop and gain_pct < 2.0:
                     self.execute_sell(symbol, current_price, "TIME_STOP")
                     continue
 
@@ -358,7 +369,8 @@ class ExecutionEngine:
                         t1_pct = regime_params.get("t1_sell_percentage", target_cfg["sell_percentage"])
                         target_cfg["sell_percentage"] = t1_pct
 
-                    target_price = entry_price + (target_cfg["atr_multiplier"] * atr)
+                    entry_atr_val = pos.get("entry_atr") or atr
+                    target_price = entry_price + (target_cfg["atr_multiplier"] * entry_atr_val)
 
                     if current_price >= target_price:
                         sell_pct = target_cfg["sell_percentage"]

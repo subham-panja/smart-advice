@@ -152,7 +152,18 @@ class StockAnalyzer:
 
             # Combine & Trade Plan
             res = self._combine(res, app_config)
-            res["trade_plan"] = self.trade_logic.analyze(symbol, hist, app_config=app_config)
+            trade_plan = self.trade_logic.analyze(symbol, hist, app_config=app_config)
+            res["trade_plan"] = trade_plan
+            res["entry_atr"] = trade_plan.get("entry_atr", 0.0)
+
+            # Compute multi-factor momentum leadership composite score
+            c_now = hist["Close"].iloc[-1]
+            c_past = hist["Close"].iloc[-63] if len(hist) >= 63 else hist["Close"].iloc[0]
+            mom_3m = (c_now / c_past) if c_past > 0 else 1.0
+            h52 = hist["High"].tail(252).max() if len(hist) >= 20 else c_now
+            prox_score = (c_now / h52) if h52 > 0 else 1.0
+            tech_score = res.get("technical_score", 0.0)
+            res["composite_score"] = round((mom_3m * 2.0) + prox_score + tech_score, 4)
 
             if res["is_recommended"]:
                 rm_result = self.risk_manager.calculate_risk_params(hist, hist["Close"].iloc[-1], app_config=app_config)
