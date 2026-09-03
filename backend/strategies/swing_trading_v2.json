@@ -24,11 +24,11 @@
   },
   "rs_config": {
     "period": 55,
-    "threshold": 1.0
+    "threshold": 1.05
   },
   "market_regime_config": {
     "index": "^NSEI",
-    "bull_market_rule": "latest close > sma(200)",
+    "bull_market_rule": "sma(50) > sma(200) and latest close > sma(200)",
     "pause_buying_if_bearish": true
   },
   "options_oi_config": {
@@ -46,12 +46,12 @@
     {
       "type": "volume",
       "op": ">",
-      "value": 200000
+      "value": 250000
     },
     {
       "type": "market_cap",
       "op": ">",
-      "value": 2000.0
+      "value": 2500.0
     },
     {
       "type": "rsi",
@@ -96,8 +96,8 @@
     }
   ],
   "recommendation_thresholds": {
-    "buy_combined": 0.6,
-    "technical_minimum": 0.35,
+    "buy_combined": 0.65,
+    "technical_minimum": 0.45,
     "fundamental_minimum": 0.1,
     "min_risk_reward_ratio": 1.2,
     "backtest_period": "5y",
@@ -271,21 +271,21 @@
     "targets": [
       {
         "name": "Target 1",
-        "atr_multiplier": 3.5,
-        "sell_percentage": 0.3
+        "atr_multiplier": 2.2,
+        "sell_percentage": 0.4
       },
       {
         "name": "Target 2",
-        "atr_multiplier": 7.0,
+        "atr_multiplier": 4.5,
         "sell_percentage": 1.0
       }
     ],
-    "atr_stop_multiplier": 2.4,
-    "trail_only_after_t1": true,
-    "trail_min_gain_pct": 5.0,
-    "trail_stop_atr": 2.8,
-    "time_stop_bars": 25,
-    "breakeven_at_target_1": false,
+    "atr_stop_multiplier": 1.8,
+    "trail_only_after_t1": false,
+    "trail_min_gain_pct": 3.0,
+    "trail_stop_atr": 1.8,
+    "time_stop_bars": 15,
+    "breakeven_at_target_1": true,
     "max_daily_loss_pct": null,
     "regime_adaptive_exits": {
       "bull": {
@@ -309,20 +309,20 @@
         "stop_loss_pct": 5.0
       }
     },
-    "oneil_stop_loss_pct": 7.5,
+    "oneil_stop_loss_pct": 6.0,
     "leader_exception": {
       "enabled": true,
       "min_gain_pct": 20.0,
       "max_weeks": 8,
       "action": "hold_and_trail"
     },
-    "hard_stop_loss_pct": 7.5
+    "hard_stop_loss_pct": 6.0
   },
   "risk_management": {
-    "risk_per_trade_pct": 1.8,
-    "max_risk_per_trade_pct": 2.0,
-    "max_position_pct": 20.0,
-    "max_positions": 6,
+    "risk_per_trade_pct": 1.0,
+    "max_risk_per_trade_pct": 1.5,
+    "max_position_pct": 12.5,
+    "max_positions": 8,
     "stop_loss_type": "ATR",
     "position_sizing": "risk_based",
     "volatility_scaling": {
@@ -334,15 +334,15 @@
     },
     "drawdown_pause": {
       "enabled": true,
-      "pause_threshold_pct": 14.0,
-      "resume_threshold_pct": 9.0,
+      "pause_threshold_pct": 12.0,
+      "resume_threshold_pct": 7.0,
       "pause_days_min": 5,
       "cooldown_bars": 15
     },
     "max_sector_exposure_pct": 30.0
   },
   "pyramiding": {
-    "enabled": true,
+    "enabled": false,
     "steps": [
       {
         "name": "First Add",
@@ -361,7 +361,7 @@
   },
   "rsi_momentum_filter": {
     "enabled": true,
-    "min_rsi": 50,
+    "min_rsi": 54,
     "require_rising": false
   },
   "market_breadth_filter": {
