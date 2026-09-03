@@ -197,26 +197,8 @@ def _run_with_filter_tracking(
 
     def patched_scan(date, sd):
         candidates = original_scan(date, sd)
-        market_breadth_ok = engine._check_market_breadth(date, sd)
-        for symbol, df in sd.items():
-            if symbol in engine.positions:
-                continue
-            if date not in df.index:
-                continue
-            hist = df.loc[:date]
-            if len(hist) < 50:
-                continue
-            try:
-                swing = engine.swing_analyzer.analyze_swing_opportunity(
-                    symbol,
-                    hist,
-                    strategy_config=strategy,
-                    indicator_store=engine._indicator_store,
-                    market_breadth_ok=market_breadth_ok,
-                )
-                tracker.record_scan(symbol, swing)
-            except Exception:
-                pass
+        for cand in candidates:
+            tracker.record_scan(cand["symbol"], cand.get("swing_result", {}))
         return candidates
 
     engine._scan_for_signals = patched_scan
@@ -262,7 +244,18 @@ def run_portfolio_backtest(
 
     all_nse = get_all_nse_symbols()
     symbols = {s: s for s in all_nse} if isinstance(all_nse, list) else dict(all_nse)
-    logger.info(f"Using full NSE universe: {len(symbols)} symbols")
+
+    # Filter universe by market cap if specified in strategy config
+    mc_filter = next((f for f in strategy.get("stock_filters", []) if f.get("type") == "market_cap"), None)
+    if mc_filter and mc_filter.get("value"):
+        from scripts.data_fetcher import get_market_caps
+
+        min_mc = float(mc_filter.get("value", 0))
+        mc_dict = get_market_caps(list(symbols.keys()))
+        symbols = {s: s for s in symbols if mc_dict.get(s) and mc_dict.get(s) >= min_mc}
+        logger.info(f"Filtered universe to {len(symbols)} quality symbols with Market Cap >= ₹{min_mc:.0f} Cr")
+    else:
+        logger.info(f"Using full NSE universe: {len(symbols)} symbols")
 
     if not symbols:
         raise RuntimeError("No symbols to backtest")

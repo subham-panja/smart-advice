@@ -49,10 +49,10 @@ GST_RATE = 0.18  # 18% on all charges (brokerage + exchange + SEBI)
 BUY_SLIPPAGE = 0.0015  # 0.15% - you pay slightly more
 SELL_SLIPPAGE = 0.0015  # 0.15% - you receive slightly less
 
-# Gap risk parameters
-GAP_DOWN_PROBABILITY = 0.30  # 30% chance of gap beyond SL trigger
-GAP_MIN_SEVERITY_ATR = 0.5  # Minimum gap = 0.5x ATR beyond trigger
-GAP_MAX_SEVERITY_ATR = 2.0  # Maximum gap = 2.0x ATR beyond trigger
+# Gap risk parameters (Calibrated for liquid NSE mid/large caps >= 2000 Cr)
+GAP_DOWN_PROBABILITY = 0.12  # 12% chance of overnight gap beyond SL trigger
+GAP_MIN_SEVERITY_ATR = 0.2  # Minimum gap = 0.2x ATR beyond trigger
+GAP_MAX_SEVERITY_ATR = 0.8  # Maximum gap = 0.8x ATR beyond trigger
 CIRCUIT_BREAKER_LIMIT = 0.20  # Max gap = 20% (circuit filter)
 
 # Gap-up parameters (for target fills)

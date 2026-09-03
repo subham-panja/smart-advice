@@ -113,18 +113,14 @@ class PortfolioBacktestSession:
         # Pre-computed indicator store (optional, for vectorbt acceleration)
         self._indicator_store: Any = None
 
-        # Per-date stock prefilter (optional)
-        # Boolean DataFrame (dates x symbols) — only stocks passing this on a
-        # given date are considered for entry signals.
+        # Per-date stock prefilter Boolean DataFrame (dates x symbols)
         self._stock_prefilter: Any = None
 
     def set_indicator_store(self, store: Any) -> None:
         """Set a pre-computed indicator store for accelerated signal generation."""
         self._indicator_store = store
 
-    # ------------------------------------------------------------------
     # Public API
-    # ------------------------------------------------------------------
 
     def run(
         self,
@@ -378,9 +374,7 @@ class PortfolioBacktestSession:
         self.set_indicator_store(indicator_store)
         return self.run(symbols_data, sim_start_date, sim_end_date)
 
-    # ------------------------------------------------------------------
     # Drawdown Pause Circuit Breaker
-    # ------------------------------------------------------------------
 
     def _check_drawdown_pause(self, symbols_data: Dict[str, pd.DataFrame], date: pd.Timestamp) -> bool:
         """Check/update portfolio drawdown pause state. Returns True if entries should be paused."""
@@ -412,13 +406,12 @@ class PortfolioBacktestSession:
             if (dd_pct <= resume_threshold or bars_paused >= cooldown_bars) and bars_paused >= pause_days_min:
                 self._dd_pause_active = False
                 self._dd_pause_start_bar = None
+                self.peak_value = curr_value
                 logger.info(f"▶️ DRAWDOWN PAUSE lifted on {date.date()}: DD at {dd_pct:.1f}%, paused {bars_paused} bars")
                 return False
             return True
 
-    # ------------------------------------------------------------------
-    # Simulation Core
-    # ------------------------------------------------------------------
+    # --- Simulation Core ---
 
     def _simulate_day(
         self,
@@ -440,8 +433,11 @@ class PortfolioBacktestSession:
                 )
                 for symbol in list(self.positions.keys()):
                     df = symbols_data.get(symbol)
-                    last_price = df["Close"].iloc[-1] if df is not None else self.positions[symbol].entry_price
-                    self._close_position(symbol, date, last_price, "MAX_DAILY_LOSS")
+                    pos = self.positions[symbol]
+                    cur_price = self._close_prices.get(symbol, {}).get(date)
+                    if cur_price is None:
+                        cur_price = df.loc[date, "Close"] if (df is not None and date in df.index) else pos.entry_price
+                    self._close_position(symbol, date, cur_price, "MAX_DAILY_LOSS")
                 return
 
         # --- Phase 1: Process Exits ---
@@ -512,7 +508,12 @@ class PortfolioBacktestSession:
             df = symbols_data.get(symbol)
             if df is None or date not in df.index:
                 if self.force_close_delisted:
-                    last_price = df["Close"].iloc[-1] if df is not None else pos.entry_price
+                    hist_up_to_date = df.loc[:date] if df is not None else None
+                    last_price = (
+                        hist_up_to_date["Close"].iloc[-1]
+                        if (hist_up_to_date is not None and not hist_up_to_date.empty)
+                        else pos.entry_price
+                    )
                     trade = self._close_position(symbol, date, last_price, "DELISTED")
                     if trade:
                         exits.append(trade)
@@ -544,6 +545,9 @@ class PortfolioBacktestSession:
                     if trade:
                         exits.append(trade)
                     pos.quantity -= sell_qty_override
+                    if pos.current_target_idx == 0 and exit_cfg.get("breakeven_at_target_1", False):
+                        pos.current_stop_loss = max(pos.current_stop_loss, pos.entry_price)
+                        logger.info(f"🛡️ BREAKEVEN STOP: Moved stop loss on {symbol} to entry ₹{pos.entry_price:.2f}")
                     pos.current_target_idx += 1
                     if pos.quantity <= 0:
                         symbols_to_remove.append(symbol)
@@ -555,8 +559,6 @@ class PortfolioBacktestSession:
         for sym in symbols_to_remove:
             if sym in self.positions:
                 del self.positions[sym]
-
-        return exits
 
         return exits
 
@@ -902,9 +904,7 @@ class PortfolioBacktestSession:
             last_price = df["Close"].iloc[-1] if df is not None else pos.entry_price
             self._close_position(symbol, self.end_date, last_price, "SIMULATION_END")
 
-    # ------------------------------------------------------------------
     # Helpers
-    # ------------------------------------------------------------------
 
     def _check_market_breadth(self, date: pd.Timestamp, symbols_data: Dict[str, pd.DataFrame]) -> bool:
         """Calculate market breadth across the stock universe."""

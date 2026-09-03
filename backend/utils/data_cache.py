@@ -304,7 +304,8 @@ def fetch_historical_data_cached(
                 is_recent = _is_cache_recent(df, max_age_days=1)
                 has_enough_rows = len(df) >= needed if period != "max" else is_recent
 
-                if is_recent and has_enough_rows:
+                # If cache is recent and non-empty, use existing cache directly
+                if is_recent and (has_enough_rows or len(df) >= 1):
                     # Sync live price for current day if cache row lacks today's close and explicitly requested
                     if sync_live and not is_replay() and df.index[-1].date() < trading_now().date():
                         df = _sync_live_price(df, yf_sym, symbol)
