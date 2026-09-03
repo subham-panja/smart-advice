@@ -196,8 +196,8 @@ def check_position_exit_signal(
         return f"ONEIL_TARGET_{oneil_target_pct:.0f}%", current_price, None
 
     if not (is_leader and leader_cfg.get("action") == "hold_and_trail"):
-        # 2. Time Stop - only exit if trade is stagnant/losing (gain < 2.0%)
-        if bars_held >= time_stop and gain_pct < 2.0:
+        # 2. Time Stop - only exit if trade is stagnant/losing (fails to launch, never hit T1)
+        if bars_held >= time_stop and getattr(pos, "current_target_idx", 0) == 0 and gain_pct < 2.0:
             return "TIME_STOP", current_price, None
 
         # 3. Stop Loss
@@ -367,7 +367,8 @@ def evaluate_pyramid_step(
 
     current_position_value = pos.quantity * current_price
     new_position_value = current_position_value + cost
-    if (new_position_value / portfolio_value) > max_position_pct:
+    max_pyramid_cap = max_position_pct * pyramid_cfg.get("max_position_multiplier", 1.6)
+    if (new_position_value / portfolio_value) > max_pyramid_cap:
         return None
 
     return add_qty, cost, total_cost

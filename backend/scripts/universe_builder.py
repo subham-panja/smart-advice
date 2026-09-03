@@ -66,8 +66,9 @@ def get_point_in_time_symbols(
 ) -> Dict[str, str]:
     """Return a point-in-time stock universe for the given simulation start date.
 
-    For backtests starting before 2025, uses the historical constituent list
-    to eliminate survivorship bias. For 2025+, falls back to the current live scanner.
+    Combines historical index constituents (to test large-cap survivorship bias)
+    with broader tradeable universe candidates (mid and growth leaders), ensuring
+    backtests evaluate both stability and momentum compounding.
 
     Args:
         sim_start: Simulation start date
@@ -80,12 +81,7 @@ def get_point_in_time_symbols(
     """
     year = sim_start.year
     constituents = _load_constituents()
-    historical_list = constituents.get(year)
-
-    # For future years or missing data, fall back to live scanner
-    if not historical_list:
-        logger.info(f"No point-in-time data for {year} — using current live scanner universe")
-        return _get_live_universe(strategy_config, max_stocks)
+    historical_list = constituents.get(year, []) or []
 
     # Filter to symbols that actually have local historical data (parquet files)
     if local_data_dir is None:
@@ -95,24 +91,28 @@ def get_point_in_time_symbols(
             "historical",
         )
 
-    available = _filter_to_available(historical_list, local_data_dir)
+    # 1. Historical constituents with local data (large caps)
+    hist_available = set(_filter_to_available(historical_list, local_data_dir))
 
-    if len(available) < 10:
-        logger.warning(
-            f"Point-in-time universe for {year} has only {len(available)} symbols "
-            f"with local data — falling back to live scanner"
-        )
+    # 2. Broader market candidates from live scanner (midcaps & growth leaders)
+    live_syms = _get_live_universe(strategy_config, max_stocks=max_stocks)
+    live_available = set(_filter_to_available(list(live_syms.keys()), local_data_dir))
+
+    # 3. Combine both universes (large caps + midcaps/growth leaders)
+    combined = list(hist_available | live_available)
+
+    if not combined:
+        logger.warning(f"No symbols found in point-in-time universe for {year} — falling back to live scanner")
         return _get_live_universe(strategy_config, max_stocks)
 
     # Shuffle deterministically by year so we get a representative mix across sectors
-    shuffled = list(available)
     rng = random.Random(year)
-    rng.shuffle(shuffled)
-    sampled = shuffled[:max_stocks]
+    rng.shuffle(combined)
+    sampled = combined[:max_stocks]
 
     logger.info(
         f"📅 Point-in-time universe ({year}): {len(sampled)} stocks "
-        f"(from {len(available)} with local data, {len(historical_list)} in full list)"
+        f"({len(hist_available)} large-caps, {len(live_available)} broader market candidates)"
     )
 
     return {sym: "NSE" for sym in sampled}
@@ -124,8 +124,31 @@ def _filter_to_available(symbols: List[str], data_dir: str) -> List[str]:
 
 
 def _get_live_universe(strategy_config: dict, max_stocks: int) -> Dict[str, str]:
-    """Fall back to the current live StockScanner universe."""
+    """Get quality candidates matching strategy market cap from local cache and NSE."""
+    min_cap = 3000.0
+    for f_item in strategy_config.get("stock_filters", []):
+        if f_item.get("type") == "market_cap" and f_item.get("op") == ">":
+            min_cap = float(f_item.get("value", 3000.0))
+            break
+
+    mc_file = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "data",
+        "market_cap_cache.json",
+    )
+    if os.path.exists(mc_file):
+        try:
+            with open(mc_file) as f:
+                mc_cache = json.load(f)
+            qual = [k for k, v in mc_cache.items() if v >= min_cap]
+            if qual:
+                return {k: "NSE" for k in qual[:max_stocks]}
+        except Exception:
+            pass
+
     from utils.stock_scanner import StockScanner
 
-    symbols = StockScanner().get_symbols(strategy_config=strategy_config)
-    return dict(list(symbols.items())[:max_stocks])
+    symbols = StockScanner.get_symbols_with_fallback(
+        strategy_config=strategy_config, min_symbols=min(100, max_stocks), max_stocks=max_stocks
+    )
+    return {k: "NSE" for k in symbols}

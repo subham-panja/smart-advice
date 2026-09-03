@@ -313,7 +313,7 @@ class PortfolioBacktestSession:
         _t0 = _time.time()
         for i, date in enumerate(common_dates):
             self.bar_count = i
-            self._simulate_day_with_signals(date, symbols_data, precomputed_signals)
+            self._simulate_day(date, symbols_data, use_precomputed_signals=True)
             if verbose and ((i + 1) % 250 == 0 or i == total_days - 1):
                 pct = (i + 1) / total_days * 100
                 elapsed = _time.time() - _t0
@@ -463,18 +463,13 @@ class PortfolioBacktestSession:
         candidates = []
         if not entries_paused:
             if use_precomputed_signals:
-                date_key = date.tz_localize(None) if date.tzinfo is not None else date
-                date_signals = self._signals_by_date.get(date_key, {})
-                for symbol, sig_data in date_signals.items():
-                    if symbol in self.positions:
-                        continue
-                    candidates.append(
-                        {
-                            "symbol": symbol,
-                            "score": sig_data["score"],
-                            "swing_result": sig_data["swing_result"],
-                        }
-                    )
+                if self._check_market_breadth(date, symbols_data):
+                    date_key = date.tz_localize(None) if date.tzinfo is not None else date
+                    for symbol, sig_data in self._signals_by_date.get(date_key, {}).items():
+                        if symbol not in self.positions:
+                            candidates.append(
+                                {"symbol": symbol, "score": sig_data["score"], "swing_result": sig_data["swing_result"]}
+                            )
             else:
                 candidates = self._scan_for_signals(date, symbols_data)
 
@@ -651,9 +646,9 @@ class PortfolioBacktestSession:
         # Apply slippage: pay slightly more than close on buys
         exec_price = close_price * (1 + self.slippage)
 
-        # Calculate risk params using initial capital (not inflated portfolio value)
+        # Size positions using current portfolio value (true geometric compounding)
         portfolio_value = self._current_portfolio_value(symbols_data, date)
-        self.risk_manager.balance = self.initial_capital
+        self.risk_manager.balance = max(self.initial_capital * 0.5, portfolio_value)
 
         idx = self._date_idx.get(symbol, {}).get(date)
         if idx is None:
@@ -776,6 +771,8 @@ class PortfolioBacktestSession:
             pos.quantity += add_qty
             pos.adds_count += 1
             pos.last_add_price = current_price
+            pos.current_stop_loss = max(pos.current_stop_loss, pos.entry_price)
+            logger.info(f"🛡️ PYRAMID STOP: Moved stop loss on {symbol} to entry ₹{pos.entry_price:.2f}")
 
             trade = PortfolioTrade(
                 symbol=symbol,

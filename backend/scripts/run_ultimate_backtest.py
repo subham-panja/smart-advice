@@ -146,7 +146,7 @@ def run_historical_with_realistic_costs(
     from scripts.universe_builder import get_point_in_time_symbols
 
     pit_start = (pd.Timestamp(end_date) - pd.DateOffset(months=months)).tz_localize(None)
-    symbols = get_point_in_time_symbols(pit_start, strategy, max_stocks=200)
+    symbols = get_point_in_time_symbols(pit_start, strategy, max_stocks=1000)
     print(f"  → Point-in-time universe ({pit_start.year}): {len(symbols)} stocks")
 
     # If we got the fallback live universe, also apply market cap pre-filter
@@ -228,13 +228,6 @@ def run_historical_with_realistic_costs(
     n_pass = int(stock_prefilter.iloc[-1].sum()) if len(stock_prefilter) > 0 else 0
     print(f"  → Stock prefilter: {n_pass} stocks pass on latest date")
 
-    # Pre-compute ALL signals ONCE (Phase 1 optimization: signal pre-computation)
-    print("  → Pre-computing signals for all eligible symbols...")
-    from scripts.run_portfolio_backtest import precompute_full_signals
-
-    precomputed_signals = precompute_full_signals(symbols_data, strategy, indicators, stock_prefilter, num_workers=4)
-    print(f"  → Signals pre-computed: {len(precomputed_signals)} symbols with buy signals")
-
     # Create simulation engine with vectorbt store and index data override
     engine = PortfolioBacktestSession(strategy_config=strategy)
     engine.set_indicator_store(store)
@@ -253,13 +246,12 @@ def run_historical_with_realistic_costs(
         num_days = len([d for d in first_idx if sim_start <= d <= sim_end])
     else:
         num_days = "?"
-    print(f"\n▶ Running day-by-day simulation ({num_days} trading days) with pre-computed signals...")
-    results = engine.run_with_signals(
+    print(f"\n▶ Running day-by-day simulation ({num_days} trading days)...")
+    results = engine.run(
         symbols_data,
-        precomputed_signals,
         sim_start_date=sim_start,
-        sim_end_date=sim_end,
     )
+    precomputed_signals = None
     print(f"  → Simulation done ({time.time() - t_phase:.1f}s total for Phase 1)")
 
     # Print summary
