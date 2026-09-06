@@ -309,19 +309,6 @@ def run_trading_cycle():
             )
             continue
 
-        # 3. Dynamic Cash Deployment: When holding <= 2 positions, park unallocated cash in liquid ETF yields (6% floor)
-        cash_cfg = strategy.get("cash_deployment", {})
-        if cash_cfg.get("enabled", True) and remaining_capital > 0:
-            idle_thresh = cash_cfg.get("idle_threshold_positions", 2)
-            if len(open_positions) <= idle_thresh:
-                ann_yield = cash_cfg.get("annual_liquid_yield_pct", 6.0)
-                etf_sym = cash_cfg.get("liquid_etf_symbol", "LIQUIDBEES")
-                daily_yield = remaining_capital * (ann_yield / 100.0 / 252.0)
-                logger.important(
-                    f"🏦 DYNAMIC CASH DEPLOYMENT: {len(open_positions)} pos <= {idle_thresh}. "
-                    f"₹{remaining_capital:,.2f} parked in {etf_sym} ({ann_yield:.1f}% risk-free floor, +₹{daily_yield:.2f}/day)"
-                )
-
         slots_left = max_pos - len(open_positions)
         executed_count = 0
 
@@ -485,9 +472,8 @@ def _build_and_send_telegram_summary(open_positions, total_executed, initial_cap
         f"━━━━━━━━━━━━━━━━━━━━\n"
         f"💵 Initial Capital: ₹{initial_cap:,.2f}\n"
         f"📈 Market Value: ₹{total_mkt_val:,.2f}\n"
-        f"🏦 Cash Balance: ₹{cash_left:,.2f}"
-        + (" <i>(Yielding 6.0% p.a. via LIQUIDBEES)</i>\n" if len(open_positions) <= 2 and cash_left > 0 else "\n")
-        + f"💰 Net Equity: ₹{total_equity:,.2f}\n"
+        f"🏦 Cash Balance: ₹{cash_left:,.2f}\n"
+        f"💰 Net Equity: ₹{total_equity:,.2f}\n"
         f"📊 Total PnL: ₹{total_pnl_val:+,.2f} ({overall_pnl_pct:+.2f}%)\n\n"
         f"💰 Trades Executed: {total_executed}"
     )

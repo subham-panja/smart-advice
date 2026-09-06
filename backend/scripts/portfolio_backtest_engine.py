@@ -478,15 +478,6 @@ class PortfolioBacktestSession:
         # --- Phase 4: Pyramiding ---
         self._process_pyramiding(date, symbols_data)
 
-        # --- Phase 4b: Dynamic Cash Deployment (Liquid ETF Yield on unallocated cash) ---
-        cash_cfg = self.strategy_config.get("cash_deployment", {})
-        if cash_cfg.get("enabled", True) and self.cash > 0:
-            idle_thresh = cash_cfg.get("idle_threshold_positions", 2)
-            regime = self._regime_status.lower() if self._regime_status != "UNKNOWN" else "bull"
-            if len(self.positions) <= idle_thresh or regime == "bear":
-                annual_yield = cash_cfg.get("annual_liquid_yield_pct", 6.0) / 100.0
-                self.cash += self.cash * (annual_yield / 252.0)
-
         # --- Phase 5: Record Snapshot ---
         if self.save_snapshots:
             self._record_snapshot(date, symbols_data)

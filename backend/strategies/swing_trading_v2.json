@@ -368,13 +368,5 @@
     "sma_period": 20,
     "min_advance_pct": 40.0,
     "description": "Block new buys when <40% of stocks are above 20-SMA (broad market weakness)"
-  },
-  "cash_deployment": {
-    "enabled": true,
-    "idle_threshold_positions": 2,
-    "annual_liquid_yield_pct": 6.0,
-    "liquid_etf_symbol": "LIQUIDBEES",
-    "inverse_index_hedge_enabled": false,
-    "description": "Park unallocated capital in liquid ETF yields (6% annual floor) when holding <= 2 positions or during bear regimes"
   }
 }
