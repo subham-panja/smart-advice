@@ -595,7 +595,7 @@ def run_walk_forward_backtest(
         for future in as_completed(futures):
             result = future.result()
             completed_count += 1
-            if result["status"] == "success":
+            if result and result.get("status") in ("success", "completed"):
                 all_cagrs.append(result["cagr"])
                 all_results.append(result)
 
@@ -633,11 +633,11 @@ def run_walk_forward_backtest(
     if not all_results:
         return {"status": "failed", "reason": "No successful runs"}
 
-    cagrs = [r["cagr"] for r in all_results]
-    win_rates = [r["win_rate"] for r in all_results]
-    sharpe_ratios = [r["sharpe"] for r in all_results]
-    max_drawdowns = [r["max_drawdown"] for r in all_results]
-    profit_factors = [r["profit_factor"] for r in all_results]
+    cagrs = [r.get("cagr", 0.0) for r in all_results]
+    win_rates = [r.get("win_rate", 0.0) for r in all_results]
+    sharpe_ratios = [r.get("sharpe", r.get("sharpe_ratio", 0.0)) for r in all_results]
+    max_drawdowns = [r.get("max_drawdown", r.get("max_drawdown_pct", 0.0)) for r in all_results]
+    profit_factors = [r.get("profit_factor", 0.0) for r in all_results]
 
     positive_cagr_pct = sum(1 for c in cagrs if c > 0) / len(cagrs) * 100
 

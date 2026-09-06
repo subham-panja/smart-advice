@@ -59,6 +59,8 @@ class ExecutionEngine:
             result = detector.get_simple_regime_check(regime_config)
             # In bear regime, check if pyramiding is allowed
             regime_adaptive = self.strategy_config.get("exit_rules", {}).get("regime_adaptive_exits", {})
+            if not regime_adaptive.get("enabled", True):
+                return True
             regime = result.get("status", "BULL").lower()
             if regime in regime_adaptive:
                 return regime_adaptive[regime].get("pyramiding_allowed", True)
@@ -286,9 +288,14 @@ class ExecutionEngine:
             logger.warning("No exit targets configured — skipping exit management.")
             return
 
-        # Determine current regime
-        regime = self._detect_regime()
-        regime_params = regime_adaptive.get(regime, {})
+        # Determine current regime if regime_adaptive_exits is enabled
+        regime_enabled = regime_adaptive.get("enabled", True)
+        if regime_enabled:
+            regime = self._detect_regime()
+            regime_params = regime_adaptive.get(regime, {})
+        else:
+            regime = "bull"
+            regime_params = {}
 
         import talib as ta
 
@@ -332,8 +339,16 @@ class ExecutionEngine:
 
             gain_pct = (current_price - entry_price) / entry_price * 100
 
+            # --- -1. Hard Stop Loss Check (Emergency percentage floor) ---
+            hard_stop_pct = exit_cfg.get("hard_stop_loss_pct", None)
+            if hard_stop_pct is not None and hard_stop_pct > 0:
+                hard_stop_price = entry_price * (1 - hard_stop_pct / 100.0)
+                if current_price <= hard_stop_price:
+                    self.execute_sell(symbol, current_price, f"HARD_STOP_{hard_stop_pct}%")
+                    continue
+
             # --- 0. O'Neil Fixed Stop Loss ---
-            stop_loss_pct = regime_params.get("stop_loss_pct", None)
+            stop_loss_pct = regime_params.get("stop_loss_pct", exit_cfg.get("oneil_stop_loss_pct", None))
             if stop_loss_pct:
                 oneil_stop = entry_price * (1 - stop_loss_pct / 100.0)
                 if current_price <= oneil_stop:
@@ -341,7 +356,7 @@ class ExecutionEngine:
                     continue
 
             # --- 1. O'Neil Profit Target + Leader Exception ---
-            oneil_target_pct = regime_params.get("oneil_target_pct", 25.0)
+            oneil_target_pct = regime_params.get("oneil_target_pct", exit_cfg.get("oneil_target_pct", 25.0))
             is_leader = False
             if leader_cfg.get("enabled", False) and gain_pct >= leader_cfg.get("min_gain_pct", 20.0):
                 if weeks_held <= leader_cfg.get("max_weeks", 8):
@@ -355,9 +370,9 @@ class ExecutionEngine:
             if is_leader and leader_cfg.get("action") == "hold_and_trail":
                 logger.debug(f"🏆 LEADER: {symbol} | Gain: {gain_pct:.1f}% in {weeks_held:.1f}w | Holding & trailing")
             else:
-                # --- 2. Time Stop (Only exit stagnant positions if gain < 2%) ---
+                # --- 2. Time Stop (Only exit stagnant positions if gain < 2% and no targets hit) ---
                 time_stop = regime_params.get("time_stop_bars", exit_cfg.get("time_stop_bars", 20))
-                if days_held >= time_stop and gain_pct < 2.0:
+                if days_held >= time_stop and targets_hit == 0 and gain_pct < 2.0:
                     self.execute_sell(symbol, current_price, "TIME_STOP")
                     continue
 

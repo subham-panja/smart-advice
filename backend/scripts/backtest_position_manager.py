@@ -173,7 +173,14 @@ def check_position_exit_signal(
     """
     t1_pct = regime_params.get("t1_sell_percentage", exit_cfg.get("targets", [{}])[0].get("sell_percentage", 1.0))
     time_stop = regime_params.get("time_stop_bars", exit_cfg.get("time_stop_bars", 20))
-    stop_loss_pct = regime_params.get("stop_loss_pct", None)
+    stop_loss_pct = regime_params.get("stop_loss_pct", exit_cfg.get("oneil_stop_loss_pct", None))
+
+    # -1. Hard Stop Loss Check (Emergency percentage floor)
+    hard_stop_pct = exit_cfg.get("hard_stop_loss_pct", None)
+    if hard_stop_pct is not None and hard_stop_pct > 0:
+        hard_stop_price = pos.entry_price * (1 - hard_stop_pct / 100.0)
+        if current_price <= hard_stop_price:
+            return f"HARD_STOP_{hard_stop_pct}%", current_price, None
 
     # 0. O'Neil Fixed Stop Loss
     if stop_loss_pct:
@@ -182,7 +189,7 @@ def check_position_exit_signal(
             return f"ONEIL_STOP_{stop_loss_pct}%", current_price, None
 
     # 1. O'Neil Absolute Profit Target
-    oneil_target_pct = regime_params.get("oneil_target_pct", 25.0)
+    oneil_target_pct = regime_params.get("oneil_target_pct", exit_cfg.get("oneil_target_pct", 25.0))
     gain_pct = (current_price - pos.entry_price) / pos.entry_price * 100
     leader_cfg = exit_cfg.get("leader_exception", {})
     weeks_held = days_held / 7.0

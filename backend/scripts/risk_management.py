@@ -106,6 +106,12 @@ class RiskManager:
             sl_multiplier = exit_rules["atr_stop_multiplier"]
             sl = entry - (atr * sl_multiplier)
 
+        # Enforce hard stop loss ceiling if configured
+        hard_stop_pct = exit_rules.get("hard_stop_loss_pct", None)
+        if hard_stop_pct is not None and hard_stop_pct > 0:
+            hard_stop_floor = entry * (1 - hard_stop_pct / 100.0)
+            sl = max(sl, hard_stop_floor)
+
         risk_per_share = entry - sl
 
         if risk_per_share <= 0:

@@ -375,7 +375,7 @@ def run_param_sensitivity(
                     symbols_data, precomputed_signals, sim_start_date=sim_start, sim_end_date=sim_end, verbose=False
                 )
             else:
-                result = engine.run(symbols_data, sim_start_date=sim_start, sim_end_date=sim_end, verbose=False)
+                result = engine.run(symbols_data, sim_start_date=sim_start, sim_end_date=sim_end)
             test_cagr = result["cagr"]
 
             # Check if within tolerance
@@ -431,7 +431,7 @@ def _apply_param_change(strategy: dict, param_name: str, value: Any):
         # Sync regime-adaptive trailing stops proportionally
         regime_exits = s.get("exit_rules", {}).get("regime_adaptive_exits", {})
         for _regime, cfg in regime_exits.items():
-            if "trail_stop_atr_multiplier" in cfg:
+            if isinstance(cfg, dict) and "trail_stop_atr_multiplier" in cfg:
                 cfg["trail_stop_atr_multiplier"] = round(v * 0.9, 2)  # 10% tighter than initial
 
     param_map = {

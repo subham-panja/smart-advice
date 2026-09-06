@@ -51,12 +51,26 @@ class PortfolioMonitor:
 
             exit_rules = strategy.get("exit_rules", {})
             trading_cfg = strategy.get("trading_config", {})
-            # Canonical source: exit_rules.time_stop_bars (matches backtest).
-            # Fallback: trading_config.time_stop_days (legacy). Then default 15.
-            time_stop_days = exit_rules.get(
-                "time_stop_bars",
-                trading_cfg.get("time_stop_days", self.default_time_stop_days),
-            )
+            regime_adaptive = exit_rules.get("regime_adaptive_exits", {})
+            regime_enabled = regime_adaptive.get("enabled", True)
+            if regime_enabled:
+                try:
+                    from scripts.market_regime_detection import MarketRegimeDetection
+
+                    detector = MarketRegimeDetection()
+                    reg_res = detector.get_simple_regime_check(strategy.get("market_regime_config", {}))
+                    regime = reg_res.get("status", "BULL").lower()
+                except Exception:
+                    regime = "bull"
+                time_stop_days = regime_adaptive.get(regime, {}).get(
+                    "time_stop_bars",
+                    exit_rules.get("time_stop_bars", trading_cfg.get("time_stop_days", self.default_time_stop_days)),
+                )
+            else:
+                time_stop_days = exit_rules.get(
+                    "time_stop_bars",
+                    trading_cfg.get("time_stop_days", self.default_time_stop_days),
+                )
             # 1. Fetch latest data (Live Price Sync)
             from utils.trading_clock import is_replay
 
@@ -126,7 +140,16 @@ class PortfolioMonitor:
 
             engine = ExecutionEngine(strategy_config=strategy)
 
-            # 2. Check for Hard Exit: Stop Loss Hit
+            # 2a. Check for Hard Exit: Hard Stop Loss % Hit (Emergency floor)
+            hard_stop_pct = exit_rules.get("hard_stop_loss_pct", None)
+            if hard_stop_pct is not None and hard_stop_pct > 0:
+                hard_stop_price = entry_price * (1 - hard_stop_pct / 100.0)
+                if current_price <= hard_stop_price:
+                    logger.info(f"🛑 HARD STOP LOSS HIT: {symbol} at ₹{current_price:.2f} (<= ₹{hard_stop_price:.2f})")
+                    engine.execute_sell(symbol, current_price, f"HARD_STOP_{hard_stop_pct}%")
+                    return
+
+            # 2b. Check for Hard Exit: Dynamic Stop Loss Hit
             if current_price <= current_sl:
                 logger.info(f"🛑 STOP LOSS HIT: {symbol} at ₹{current_price:.2f}")
                 engine.execute_sell(symbol, current_price, "STOP_LOSS_HIT")
@@ -142,7 +165,8 @@ class PortfolioMonitor:
 
             if current_target_idx < len(targets):
                 target_obj = targets[current_target_idx]
-                target_price = entry_price + (target_obj["atr_multiplier"] * atr)
+                entry_atr_val = pos.get("entry_atr") or atr
+                target_price = entry_price + (target_obj["atr_multiplier"] * entry_atr_val)
 
                 if current_price >= target_price:
                     sell_pct = target_obj["sell_percentage"]
@@ -176,9 +200,9 @@ class PortfolioMonitor:
 
             # 7. Trailing SL is managed exclusively by ExecutionEngine.manage_exits() (Phase 1b)
 
-            # 8. Time Stop (Sideways)
+            # 8. Time Stop (Sideways - only exit if trade is stagnant/losing and never hit T1)
             days_held = max(0, (trading_now(timezone.utc).replace(tzinfo=None) - entry_date).days)
-            if days_held >= time_stop_days:
+            if days_held >= time_stop_days and current_target_idx == 0:
                 pnl_pct = ((current_price - entry_price) / entry_price) * 100
                 if pnl_pct < 2.0:
                     logger.info(f"⏳ TIME STOP: {symbol} held for {days_held} days. Exit due to stagnation.")

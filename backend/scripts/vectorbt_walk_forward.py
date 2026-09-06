@@ -117,15 +117,15 @@ def aggregate_walk_forward_results(
     if not all_results:
         return {"status": "failed", "reason": "No successful runs"}
 
-    successful = [r for r in all_results if r.get("status") == "success"]
+    successful = [r for r in all_results if r.get("status") in ("success", "completed")]
     if not successful:
         return {"status": "failed", "reason": "No successful runs", "errors": all_results}
 
-    cagrs = [r["cagr"] for r in successful]
-    win_rates = [r["win_rate"] for r in successful]
-    sharpe_ratios = [r["sharpe"] for r in successful]
-    max_drawdowns = [r["max_drawdown"] for r in successful]
-    profit_factors = [r["profit_factor"] for r in successful]
+    cagrs = [r.get("cagr", 0.0) for r in successful]
+    win_rates = [r.get("win_rate", 0.0) for r in successful]
+    sharpe_ratios = [r.get("sharpe", r.get("sharpe_ratio", 0.0)) for r in successful]
+    max_drawdowns = [r.get("max_drawdown", r.get("max_drawdown_pct", 0.0)) for r in successful]
+    profit_factors = [r.get("profit_factor", 0.0) for r in successful]
 
     def mean(lst):
         return sum(lst) / len(lst)

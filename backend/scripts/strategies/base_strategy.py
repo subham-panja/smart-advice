@@ -191,6 +191,8 @@ class BacktraderStrategy(bt.Strategy, metaclass=BacktraderStrategyMeta):
         """Get regime-adaptive exit parameters for current regime."""
         exit_cfg = self.strat_params.get("exit_rules", {})
         regime_adaptive = exit_cfg.get("regime_adaptive_exits", {})
+        if not regime_adaptive.get("enabled", True):
+            return {}
         regime_key = self._regime_status.lower()
         return regime_adaptive.get(regime_key, {})
 
@@ -263,8 +265,16 @@ class BacktraderStrategy(bt.Strategy, metaclass=BacktraderStrategyMeta):
                 else:
                     self._is_leader = False  # No longer qualifies as leader
 
+            # -1. Hard Stop Loss Check (Emergency percentage floor)
+            hard_stop_pct = exit_cfg.get("hard_stop_loss_pct", None)
+            if hard_stop_pct is not None and hard_stop_pct > 0:
+                hard_stop_price = self.position.price * (1 - hard_stop_pct / 100.0)
+                if current_price <= hard_stop_price:
+                    self.close(reason=f"HARD_STOP_{hard_stop_pct}%")
+                    return
+
             # 0. O'Neil Fixed Stop Loss (regime-adaptive: 8% bull / 5% bear)
-            stop_loss_pct = regime_params.get("stop_loss_pct", None)
+            stop_loss_pct = regime_params.get("stop_loss_pct", exit_cfg.get("oneil_stop_loss_pct", None))
             if stop_loss_pct:
                 oneil_stop = self.position.price * (1 - stop_loss_pct / 100.0)
                 if current_price <= oneil_stop:
@@ -272,7 +282,7 @@ class BacktraderStrategy(bt.Strategy, metaclass=BacktraderStrategyMeta):
                     return
 
             # 1. O'Neil Profit Target + Leader Exception
-            oneil_target_pct = regime_params.get("oneil_target_pct", 25.0)
+            oneil_target_pct = regime_params.get("oneil_target_pct", exit_cfg.get("oneil_target_pct", 25.0))
             if gain_pct >= oneil_target_pct and not self._is_leader:
                 self.close(reason=f"ONEIL_TARGET_{oneil_target_pct:.0f}%")
                 return

@@ -44,7 +44,7 @@ def compute_confidence_score(
     weights = {}
 
     # 1. Walk-Forward Robustness (20%)
-    if walk_forward_results and walk_forward_results.get("status") == "completed":
+    if walk_forward_results and walk_forward_results.get("status") in ("completed", "success"):
         robustness = walk_forward_results.get("robustness_score", 0)
         positive_cagr_pct = walk_forward_results.get("positive_cagr_pct", 0)
         # Score: average of robustness and % positive CAGR, normalized to 0-100

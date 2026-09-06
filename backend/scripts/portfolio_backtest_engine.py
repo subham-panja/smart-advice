@@ -9,6 +9,12 @@ import pandas as pd
 import talib as ta
 
 from config import PORTFOLIO_BACKTEST_CONFIG
+from scripts.backtest_metrics import (
+    calculate_portfolio_metrics,
+    check_market_breadth,
+    check_market_regime,
+    record_daily_snapshot,
+)
 from scripts.backtest_position_manager import (
     PortfolioPosition,
     PortfolioTrade,
@@ -128,6 +134,8 @@ class PortfolioBacktestSession:
         sim_start_date: Optional[pd.Timestamp] = None,
         sim_end_date: Optional[pd.Timestamp] = None,
         excluded_date_ranges: Optional[List[tuple]] = None,
+        verbose: bool = False,
+        **kwargs,
     ) -> Dict[str, Any]:
         """Run the portfolio backtest across all provided symbols.
 
@@ -286,6 +294,8 @@ class PortfolioBacktestSession:
 
         self._signals_by_date = {}
         for symbol, date_signals in precomputed_signals.items():
+            if symbol not in symbols_data:
+                continue
             for dt, sig_data in date_signals.items():
                 dt_key = dt.tz_localize(None) if hasattr(dt, "tzinfo") and dt.tzinfo is not None else dt
                 if dt_key not in self._signals_by_date:
@@ -477,6 +487,8 @@ class PortfolioBacktestSession:
         if candidates:
             candidates.sort(key=lambda c: c["score"], reverse=True)
             for cand in candidates:
+                if cand["symbol"] not in symbols_data:
+                    continue
                 if not self._can_open_new_position(cand["symbol"]):
                     continue
                 self._execute_buy(cand, date, symbols_data)
@@ -496,8 +508,9 @@ class PortfolioBacktestSession:
         symbols_to_remove = []
         exit_cfg = self.strategy_config.get("exit_rules", {})
         regime_adaptive = exit_cfg.get("regime_adaptive_exits", {})
+        regime_enabled = regime_adaptive.get("enabled", True) and self.regime_enabled
         regime = self._regime_status.lower() if self._regime_status != "UNKNOWN" else "bull"
-        regime_params = regime_adaptive.get(regime, {})
+        regime_params = regime_adaptive.get(regime, {}) if regime_enabled else {}
 
         for symbol, pos in list(self.positions.items()):
             df = symbols_data.get(symbol)
@@ -636,6 +649,8 @@ class PortfolioBacktestSession:
     def _execute_buy(self, candidate: dict, date: pd.Timestamp, symbols_data: Dict[str, pd.DataFrame]):
         """Execute a BUY order with portfolio-aware position sizing."""
         symbol = candidate["symbol"]
+        if symbol not in symbols_data:
+            return
         df = symbols_data[symbol]
         swing_result = candidate.get("swing_result", {})
         reason = swing_result.get("reason", "")
@@ -731,12 +746,13 @@ class PortfolioBacktestSession:
         if not pyramid_cfg.get("enabled", False):
             return
 
-        if pyramid_cfg.get("regime_controlled", False):
+        if pyramid_cfg.get("regime_controlled", False) and self.regime_enabled:
             regime = self._regime_status.lower() if self._regime_status != "UNKNOWN" else "bull"
             regime_adaptive = self.strategy_config.get("exit_rules", {}).get("regime_adaptive_exits", {})
-            regime_params = regime_adaptive.get(regime, {})
-            if not regime_params.get("pyramiding_allowed", True):
-                return
+            if regime_adaptive.get("enabled", True):
+                regime_params = regime_adaptive.get(regime, {})
+                if not regime_params.get("pyramiding_allowed", True):
+                    return
 
         for symbol, pos in list(self.positions.items()):
             df = symbols_data.get(symbol)
@@ -905,8 +921,6 @@ class PortfolioBacktestSession:
 
     def _check_market_breadth(self, date: pd.Timestamp, symbols_data: Dict[str, pd.DataFrame]) -> bool:
         """Calculate market breadth across the stock universe."""
-        from scripts.backtest_metrics import check_market_breadth
-
         return check_market_breadth(
             self.strategy_config,
             self._indicator_store,
@@ -919,8 +933,6 @@ class PortfolioBacktestSession:
         """Check market regime (BULL/BEAR) using NIFTY 50 index."""
         if date == self._regime_check_date:
             return self._regime_status
-
-        from scripts.backtest_metrics import check_market_regime
 
         self._regime_status = check_market_regime(
             self.regime_enabled,
@@ -936,22 +948,19 @@ class PortfolioBacktestSession:
 
     def _get_common_dates(self, symbols_data: Dict[str, pd.DataFrame]) -> pd.DatetimeIndex:
         """Build a union of all trading dates across symbols."""
-        all_dates = set()
-        for df in symbols_data.values():
-            all_dates.update(df.index)
+        all_dates = set().union(*(df.index for df in symbols_data.values())) if symbols_data else set()
         return pd.DatetimeIndex(sorted(all_dates))
 
     def _current_portfolio_value(self, symbols_data: Dict[str, pd.DataFrame], date: pd.Timestamp) -> float:
         if self._cached_pv is not None and self._cached_pv_date == date:
             return self._cached_pv
-        market_value = 0.0
-        for symbol, pos in self.positions.items():
-            close_price = self._close_prices.get(symbol, {}).get(date, pos.entry_price)
-            market_value += pos.quantity * close_price
-        result = self.cash + market_value
-        self._cached_pv = result
+        market_value = sum(
+            pos.quantity * self._close_prices.get(sym, {}).get(date, pos.entry_price)
+            for sym, pos in self.positions.items()
+        )
+        self._cached_pv = self.cash + market_value
         self._cached_pv_date = date
-        return result
+        return self._cached_pv
 
     def _current_portfolio_value_at_date(self, date: pd.Timestamp) -> float:
         return self.cash + sum(pos.quantity * pos.entry_price for pos in self.positions.values())
@@ -977,16 +986,12 @@ class PortfolioBacktestSession:
         return len(self.positions) < max_pos
 
     def _record_snapshot(self, date: pd.Timestamp, symbols_data: Dict[str, pd.DataFrame]):
-        from scripts.backtest_metrics import record_daily_snapshot
-
         pv = self._current_portfolio_value(symbols_data, date)
         self.peak_value = record_daily_snapshot(
             self.daily_snapshots, date, pv, self.cash, self.peak_value, self.positions
         )
 
     def _calculate_metrics(self, common_dates: pd.DatetimeIndex) -> Dict[str, Any]:
-        from scripts.backtest_metrics import calculate_portfolio_metrics
-
         return calculate_portfolio_metrics(
             self.daily_snapshots, self.trades, self.initial_capital, self.cash, common_dates
         )
