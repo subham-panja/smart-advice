@@ -204,7 +204,7 @@ class PortfolioMonitor:
             days_held = max(0, (trading_now(timezone.utc).replace(tzinfo=None) - entry_date).days)
             if days_held >= time_stop_days and current_target_idx == 0:
                 pnl_pct = ((current_price - entry_price) / entry_price) * 100
-                if pnl_pct < 2.0:
+                if pnl_pct < 0.0:
                     logger.info(f"⏳ TIME STOP: {symbol} held for {days_held} days. Exit due to stagnation.")
                     engine.execute_sell(symbol, current_price, "TIME_STOP")
                     return

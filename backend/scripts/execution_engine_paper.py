@@ -370,9 +370,9 @@ class ExecutionEngine:
             if is_leader and leader_cfg.get("action") == "hold_and_trail":
                 logger.debug(f"🏆 LEADER: {symbol} | Gain: {gain_pct:.1f}% in {weeks_held:.1f}w | Holding & trailing")
             else:
-                # --- 2. Time Stop (Only exit stagnant positions if gain < 2% and no targets hit) ---
+                # --- 2. Time Stop (Only exit stagnant positions if losing and no targets hit) ---
                 time_stop = regime_params.get("time_stop_bars", exit_cfg.get("time_stop_bars", 20))
-                if days_held >= time_stop and targets_hit == 0 and gain_pct < 2.0:
+                if days_held >= time_stop and targets_hit == 0 and gain_pct < 0.0:
                     self.execute_sell(symbol, current_price, "TIME_STOP")
                     continue
 

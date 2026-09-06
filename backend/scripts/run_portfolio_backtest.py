@@ -261,7 +261,7 @@ def run_portfolio_backtest(
         raise RuntimeError("No symbols to backtest")
 
     # 3. Fetch Data with warmup buffer for technical indicators
-    fetch_period = "10y" if period in ("5y", "2y", "1y", "6mo", "3mo") else "max"
+    fetch_period = "10y" if period in ("10y", "5y", "2y", "1y", "6mo", "3mo") else "max"
     logger.info(f"Fetching historical data ({fetch_period} for indicator warmup) for {len(symbols)} symbols...")
     symbols_data = fetch_symbols_data(symbols, period=fetch_period, verbose=verbose)
     logger.info(f"Successfully loaded data for {len(symbols_data)} symbols")

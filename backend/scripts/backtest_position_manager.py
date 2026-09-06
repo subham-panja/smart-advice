@@ -203,9 +203,33 @@ def check_position_exit_signal(
         return f"ONEIL_TARGET_{oneil_target_pct:.0f}%", current_price, None
 
     if not (is_leader and leader_cfg.get("action") == "hold_and_trail"):
-        # 2. Time Stop - only exit if trade is stagnant/losing (fails to launch, never hit T1)
-        if bars_held >= time_stop and getattr(pos, "current_target_idx", 0) == 0 and gain_pct < 2.0:
-            return "TIME_STOP", current_price, None
+        # 2. Dynamic Time Stop - cut stagnant losers; extend runway for healthy basing / profitable runners
+        effective_time_stop = time_stop
+        dynamic_cfg = exit_cfg.get("dynamic_time_stop", {})
+        if dynamic_cfg.get("enabled", True):
+            idx = date_idx_dict.get(date)
+            is_above_ema = False
+            if idx is not None and idx >= 20:
+                recent_close = df["Close"].iloc[idx - 20 : idx + 1]
+                ema20 = recent_close.ewm(span=20, adjust=False).mean().iloc[-1]
+                is_above_ema = current_price >= ema20
+
+            if gain_pct >= 1.0 and is_above_ema:
+                effective_time_stop = int(time_stop * 2.0)  # Double runway for profitable basing runners
+            elif gain_pct >= 0.0:
+                effective_time_stop = int(time_stop * 1.5)  # +50% runway for breakeven/modest gainers
+            elif gain_pct < -3.0:
+                effective_time_stop = max(5, int(time_stop * 0.8))  # Faster cutoff for clear losers
+
+        if bars_held >= effective_time_stop and getattr(pos, "current_target_idx", 0) == 0:
+            idx = date_idx_dict.get(date)
+            is_healthy = False
+            if idx is not None and idx >= 20:
+                recent_close = df["Close"].iloc[idx - 20 : idx + 1]
+                ema20 = recent_close.ewm(span=20, adjust=False).mean().iloc[-1]
+                is_healthy = current_price >= ema20 and gain_pct >= 1.5
+            if not is_healthy:
+                return "TIME_STOP", current_price, None
 
         # 3. Stop Loss
         stop_loss_type = exit_cfg.get("stop_loss_type", "ATR")
