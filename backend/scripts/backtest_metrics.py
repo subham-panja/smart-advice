@@ -84,7 +84,7 @@ def check_market_breadth(
     if not bread_cfg.get("enabled", True):
         return True
 
-    min_advance_pct = bread_cfg.get("min_advance_pct", 35)
+    min_advance_pct = bread_cfg.get("min_advance_pct", 40.0)
 
     if indicator_store is not None:
         above_count = 0

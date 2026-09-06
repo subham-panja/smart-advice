@@ -327,8 +327,8 @@
     },
     "drawdown_pause": {
       "enabled": true,
-      "pause_threshold_pct": 12.0,
-      "resume_threshold_pct": 7.0,
+      "pause_threshold_pct": 8.5,
+      "resume_threshold_pct": 5.0,
       "pause_days_min": 5,
       "cooldown_bars": 15
     },
@@ -366,7 +366,15 @@
   "market_breadth_filter": {
     "enabled": true,
     "sma_period": 20,
-    "min_advance_pct": 35,
-    "description": "Block new buys when <35% of stocks are above 20-SMA (broad market weakness)"
+    "min_advance_pct": 40.0,
+    "description": "Block new buys when <40% of stocks are above 20-SMA (broad market weakness)"
+  },
+  "cash_deployment": {
+    "enabled": true,
+    "idle_threshold_positions": 2,
+    "annual_liquid_yield_pct": 6.0,
+    "liquid_etf_symbol": "LIQUIDBEES",
+    "inverse_index_hedge_enabled": false,
+    "description": "Park unallocated capital in liquid ETF yields (6% annual floor) when holding <= 2 positions or during bear regimes"
   }
 }

@@ -247,15 +247,7 @@ class PortfolioBacktestSession:
         sim_end_date: Optional[pd.Timestamp] = None,
         verbose: bool = True,
     ) -> Dict[str, Any]:
-        """Run portfolio backtest using pre-computed signals (from multiprocessing workers).
-
-        Args:
-            symbols_data: Dict mapping symbol -> DataFrame (OHLCV)
-            precomputed_signals: Dict[symbol, Dict[date, {score, swing_result}]]
-
-        Returns:
-            Dict with session summary, trades, and per-stock metrics.
-        """
+        """Run portfolio backtest using pre-computed signals (from multiprocessing workers)."""
         if not symbols_data:
             raise ValueError("No symbols data provided for portfolio backtest")
 
@@ -370,17 +362,7 @@ class PortfolioBacktestSession:
         sim_start_date: Optional[pd.Timestamp] = None,
         sim_end_date: Optional[pd.Timestamp] = None,
     ) -> Dict[str, Any]:
-        """Run portfolio backtest using a pre-computed indicator store for fast signal lookups.
-
-        Args:
-            symbols_data: Dict mapping symbol -> DataFrame (OHLCV)
-            indicator_store: IndicatorStore from vectorbt_indicator_batch
-            sim_start_date: Optional start date
-            sim_end_date: Optional end date
-
-        Returns:
-            Dict with session summary, trades, and per-stock metrics.
-        """
+        """Run portfolio backtest using pre-computed indicator store for fast signal lookups."""
         self.set_indicator_store(indicator_store)
         return self.run(symbols_data, sim_start_date, sim_end_date)
 
@@ -495,6 +477,15 @@ class PortfolioBacktestSession:
 
         # --- Phase 4: Pyramiding ---
         self._process_pyramiding(date, symbols_data)
+
+        # --- Phase 4b: Dynamic Cash Deployment (Liquid ETF Yield on unallocated cash) ---
+        cash_cfg = self.strategy_config.get("cash_deployment", {})
+        if cash_cfg.get("enabled", True) and self.cash > 0:
+            idle_thresh = cash_cfg.get("idle_threshold_positions", 2)
+            regime = self._regime_status.lower() if self._regime_status != "UNKNOWN" else "bull"
+            if len(self.positions) <= idle_thresh or regime == "bear":
+                annual_yield = cash_cfg.get("annual_liquid_yield_pct", 6.0) / 100.0
+                self.cash += self.cash * (annual_yield / 252.0)
 
         # --- Phase 5: Record Snapshot ---
         if self.save_snapshots:

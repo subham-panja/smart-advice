@@ -485,7 +485,7 @@ class ExecutionEngine:
             return True
 
         sma_period = bread_cfg.get("sma_period", 20)
-        min_advance_pct = bread_cfg.get("min_advance_pct", 35)
+        min_advance_pct = bread_cfg.get("min_advance_pct", 40.0)
 
         try:
             import re

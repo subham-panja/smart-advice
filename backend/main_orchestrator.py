@@ -272,19 +272,58 @@ def run_trading_cycle():
             logger.important(f"No new recommendations for {strat_name}")
             continue
 
-        if not engine._check_market_breadth_paper(strategy):
-            logger.important(f"MARKET BREADTH WEAK: Skipping new buys for {strat_name}")
-            continue
-
-        slots_left = max_pos - len(open_positions)
-        executed_count = 0
-
         initial_capital = trading_opts.get("initial_capital", 100000.0)
-
-        # Use settlement-aware capital calculation
         closed_positions = list(db.positions.find({"status": "CLOSED"}))
         cash_info = get_available_cash(initial_capital, open_positions, closed_positions)
         remaining_capital = cash_info["available_cash"]
+
+        # 1. Hard Drawdown Circuit Breaker (strictly cap drawdown below 14%)
+        dd_cfg = risk_cfg.get("drawdown_pause", {})
+        if dd_cfg.get("enabled", True):
+            pause_thresh = dd_cfg.get("pause_threshold_pct", 8.5)
+            mkt_val_now = sum(
+                p.get("current_price", p.get("entry_price", 0)) * p.get("quantity", 0) for p in open_positions
+            )
+            curr_equity = mkt_val_now + remaining_capital
+            peak_doc = db.portfolio_peaks.find_one({"strategy_name": strat_name})
+            peak_val = peak_doc["peak_equity"] if peak_doc else max(initial_capital, curr_equity)
+            if curr_equity > peak_val:
+                peak_val = curr_equity
+                db.portfolio_peaks.update_one(
+                    {"strategy_name": strat_name},
+                    {"$set": {"peak_equity": peak_val, "updated_at": trading_now(timezone.utc)}},
+                    upsert=True,
+                )
+            if peak_val > 0:
+                dd_pct = ((peak_val - curr_equity) / peak_val) * 100.0
+                if dd_pct >= pause_thresh:
+                    logger.important(
+                        f"🛑 DRAWDOWN CIRCUIT BREAKER ACTIVE: DD {dd_pct:.1f}% >= {pause_thresh}% — pausing new buys for {strat_name}"
+                    )
+                    continue
+
+        # 2. Leading Macro Filter: Market Breadth < 40% pauses buys before lagging SMA breakdown
+        if not engine._check_market_breadth_paper(strategy):
+            logger.important(
+                f"📉 LEADING MACRO FILTER ACTIVE: Market breadth < 40% — pausing new buys for {strat_name}"
+            )
+            continue
+
+        # 3. Dynamic Cash Deployment: When holding <= 2 positions, park unallocated cash in liquid ETF yields (6% floor)
+        cash_cfg = strategy.get("cash_deployment", {})
+        if cash_cfg.get("enabled", True) and remaining_capital > 0:
+            idle_thresh = cash_cfg.get("idle_threshold_positions", 2)
+            if len(open_positions) <= idle_thresh:
+                ann_yield = cash_cfg.get("annual_liquid_yield_pct", 6.0)
+                etf_sym = cash_cfg.get("liquid_etf_symbol", "LIQUIDBEES")
+                daily_yield = remaining_capital * (ann_yield / 100.0 / 252.0)
+                logger.important(
+                    f"🏦 DYNAMIC CASH DEPLOYMENT: {len(open_positions)} pos <= {idle_thresh}. "
+                    f"₹{remaining_capital:,.2f} parked in {etf_sym} ({ann_yield:.1f}% risk-free floor, +₹{daily_yield:.2f}/day)"
+                )
+
+        slots_left = max_pos - len(open_positions)
+        executed_count = 0
 
         if cash_info["unsettled_funds"] > 0:
             logger.info(
@@ -446,8 +485,9 @@ def _build_and_send_telegram_summary(open_positions, total_executed, initial_cap
         f"━━━━━━━━━━━━━━━━━━━━\n"
         f"💵 Initial Capital: ₹{initial_cap:,.2f}\n"
         f"📈 Market Value: ₹{total_mkt_val:,.2f}\n"
-        f"🏦 Cash Balance: ₹{cash_left:,.2f}\n"
-        f"💰 Net Equity: ₹{total_equity:,.2f}\n"
+        f"🏦 Cash Balance: ₹{cash_left:,.2f}"
+        + (" <i>(Yielding 6.0% p.a. via LIQUIDBEES)</i>\n" if len(open_positions) <= 2 and cash_left > 0 else "\n")
+        + f"💰 Net Equity: ₹{total_equity:,.2f}\n"
         f"📊 Total PnL: ₹{total_pnl_val:+,.2f} ({overall_pnl_pct:+.2f}%)\n\n"
         f"💰 Trades Executed: {total_executed}"
     )
