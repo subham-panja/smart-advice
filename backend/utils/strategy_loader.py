@@ -42,10 +42,21 @@ class StrategyLoader:
 
     @staticmethod
     def get_strategy_by_name(name: str) -> Dict[str, Any]:
-        """Fetch a specific strategy by its name."""
+        """Fetch a specific strategy by its name or filename."""
         all_strats = StrategyLoader.load_all_strategies_including_disabled()
+        clean_name = name[:-5] if name.endswith(".json") else name
         for s in all_strats:
-            if s.get("name") == name or s.get("name", "").lower() == name.lower():
+            strat_name = s.get("name", "")
+            file_name = s.get("_file_name", "")
+            file_stem = file_name[:-5] if file_name.endswith(".json") else file_name
+            if (
+                strat_name == name
+                or strat_name.lower() == name.lower()
+                or strat_name.lower() == clean_name.lower()
+                or file_name == name
+                or file_name.lower() == name.lower()
+                or file_stem.lower() == clean_name.lower()
+            ):
                 return s
         raise ValueError(f"Strategy '{name}' not found.")
 
