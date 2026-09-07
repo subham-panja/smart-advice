@@ -141,7 +141,7 @@
     "TREND_GATE": {
       "enabled": true,
       "params": {
-        "adx_min": 18,
+        "adx_min": 22,
         "sma_period": 50,
         "require_price_above_sma": true,
         "require_sma_stack": false,
@@ -327,7 +327,7 @@
     },
     "drawdown_pause": {
       "enabled": true,
-      "pause_threshold_pct": 12.0,
+      "pause_threshold_pct": 8.5,
       "resume_threshold_pct": 5.0,
       "pause_days_min": 5,
       "cooldown_bars": 5
@@ -352,7 +352,7 @@
     "max_position_multiplier": 1.6
   },
   "fundamental_config": {
-    "min_roce": 12.0,
+    "min_roce": 15.0,
     "max_debt_to_equity": 1.0,
     "min_profit_growth_3y": 10.0,
     "min_profit_growth_5y": 0.0,
