@@ -63,7 +63,7 @@
   ],
   "recommendation_thresholds": {
     "buy_combined": 0.55,
-    "technical_minimum": 0.40,
+    "technical_minimum": 0.42,
     "fundamental_minimum": 0.1,
     "min_risk_reward_ratio": 1.2,
     "backtest_period": "5y",
