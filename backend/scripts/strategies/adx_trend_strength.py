@@ -52,12 +52,9 @@ class ADX_Trend_Strength(BaseStrategy):
             plus_di = ta.PLUS_DI(high_prices, low_prices, close_prices, timeperiod=self.adx_period)
             minus_di = ta.MINUS_DI(high_prices, low_prices, close_prices, timeperiod=self.adx_period)
 
-            # ADX Slope for momentum confirmation
-            adx_rising = adx[-1] > adx[-2] if len(adx) > 1 else True
-
             # Check if we have valid values for the latest periods
             if pd.isna(adx[-1]) or pd.isna(plus_di[-1]) or pd.isna(minus_di[-1]):
-                self.log_signal(-1, "Insufficient data for ADX calculation", data)
+                self.log_signal(-1, "Insufficient data for ADX calculation", data, symbol=symbol)
                 return -1
 
             current_adx = adx[-1]
@@ -88,5 +85,5 @@ class ADX_Trend_Strength(BaseStrategy):
                 return -1
 
         except Exception as e:
-            self.log_signal(-1, f"Error in ADX calculation: {str(e)}", data)
+            self.log_signal(-1, f"Error in ADX calculation: {str(e)}", data, symbol=symbol)
             return -1

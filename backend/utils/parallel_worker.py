@@ -59,5 +59,9 @@ def analyze_stock_worker(args: Tuple) -> Dict[str, Any]:
         }
     except Exception as e:
         logger.error(f"Worker error {symbol}: {e}")
-        # Crash the worker if something goes wrong in the logic
-        raise e
+        return {
+            "success": False,
+            "symbol": symbol,
+            "error": str(e),
+            "recommended": False,
+        }

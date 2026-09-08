@@ -49,9 +49,9 @@ class BaseStrategy(ABC):
         required = ["Open", "High", "Low", "Close", "Volume"]
         return all(col in data.columns for col in required)
 
-    def log_signal(self, signal: int, reason: str, data: pd.DataFrame, symbol: str) -> None:
+    def log_signal(self, signal: int, reason: str, data: pd.DataFrame, symbol: str = "UNKNOWN") -> None:
         stype = "BUY" if signal == 1 else "SELL/NO_BUY"
-        close = data["Close"].iloc[-1]
+        close = data["Close"].iloc[-1] if data is not None and not data.empty and "Close" in data.columns else 0.0
         logger.debug(f"[{symbol}] {self.name}: {stype} signal - {reason} (Close: {close})")
 
     def apply_volume_filtering(self, signal: int, data: pd.DataFrame) -> Dict[str, Any]:

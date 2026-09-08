@@ -1,6 +1,6 @@
 {
   "name": "Swing_Trading_v2",
-  "enabled": false,
+  "enabled": true,
   "description": "Full runner trend compounding with 200 SMA regime gate and market cap >= 2000 Cr",
   "analysis_config": {
     "technical_analysis": true,
@@ -24,12 +24,12 @@
   },
   "rs_config": {
     "period": 55,
-    "threshold": 1.15
+    "threshold": 1.20
   },
   "market_regime_config": {
     "index": "^NSEI",
-    "bull_market_rule": "latest close > sma(50)",
-    "pause_buying_if_bearish": true
+    "bull_market_rule": "sma(20) > sma(50)",
+    "pause_buying_if_bearish": false
   },
   "options_oi_config": {
     "enabled": true,
@@ -254,7 +254,7 @@
         "sell_percentage": 0.34
       }
     ],
-    "atr_stop_multiplier": 1.8,
+    "atr_stop_multiplier": 2.0,
     "trail_only_after_t1": true,
     "trail_min_gain_pct": 5.0,
     "trail_stop_atr": 2.5,
@@ -339,13 +339,13 @@
     "steps": [
       {
         "name": "First Add",
-        "trigger_step_atr": 1.5,
-        "add_size_pct": 0.45
+        "trigger_step_atr": 2.0,
+        "add_size_pct": 0.50
       },
       {
         "name": "Second Add",
-        "trigger_step_atr": 3.0,
-        "add_size_pct": 0.25
+        "trigger_step_atr": 4.0,
+        "add_size_pct": 0.35
       }
     ],
     "regime_controlled": false,

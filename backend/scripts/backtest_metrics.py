@@ -205,23 +205,46 @@ def check_market_regime(
     rule = regime_config.get("bull_market_rule", "latest close > sma(200)")
     import re
 
-    sma_match = re.search(r"sma\((\d+)\)", rule)
-    sma_period = int(sma_match.group(1)) if sma_match else 200
+    # Support Dual SMA like "sma(20) > sma(50)"
+    dual_sma_match = re.search(r"sma\((\d+)\)\s*>\s*sma\((\d+)\)", rule, re.IGNORECASE)
+    if dual_sma_match:
+        fast_period = int(dual_sma_match.group(1))
+        slow_period = int(dual_sma_match.group(2))
+        max_period = max(fast_period, slow_period)
+        min_required = min(250, max_period)
 
-    min_required = min(250, sma_period)
-    if len(index_hist) < min_required:
-        if len(index_hist) < 30:
-            return "BULL"
-        logger_obj.warning(
-            f"Index history {len(index_hist)} days < {min_required} for regime check; using available {len(index_hist)} bars."
-        )
+        if len(index_hist) < min_required:
+            if len(index_hist) < 30:
+                return "BULL"
+            logger_obj.warning(
+                f"Index history {len(index_hist)} days < {min_required} for regime check; using available {len(index_hist)} bars."
+            )
 
-    current_price = index_hist["Close"].iloc[-1]
-    effective_window = min(sma_period, len(index_hist))
-    sma_series = index_hist["Close"].rolling(effective_window, min_periods=30).mean()
-    sma_value = sma_series.iloc[-1]
+        eff_fast = min(fast_period, len(index_hist))
+        eff_slow = min(slow_period, len(index_hist))
+        sma_fast = index_hist["Close"].rolling(eff_fast, min_periods=min(30, eff_fast)).mean().iloc[-1]
+        sma_slow = index_hist["Close"].rolling(eff_slow, min_periods=min(30, eff_slow)).mean().iloc[-1]
 
-    is_bull = current_price > sma_value
+        is_bull = sma_fast > sma_slow
+        sma_series = index_hist["Close"].rolling(eff_slow, min_periods=30).mean()  # for slope check
+    else:
+        sma_match = re.search(r"sma\((\d+)\)", rule)
+        sma_period = int(sma_match.group(1)) if sma_match else 200
+
+        min_required = min(250, sma_period)
+        if len(index_hist) < min_required:
+            if len(index_hist) < 30:
+                return "BULL"
+            logger_obj.warning(
+                f"Index history {len(index_hist)} days < {min_required} for regime check; using available {len(index_hist)} bars."
+            )
+
+        current_price = index_hist["Close"].iloc[-1]
+        effective_window = min(sma_period, len(index_hist))
+        sma_series = index_hist["Close"].rolling(effective_window, min_periods=30).mean()
+        sma_value = sma_series.iloc[-1]
+
+        is_bull = current_price > sma_value
 
     # Check SMA slope if required
     require_slope = regime_config.get("require_sma_slope_up", False)
