@@ -177,21 +177,21 @@
   "entry_patterns": [
     {
       "name": "pullback_to_ema",
-      "enabled": true,
+      "enabled": false,
       "ema_period": 21,
-      "rsi_range": [
-        35,
-        70
+      "max_distance_pct": 3.0,
+      "rsi_14_range": [
+        40,
+        65
       ],
-      "bullish_candle_required": true,
-      "max_distance_pct": 3.0
+      "bullish_candle_required": true
     },
     {
       "name": "bollinger_squeeze_breakout",
       "enabled": false,
       "bb_period": 20,
       "bb_std": 2,
-      "squeeze_threshold": 0.1,
+      "squeeze_threshold": 0.08,
       "retest_required": false,
       "max_squeeze_duration_days": 20
     },
@@ -295,25 +295,25 @@
       "max_weeks": 10,
       "action": "hold_and_trail"
     },
-    "hard_stop_loss_pct": 10.0
+    "hard_stop_loss_pct": null
   },
   "risk_management": {
-    "risk_per_trade_pct": 2.2,
-    "max_risk_per_trade_pct": 2.8,
-    "max_position_pct": 18.0,
-    "max_positions": 8,
+    "risk_per_trade_pct": 2.5,
+    "max_risk_per_trade_pct": 3.0,
+    "max_position_pct": 24.0,
+    "max_positions": 5,
     "regime_adaptive_risk": {
       "bull": {
-        "max_positions": 8,
-        "risk_per_trade_pct": 2.2
+        "max_positions": 5,
+        "risk_per_trade_pct": 2.5
       },
       "sideways": {
-        "max_positions": 5,
-        "risk_per_trade_pct": 1.6
+        "max_positions": 4,
+        "risk_per_trade_pct": 1.8
       },
       "bear": {
-        "max_positions": 2,
-        "risk_per_trade_pct": 0.8
+        "max_positions": 3,
+        "risk_per_trade_pct": 1.2
       }
     },
     "stop_loss_type": "ATR",
@@ -339,17 +339,17 @@
     "steps": [
       {
         "name": "First Add",
-        "trigger_step_atr": 2.0,
+        "trigger_step_atr": 1.8,
         "add_size_pct": 0.50
       },
       {
         "name": "Second Add",
-        "trigger_step_atr": 4.0,
+        "trigger_step_atr": 3.6,
         "add_size_pct": 0.35
       }
     ],
     "regime_controlled": false,
-    "max_position_multiplier": 1.6
+    "max_position_multiplier": 1.8
   },
   "fundamental_config": {
     "min_roce": 15.0,
