@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import {
   ChartBarIcon,
@@ -14,6 +14,9 @@ import {
   ChevronRightIcon,
   CircleStackIcon,
   SparklesIcon,
+  ChevronUpDownIcon,
+  ChevronUpIcon,
+  ChevronDownIcon,
 } from '@heroicons/react/24/outline';
 import { getBacktestSessions, deleteBacktestSession, BacktestSession } from '@/lib/api';
 
@@ -22,6 +25,45 @@ export default function BacktestsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const [sessSortBy, setSessSortBy] = useState<
+    'strategy_name' | 'total_return_pct' | 'cagr' | 'max_drawdown_pct' | 'sharpe_ratio' | 'win_rate' | 'total_trades' | 'final_portfolio_value'
+  >('total_return_pct');
+  const [sessSortDir, setSessSortDir] = useState<'desc' | 'asc'>('desc');
+
+  const handleSessSort = (field: typeof sessSortBy) => {
+    if (sessSortBy === field) {
+      setSessSortDir((prev) => (prev === 'desc' ? 'asc' : 'desc'));
+    } else {
+      setSessSortBy(field);
+      setSessSortDir(field === 'strategy_name' ? 'asc' : 'desc');
+    }
+  };
+
+  const renderSessSortIcon = (field: typeof sessSortBy) => {
+    if (sessSortBy === field) {
+      return sessSortDir === 'asc' ? (
+        <ChevronUpIcon className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+      ) : (
+        <ChevronDownIcon className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+      );
+    }
+    return (
+      <ChevronUpDownIcon className="w-3.5 h-3.5 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+    );
+  };
+
+  const sortedSessions = useMemo(() => {
+    return [...sessions].sort((a, b) => {
+      const valA = a[sessSortBy] ?? 0;
+      const valB = b[sessSortBy] ?? 0;
+      if (typeof valA === 'string' && typeof valB === 'string') {
+        return sessSortDir === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+      }
+      return sessSortDir === 'asc' ? Number(valA) - Number(valB) : Number(valB) - Number(valA);
+    });
+  }, [sessions, sessSortBy, sessSortDir]);
+
 
   const fetchSessions = async () => {
     setLoading(true);
@@ -231,19 +273,91 @@ export default function BacktestsPage() {
             <table className="w-full text-left text-sm">
               <thead className="bg-gray-50 dark:bg-gray-850 text-gray-500 dark:text-gray-400 uppercase text-xs tracking-wider border-b border-gray-200 dark:border-gray-700 font-semibold">
                 <tr>
-                  <th className="py-3.5 px-4 sm:px-6">Strategy & Range</th>
-                  <th className="py-3.5 px-4 text-right">Return %</th>
-                  <th className="py-3.5 px-4 text-right">CAGR</th>
-                  <th className="py-3.5 px-4 text-right">Max DD</th>
-                  <th className="py-3.5 px-4 text-right">Sharpe</th>
-                  <th className="py-3.5 px-4 text-right">Win Rate</th>
-                  <th className="py-3.5 px-4 text-right">Trades</th>
-                  <th className="py-3.5 px-4 text-right">Final Value</th>
+                  <th
+                    onClick={() => handleSessSort('strategy_name')}
+                    className="py-3.5 px-4 sm:px-6 cursor-pointer select-none group hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                    title="Click to sort by Strategy"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>Strategy & Range</span>
+                      {renderSessSortIcon('strategy_name')}
+                    </div>
+                  </th>
+                  <th
+                    onClick={() => handleSessSort('total_return_pct')}
+                    className="py-3.5 px-4 text-right cursor-pointer select-none group hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                    title="Click to sort by Total Return"
+                  >
+                    <div className="flex items-center justify-end gap-1.5">
+                      <span>Return %</span>
+                      {renderSessSortIcon('total_return_pct')}
+                    </div>
+                  </th>
+                  <th
+                    onClick={() => handleSessSort('cagr')}
+                    className="py-3.5 px-4 text-right cursor-pointer select-none group hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                    title="Click to sort by CAGR"
+                  >
+                    <div className="flex items-center justify-end gap-1.5">
+                      <span>CAGR</span>
+                      {renderSessSortIcon('cagr')}
+                    </div>
+                  </th>
+                  <th
+                    onClick={() => handleSessSort('max_drawdown_pct')}
+                    className="py-3.5 px-4 text-right cursor-pointer select-none group hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                    title="Click to sort by Max Drawdown"
+                  >
+                    <div className="flex items-center justify-end gap-1.5">
+                      <span>Max DD</span>
+                      {renderSessSortIcon('max_drawdown_pct')}
+                    </div>
+                  </th>
+                  <th
+                    onClick={() => handleSessSort('sharpe_ratio')}
+                    className="py-3.5 px-4 text-right cursor-pointer select-none group hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                    title="Click to sort by Sharpe Ratio"
+                  >
+                    <div className="flex items-center justify-end gap-1.5">
+                      <span>Sharpe</span>
+                      {renderSessSortIcon('sharpe_ratio')}
+                    </div>
+                  </th>
+                  <th
+                    onClick={() => handleSessSort('win_rate')}
+                    className="py-3.5 px-4 text-right cursor-pointer select-none group hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                    title="Click to sort by Win Rate"
+                  >
+                    <div className="flex items-center justify-end gap-1.5">
+                      <span>Win Rate</span>
+                      {renderSessSortIcon('win_rate')}
+                    </div>
+                  </th>
+                  <th
+                    onClick={() => handleSessSort('total_trades')}
+                    className="py-3.5 px-4 text-right cursor-pointer select-none group hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                    title="Click to sort by Total Trades"
+                  >
+                    <div className="flex items-center justify-end gap-1.5">
+                      <span>Trades</span>
+                      {renderSessSortIcon('total_trades')}
+                    </div>
+                  </th>
+                  <th
+                    onClick={() => handleSessSort('final_portfolio_value')}
+                    className="py-3.5 px-4 text-right cursor-pointer select-none group hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                    title="Click to sort by Final Portfolio Value"
+                  >
+                    <div className="flex items-center justify-end gap-1.5">
+                      <span>Final Value</span>
+                      {renderSessSortIcon('final_portfolio_value')}
+                    </div>
+                  </th>
                   <th className="py-3.5 px-4 sm:px-6 text-center">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-gray-750">
-                {sessions.map((s) => {
+                {sortedSessions.map((s) => {
                   const returnPct = s.total_return_pct ?? 0;
                   const isPositive = returnPct >= 0;
 

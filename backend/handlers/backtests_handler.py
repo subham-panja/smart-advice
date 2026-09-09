@@ -155,9 +155,27 @@ def get_backtest_trades(
     total_matches = trades_col.count_documents(match_filter)
 
     sort_direction = -1 if sort_dir.lower() in ("desc", "-1") else 1
-    sort_field = sort_by
-    if sort_field == "date":
-        sort_field = "entry_date"
+    sort_map = {
+        "date": "entry_date",
+        "entry_date": "entry_date",
+        "symbol": "symbol",
+        "trade_type": "trade_type",
+        "action": "trade_type",
+        "price": "entry_price",
+        "entry_price": "entry_price",
+        "quantity": "quantity",
+        "position_value": "position_value",
+        "size": "position_value",
+        "stop_loss": "stop_loss",
+        "target": "target",
+        "pnl": "pnl",
+        "pnl_pct": "pnl_pct",
+        "pattern": "entry_pattern",
+        "entry_pattern": "entry_pattern",
+        "exit_reason": "exit_reason",
+        "reason": "exit_reason",
+    }
+    sort_field = sort_map.get(sort_by.lower(), "entry_date")
 
     skip = max(0, (page - 1) * limit)
     cursor = trades_col.find(match_filter).sort(sort_field, sort_direction).skip(skip).limit(limit)

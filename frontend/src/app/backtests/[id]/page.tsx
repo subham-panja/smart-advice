@@ -18,6 +18,8 @@ import {
   CurrencyRupeeIcon,
   SparklesIcon,
   ChevronUpDownIcon,
+  ChevronUpIcon,
+  ChevronDownIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
   ArrowsPointingOutIcon,
@@ -63,8 +65,73 @@ export default function BacktestDetailPage() {
   const [sortBy, setSortBy] = useState('entry_date');
   const [sortDir, setSortDir] = useState<'desc' | 'asc'>('desc');
 
+  // By Symbol Sorting State
+  const [symSortBy, setSymSortBy] = useState<
+    'symbol' | 'total_pnl' | 'win_rate' | 'winning_exits' | 'buys' | 'pyramids' | 'sells' | 'total_events'
+  >('total_pnl');
+  const [symSortDir, setSymSortDir] = useState<'desc' | 'asc'>('desc');
+
   // Selected trade for detail modal
   const [selectedTrade, setSelectedTrade] = useState<BacktestTrade | null>(null);
+
+  // Journal Sort Click Handler
+  const handleSort = (field: string) => {
+    if (sortBy === field) {
+      setSortDir((prev) => (prev === 'desc' ? 'asc' : 'desc'));
+    } else {
+      setSortBy(field);
+      setSortDir(field === 'symbol' || field === 'trade_type' ? 'asc' : 'desc');
+    }
+    setPage(1);
+  };
+
+  const renderSortIcon = (field: string) => {
+    if (sortBy === field) {
+      return sortDir === 'asc' ? (
+        <ChevronUpIcon className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+      ) : (
+        <ChevronDownIcon className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+      );
+    }
+    return (
+      <ChevronUpDownIcon className="w-3.5 h-3.5 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+    );
+  };
+
+  // By Symbol Sort Click Handler
+  const handleSymSort = (field: typeof symSortBy) => {
+    if (symSortBy === field) {
+      setSymSortDir((prev) => (prev === 'desc' ? 'asc' : 'desc'));
+    } else {
+      setSymSortBy(field);
+      setSymSortDir(field === 'symbol' ? 'asc' : 'desc');
+    }
+  };
+
+  const renderSymSortIcon = (field: typeof symSortBy) => {
+    if (symSortBy === field) {
+      return symSortDir === 'asc' ? (
+        <ChevronUpIcon className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+      ) : (
+        <ChevronDownIcon className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+      );
+    }
+    return (
+      <ChevronUpDownIcon className="w-3.5 h-3.5 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+    );
+  };
+
+  const sortedSymbols = useMemo(() => {
+    return [...symbolsSummary].sort((a, b) => {
+      const valA = a[symSortBy];
+      const valB = b[symSortBy];
+      if (typeof valA === 'string' && typeof valB === 'string') {
+        return symSortDir === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+      }
+      return symSortDir === 'asc' ? Number(valA) - Number(valB) : Number(valB) - Number(valA);
+    });
+  }, [symbolsSummary, symSortBy, symSortDir]);
+
 
   // Load Session Info & Symbols
   const fetchSessionInfo = async () => {
@@ -437,14 +504,86 @@ export default function BacktestDetailPage() {
                 <table className="w-full text-left text-sm">
                   <thead className="bg-gray-50 dark:bg-gray-850 text-gray-500 dark:text-gray-400 uppercase text-xs tracking-wider border-b border-gray-200 dark:border-gray-700 font-semibold">
                     <tr>
-                      <th className="py-3.5 px-4 sm:px-6">Date</th>
-                      <th className="py-3.5 px-4">Symbol</th>
-                      <th className="py-3.5 px-4">Action</th>
-                      <th className="py-3.5 px-4 text-right">Fill Price</th>
-                      <th className="py-3.5 px-4 text-right">Qty & Size</th>
-                      <th className="py-3.5 px-4 text-right">SL / Target</th>
-                      <th className="py-3.5 px-4 text-right">P&L (₹ / %)</th>
-                      <th className="py-3.5 px-4">Pattern / Reason</th>
+                      <th
+                        onClick={() => handleSort('entry_date')}
+                        className="py-3.5 px-4 sm:px-6 cursor-pointer select-none group hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                        title="Click to sort by Date"
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <span>Date</span>
+                          {renderSortIcon('entry_date')}
+                        </div>
+                      </th>
+                      <th
+                        onClick={() => handleSort('symbol')}
+                        className="py-3.5 px-4 cursor-pointer select-none group hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                        title="Click to sort by Stock Symbol"
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <span>Symbol</span>
+                          {renderSortIcon('symbol')}
+                        </div>
+                      </th>
+                      <th
+                        onClick={() => handleSort('trade_type')}
+                        className="py-3.5 px-4 cursor-pointer select-none group hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                        title="Click to sort by Action Type"
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <span>Action</span>
+                          {renderSortIcon('trade_type')}
+                        </div>
+                      </th>
+                      <th
+                        onClick={() => handleSort('entry_price')}
+                        className="py-3.5 px-4 text-right cursor-pointer select-none group hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                        title="Click to sort by Fill Price"
+                      >
+                        <div className="flex items-center justify-end gap-1.5">
+                          <span>Fill Price</span>
+                          {renderSortIcon('entry_price')}
+                        </div>
+                      </th>
+                      <th
+                        onClick={() => handleSort('position_value')}
+                        className="py-3.5 px-4 text-right cursor-pointer select-none group hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                        title="Click to sort by Position Size"
+                      >
+                        <div className="flex items-center justify-end gap-1.5">
+                          <span>Qty & Size</span>
+                          {renderSortIcon('position_value')}
+                        </div>
+                      </th>
+                      <th
+                        onClick={() => handleSort('stop_loss')}
+                        className="py-3.5 px-4 text-right cursor-pointer select-none group hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                        title="Click to sort by Stop Loss"
+                      >
+                        <div className="flex items-center justify-end gap-1.5">
+                          <span>SL / Target</span>
+                          {renderSortIcon('stop_loss')}
+                        </div>
+                      </th>
+                      <th
+                        onClick={() => handleSort('pnl')}
+                        className="py-3.5 px-4 text-right cursor-pointer select-none group hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                        title="Click to sort by Realized P&L"
+                      >
+                        <div className="flex items-center justify-end gap-1.5">
+                          <span>P&L (₹ / %)</span>
+                          {renderSortIcon('pnl')}
+                        </div>
+                      </th>
+                      <th
+                        onClick={() => handleSort('entry_pattern')}
+                        className="py-3.5 px-4 cursor-pointer select-none group hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                        title="Click to sort by Technical Pattern / Reason"
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <span>Pattern / Reason</span>
+                          {renderSortIcon('entry_pattern')}
+                        </div>
+                      </th>
                       <th className="py-3.5 px-4 text-center">Inspect</th>
                     </tr>
                   </thead>
@@ -634,19 +773,91 @@ export default function BacktestDetailPage() {
             <table className="w-full text-left text-sm">
               <thead className="bg-gray-50 dark:bg-gray-850 text-gray-500 dark:text-gray-400 uppercase text-xs tracking-wider border-b border-gray-200 dark:border-gray-700 font-semibold">
                 <tr>
-                  <th className="py-3.5 px-4 sm:px-6">Stock Symbol</th>
-                  <th className="py-3.5 px-4 text-right">Total P&L</th>
-                  <th className="py-3.5 px-4 text-right">Win Rate</th>
-                  <th className="py-3.5 px-4 text-right">Wins / Losses</th>
-                  <th className="py-3.5 px-4 text-right">Buys</th>
-                  <th className="py-3.5 px-4 text-right">Pyramids</th>
-                  <th className="py-3.5 px-4 text-right">Sells</th>
-                  <th className="py-3.5 px-4 text-right">Total Events</th>
+                  <th
+                    onClick={() => handleSymSort('symbol')}
+                    className="py-3.5 px-4 sm:px-6 cursor-pointer select-none group hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                    title="Click to sort by Symbol"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>Stock Symbol</span>
+                      {renderSymSortIcon('symbol')}
+                    </div>
+                  </th>
+                  <th
+                    onClick={() => handleSymSort('total_pnl')}
+                    className="py-3.5 px-4 text-right cursor-pointer select-none group hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                    title="Click to sort by Total P&L"
+                  >
+                    <div className="flex items-center justify-end gap-1.5">
+                      <span>Total P&L</span>
+                      {renderSymSortIcon('total_pnl')}
+                    </div>
+                  </th>
+                  <th
+                    onClick={() => handleSymSort('win_rate')}
+                    className="py-3.5 px-4 text-right cursor-pointer select-none group hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                    title="Click to sort by Win Rate"
+                  >
+                    <div className="flex items-center justify-end gap-1.5">
+                      <span>Win Rate</span>
+                      {renderSymSortIcon('win_rate')}
+                    </div>
+                  </th>
+                  <th
+                    onClick={() => handleSymSort('winning_exits')}
+                    className="py-3.5 px-4 text-right cursor-pointer select-none group hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                    title="Click to sort by Wins / Losses"
+                  >
+                    <div className="flex items-center justify-end gap-1.5">
+                      <span>Wins / Losses</span>
+                      {renderSymSortIcon('winning_exits')}
+                    </div>
+                  </th>
+                  <th
+                    onClick={() => handleSymSort('buys')}
+                    className="py-3.5 px-4 text-right cursor-pointer select-none group hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                    title="Click to sort by Buys count"
+                  >
+                    <div className="flex items-center justify-end gap-1.5">
+                      <span>Buys</span>
+                      {renderSymSortIcon('buys')}
+                    </div>
+                  </th>
+                  <th
+                    onClick={() => handleSymSort('pyramids')}
+                    className="py-3.5 px-4 text-right cursor-pointer select-none group hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                    title="Click to sort by Pyramids count"
+                  >
+                    <div className="flex items-center justify-end gap-1.5">
+                      <span>Pyramids</span>
+                      {renderSymSortIcon('pyramids')}
+                    </div>
+                  </th>
+                  <th
+                    onClick={() => handleSymSort('sells')}
+                    className="py-3.5 px-4 text-right cursor-pointer select-none group hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                    title="Click to sort by Sells count"
+                  >
+                    <div className="flex items-center justify-end gap-1.5">
+                      <span>Sells</span>
+                      {renderSymSortIcon('sells')}
+                    </div>
+                  </th>
+                  <th
+                    onClick={() => handleSymSort('total_events')}
+                    className="py-3.5 px-4 text-right cursor-pointer select-none group hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                    title="Click to sort by Total Events"
+                  >
+                    <div className="flex items-center justify-end gap-1.5">
+                      <span>Total Events</span>
+                      {renderSymSortIcon('total_events')}
+                    </div>
+                  </th>
                   <th className="py-3.5 px-4 text-center">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-gray-750">
-                {symbolsSummary.map((s) => {
+                {sortedSymbols.map((s) => {
                   const isProfit = s.total_pnl > 0;
                   return (
                     <tr
