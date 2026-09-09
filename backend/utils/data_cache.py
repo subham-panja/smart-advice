@@ -302,7 +302,12 @@ def fetch_historical_data_cached(
             df = pd.read_parquet(cache_path)
             if not df.empty:
                 is_recent = _is_cache_recent(df, max_age_days=1)
+                cache_mtime = os.path.getmtime(cache_path)
+                recently_refreshed = (time.time() - cache_mtime) < (48 * 3600)
                 has_enough_rows = len(df) >= needed if period != "max" else is_recent
+                # If recently refreshed within 48h and is_recent, row shortfall is due to IPO listing date
+                if is_recent and recently_refreshed:
+                    has_enough_rows = True
 
                 # If cache is recent and has enough rows, use existing cache directly
                 if is_recent and has_enough_rows:

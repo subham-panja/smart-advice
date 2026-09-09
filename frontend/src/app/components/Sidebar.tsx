@@ -17,7 +17,8 @@ import {
   ChevronDownIcon,
   ChevronUpIcon,
   InformationCircleIcon,
-  ClockIcon
+  ClockIcon,
+  DocumentMagnifyingGlassIcon,
 } from '@heroicons/react/24/outline';
 const Sidebar = () => {
   const pathname = usePathname();
@@ -62,6 +63,13 @@ const Sidebar = () => {
       icon: ClockIcon,
       description: 'Position history and updates'
     },
+    {
+      name: 'Backtests',
+      href: '/backtests',
+      icon: DocumentMagnifyingGlassIcon,
+      description: 'Portfolio backtest sessions and trade journal'
+    },
+
     // F&O Analysis — disabled
     // {
     //   name: 'F&O Analysis',

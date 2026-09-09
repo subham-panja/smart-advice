@@ -454,3 +454,203 @@ export const getDashboardStats = async (): Promise<{ status: string; error?: str
     return { status: 'error', error: 'Failed to connect to server' };
   }
 };
+
+// ---------------------------------------------------------------------------
+// Backtest Sessions & Trade Journal APIs
+// ---------------------------------------------------------------------------
+
+export interface BacktestSessionSummary {
+  cagr?: number;
+  total_return_pct?: number;
+  sharpe_ratio?: number;
+  max_drawdown_pct?: number;
+  win_rate?: number;
+  profit_factor?: number;
+  total_trades?: number;
+  expectancy?: number;
+  avg_positions_held?: number;
+  initial_capital?: number;
+  final_portfolio_value?: number;
+  cash_remaining?: number;
+  date_range?: {
+    start_date?: string;
+    end_date?: string;
+  };
+}
+
+export interface BacktestSession {
+  _id: string;
+  session_type: string;
+  session_name: string;
+  strategy_name: string;
+  status: string;
+  created_at: string;
+  completed_at?: string;
+  date_range?: {
+    start_date?: string;
+    end_date?: string;
+  };
+  summary_metrics?: BacktestSessionSummary;
+  total_return_pct?: number;
+  cagr?: number;
+  sharpe_ratio?: number;
+  max_drawdown_pct?: number;
+  win_rate?: number;
+  profit_factor?: number;
+  total_trades?: number;
+  initial_capital?: number;
+  final_portfolio_value?: number;
+  total_symbols?: number;
+  strategy_config_snapshot?: Record<string, any>;
+  capital_config?: Record<string, any>;
+  execution_summary?: {
+    total_events: number;
+    unique_symbols_traded: number;
+    trade_types: Record<string, number>;
+    entry_patterns: Record<string, number>;
+    exit_reasons: Record<string, number>;
+  };
+}
+
+export interface BacktestTrade {
+  _id: string;
+  session_id: string;
+  symbol: string;
+  trade_type: 'BUY' | 'PYRAMID_ADD' | 'PARTIAL_SELL' | 'SELL' | string;
+  entry_date: string;
+  entry_price: number;
+  exit_date?: string | null;
+  exit_price?: number | null;
+  quantity: number;
+  position_value?: number;
+  allocation_pct?: number;
+  stop_loss?: number;
+  target?: number;
+  pnl?: number;
+  pnl_pct?: number;
+  exit_reason?: string | null;
+  entry_pattern?: string | null;
+  portfolio_value_at_entry?: number;
+  cash_balance_at_entry?: number;
+  open_positions_count_at_entry?: number;
+  created_at?: string;
+}
+
+export interface BacktestTradesResponse {
+  status: 'success' | 'error';
+  trades: BacktestTrade[];
+  total: number;
+  page: number;
+  limit: number;
+  total_pages: number;
+  error?: string;
+}
+
+export interface BacktestSymbolSummary {
+  symbol: string;
+  total_events: number;
+  total_pnl: number;
+  buys: number;
+  pyramids: number;
+  sells: number;
+  win_rate: number;
+  winning_exits: number;
+  losing_exits: number;
+  first_date?: string;
+  last_date?: string;
+}
+
+export const getBacktestSessions = async (): Promise<{ status: string; sessions: BacktestSession[]; count: number; error?: string }> => {
+  try {
+    const response = await api.get('/backtests');
+    return response.data;
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      return { status: 'error', sessions: [], count: 0, error: error.response?.data?.error || 'Failed to fetch backtest sessions' };
+    }
+    return { status: 'error', sessions: [], count: 0, error: 'Failed to connect to server' };
+  }
+};
+
+export const getBacktestSession = async (sessionId: string): Promise<{ status: string; session?: BacktestSession; error?: string }> => {
+  try {
+    const response = await api.get(`/backtests/${sessionId}`);
+    return response.data;
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      return { status: 'error', error: error.response?.data?.error || 'Failed to fetch backtest session details' };
+    }
+    return { status: 'error', error: 'Failed to connect to server' };
+  }
+};
+
+export const getBacktestTrades = async (
+  sessionId: string,
+  params: {
+    symbol?: string;
+    search?: string;
+    trade_type?: string;
+    exit_reason?: string;
+    pattern?: string;
+    outcome?: string;
+    page?: number;
+    limit?: number;
+    sort_by?: string;
+    sort_dir?: string;
+  } = {}
+): Promise<BacktestTradesResponse> => {
+  try {
+    const response = await api.get(`/backtests/${sessionId}/trades`, { params });
+    return response.data;
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      return {
+        status: 'error',
+        trades: [],
+        total: 0,
+        page: 1,
+        limit: 50,
+        total_pages: 0,
+        error: error.response?.data?.error || 'Failed to fetch trades',
+      };
+    }
+    return {
+      status: 'error',
+      trades: [],
+      total: 0,
+      page: 1,
+      limit: 50,
+      total_pages: 0,
+      error: 'Failed to connect to server',
+    };
+  }
+};
+
+export const getBacktestSymbols = async (
+  sessionId: string
+): Promise<{ status: string; symbols: BacktestSymbolSummary[]; count: number; error?: string }> => {
+  try {
+    const response = await api.get(`/backtests/${sessionId}/symbols`);
+    return response.data;
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      return { status: 'error', symbols: [], count: 0, error: error.response?.data?.error || 'Failed to fetch symbol summaries' };
+    }
+    return { status: 'error', symbols: [], count: 0, error: 'Failed to connect to server' };
+  }
+};
+
+export const deleteBacktestSession = async (
+  sessionId: string
+): Promise<{ status: string; message?: string; error?: string }> => {
+  try {
+    const response = await api.delete(`/backtests/${sessionId}`);
+    return response.data;
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      return { status: 'error', error: error.response?.data?.error || 'Failed to delete session' };
+    }
+    return { status: 'error', error: 'Failed to connect to server' };
+  }
+};
+
