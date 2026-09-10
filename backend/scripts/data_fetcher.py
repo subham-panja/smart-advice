@@ -223,6 +223,8 @@ def get_market_caps(symbols: list = None, min_cap_cr: float = 0) -> dict:
             if cap_cr is not None:
                 cache[sym] = round(cap_cr, 2)
                 fetched += 1
+            else:
+                cache[sym] = 0.0
 
     try:
         with open(MARKET_CAP_CACHE, "w") as f:
