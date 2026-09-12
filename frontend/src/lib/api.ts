@@ -549,6 +549,7 @@ export interface BacktestSession {
     exit_reasons: Record<string, number>;
   };
   yearly_breakdown?: BacktestYearlyBreakdownItem[];
+  ultimate_phases?: any;
 }
 
 export interface BacktestTrade {

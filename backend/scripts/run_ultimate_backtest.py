@@ -410,6 +410,7 @@ def main():
             strategy_config={"months": args.months},
             capital_config={"initial_capital": 100000},
             symbols=[],
+            session_type="ultimate",
         )
         print(f"  → Session ID: {session_id}")
         print(f"  → Saving {len(historical.get('trades', []))} trades...")

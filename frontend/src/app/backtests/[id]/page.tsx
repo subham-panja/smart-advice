@@ -29,6 +29,8 @@ import {
   Square3Stack3DIcon,
   Cog6ToothIcon,
   CalendarDaysIcon,
+  TrophyIcon,
+  BoltIcon,
 } from '@heroicons/react/24/outline';
 import {
   getBacktestSession,
@@ -41,6 +43,7 @@ import {
   BacktestYearlyBreakdownItem,
 } from '@/lib/api';
 import YearlyBreakdownTable from '@/components/backtests/YearlyBreakdownTable';
+import UltimatePhasesView from '@/components/backtests/UltimatePhasesView';
 
 function BacktestDetailPageContent() {
   const params = useParams();
@@ -62,7 +65,7 @@ function BacktestDetailPageContent() {
   const [loadingTrades, setLoadingTrades] = useState(false);
 
   // Filters State
-  const [activeTab, setActiveTab] = useState<'journal' | 'yearly' | 'symbols' | 'config'>('journal');
+  const [activeTab, setActiveTab] = useState<'journal' | 'ultimate' | 'yearly' | 'symbols' | 'config'>('journal');
   const [search, setSearch] = useState('');
   const [tradeType, setTradeType] = useState('ALL');
   const [exitReason, setExitReason] = useState('ALL');
@@ -74,7 +77,13 @@ function BacktestDetailPageContent() {
   // URL query sync
   useEffect(() => {
     const tabParam = searchParams?.get('tab');
-    if (tabParam === 'yearly' || tabParam === 'symbols' || tabParam === 'config' || tabParam === 'journal') {
+    if (
+      tabParam === 'ultimate' ||
+      tabParam === 'yearly' ||
+      tabParam === 'symbols' ||
+      tabParam === 'config' ||
+      tabParam === 'journal'
+    ) {
       setActiveTab(tabParam as any);
     }
   }, [searchParams]);
@@ -234,6 +243,10 @@ function BacktestDetailPageContent() {
   }, [session]);
 
   const metrics = session?.summary_metrics || {};
+  const isUltimateSession =
+    session?.session_type === 'ultimate' ||
+    session?.session_name?.toLowerCase().includes('ultimate') ||
+    !!session?.ultimate_phases;
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
@@ -249,10 +262,21 @@ function BacktestDetailPageContent() {
           </Link>
 
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">
                 {session?.strategy_name || 'Backtest Session'}
               </h1>
+              {isUltimateSession ? (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-purple-500/15 text-purple-700 dark:text-purple-300 border border-purple-500/30">
+                  <TrophyIcon className="w-3.5 h-3.5 text-purple-500" />
+                  Ultimate Backtest (6-Phase)
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border border-indigo-500/30">
+                  <BoltIcon className="w-3.5 h-3.5 text-indigo-500" />
+                  Portfolio Backtest
+                </span>
+              )}
               <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
                 {session?.status || 'Completed'}
               </span>
@@ -363,10 +387,24 @@ function BacktestDetailPageContent() {
       </div>
 
       {/* Navigation Tabs */}
-      <div className="flex items-center gap-2 border-b border-gray-200 dark:border-gray-700">
+      <div className="flex items-center gap-2 border-b border-gray-200 dark:border-gray-700 overflow-x-auto">
+        {isUltimateSession && (
+          <button
+            onClick={() => setActiveTab('ultimate')}
+            className={`inline-flex items-center gap-2 py-3 px-4 text-sm font-semibold border-b-2 transition-colors shrink-0 ${
+              activeTab === 'ultimate'
+                ? 'border-purple-600 text-purple-600 dark:border-purple-400 dark:text-purple-400'
+                : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
+            }`}
+          >
+            <TrophyIcon className="w-4 h-4 text-purple-500" />
+            🏆 Ultimate Analysis (6-Phase)
+          </button>
+        )}
+
         <button
           onClick={() => setActiveTab('journal')}
-          className={`inline-flex items-center gap-2 py-3 px-4 text-sm font-semibold border-b-2 transition-colors ${
+          className={`inline-flex items-center gap-2 py-3 px-4 text-sm font-semibold border-b-2 transition-colors shrink-0 ${
             activeTab === 'journal'
               ? 'border-indigo-600 text-indigo-600 dark:border-indigo-400 dark:text-indigo-400'
               : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
@@ -378,7 +416,7 @@ function BacktestDetailPageContent() {
 
         <button
           onClick={() => setActiveTab('yearly')}
-          className={`inline-flex items-center gap-2 py-3 px-4 text-sm font-semibold border-b-2 transition-colors ${
+          className={`inline-flex items-center gap-2 py-3 px-4 text-sm font-semibold border-b-2 transition-colors shrink-0 ${
             activeTab === 'yearly'
               ? 'border-indigo-600 text-indigo-600 dark:border-indigo-400 dark:text-indigo-400'
               : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
@@ -390,7 +428,7 @@ function BacktestDetailPageContent() {
 
         <button
           onClick={() => setActiveTab('symbols')}
-          className={`inline-flex items-center gap-2 py-3 px-4 text-sm font-semibold border-b-2 transition-colors ${
+          className={`inline-flex items-center gap-2 py-3 px-4 text-sm font-semibold border-b-2 transition-colors shrink-0 ${
             activeTab === 'symbols'
               ? 'border-indigo-600 text-indigo-600 dark:border-indigo-400 dark:text-indigo-400'
               : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
@@ -402,7 +440,7 @@ function BacktestDetailPageContent() {
 
         <button
           onClick={() => setActiveTab('config')}
-          className={`inline-flex items-center gap-2 py-3 px-4 text-sm font-semibold border-b-2 transition-colors ${
+          className={`inline-flex items-center gap-2 py-3 px-4 text-sm font-semibold border-b-2 transition-colors shrink-0 ${
             activeTab === 'config'
               ? 'border-indigo-600 text-indigo-600 dark:border-indigo-400 dark:text-indigo-400'
               : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
@@ -412,6 +450,21 @@ function BacktestDetailPageContent() {
           Strategy & Capital Rules
         </button>
       </div>
+
+      {/* TAB 0: ULTIMATE ANALYSIS (6-PHASE ROBUSTNESS MATRIX) */}
+      {activeTab === 'ultimate' && (
+        session?.ultimate_phases ? (
+          <UltimatePhasesView phases={session.ultimate_phases} strategyName={session.strategy_name} />
+        ) : (
+          <div className="bg-white dark:bg-gray-800 rounded-2xl p-12 text-center border border-gray-200 dark:border-gray-700 space-y-3">
+            <TrophyIcon className="w-12 h-12 mx-auto text-purple-400" />
+            <h3 className="text-lg font-bold text-gray-900 dark:text-white">6-Phase Statistical Data</h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400 max-w-md mx-auto">
+              This session was run as an ultimate backtest. Detailed statistical verification, stress tests, and confidence scores are attached to this session.
+            </p>
+          </div>
+        )
+      )}
 
       {/* TAB 1: DETAILED TRADE JOURNAL */}
       {activeTab === 'journal' && (

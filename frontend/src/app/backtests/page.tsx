@@ -18,6 +18,8 @@ import {
   ChevronUpIcon,
   ChevronDownIcon,
   CalendarDaysIcon,
+  TrophyIcon,
+  BoltIcon,
 } from '@heroicons/react/24/outline';
 import {
   getBacktestSessions,
@@ -66,8 +68,25 @@ export default function BacktestsPage() {
     );
   };
 
+  // Type Filter State: 'all' | 'portfolio' | 'ultimate'
+  const [typeFilter, setTypeFilter] = useState<'all' | 'portfolio' | 'ultimate'>('all');
+
+  const isUltimate = (s: BacktestSession) =>
+    s.session_type === 'ultimate' ||
+    s.session_name?.toLowerCase().includes('ultimate') ||
+    !!s.ultimate_phases;
+
+  const portfolioCount = useMemo(() => sessions.filter((s) => !isUltimate(s)).length, [sessions]);
+  const ultimateCount = useMemo(() => sessions.filter((s) => isUltimate(s)).length, [sessions]);
+
+  const filteredSessions = useMemo(() => {
+    if (typeFilter === 'portfolio') return sessions.filter((s) => !isUltimate(s));
+    if (typeFilter === 'ultimate') return sessions.filter((s) => isUltimate(s));
+    return sessions;
+  }, [sessions, typeFilter]);
+
   const sortedSessions = useMemo(() => {
-    return [...sessions].sort((a, b) => {
+    return [...filteredSessions].sort((a, b) => {
       const valA = a[sessSortBy] ?? 0;
       const valB = b[sessSortBy] ?? 0;
       if (typeof valA === 'string' && typeof valB === 'string') {
@@ -75,7 +94,7 @@ export default function BacktestsPage() {
       }
       return sessSortDir === 'asc' ? Number(valA) - Number(valB) : Number(valB) - Number(valA);
     });
-  }, [sessions, sessSortBy, sessSortDir]);
+  }, [filteredSessions, sessSortBy, sessSortDir]);
 
 
   const fetchYoYBreakdown = async (sessionId: string) => {
@@ -195,9 +214,22 @@ export default function BacktestsPage() {
           <div className="absolute top-0 right-0 -mt-8 -mr-8 w-64 h-64 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
           <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6 relative z-10">
             <div>
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 mb-3">
-                <SparklesIcon className="w-3.5 h-3.5" />
-                Latest Simulation Spotlight
+              <div className="flex flex-wrap items-center gap-2 mb-3">
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                  <SparklesIcon className="w-3.5 h-3.5" />
+                  Latest Simulation Spotlight
+                </div>
+                {isUltimate(latestSession) ? (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-purple-500/30 text-purple-200 border border-purple-400/40 shadow-sm shadow-purple-500/20">
+                    <TrophyIcon className="w-3.5 h-3.5 text-purple-300" />
+                    Ultimate Backtest (6-Phase)
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-blue-500/25 text-blue-200 border border-blue-400/30">
+                    <BoltIcon className="w-3.5 h-3.5 text-blue-300" />
+                    Portfolio Backtest
+                  </span>
+                )}
               </div>
               <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">
                 {latestSession.strategy_name}
@@ -337,14 +369,53 @@ export default function BacktestsPage() {
 
       {/* Sessions Table Section */}
       <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-        <div className="p-5 sm:p-6 border-b border-gray-200 dark:border-gray-700 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+        <div className="p-5 sm:p-6 border-b border-gray-200 dark:border-gray-700 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
-            <h2 className="text-lg font-bold text-gray-900 dark:text-white">
-              Simulation Sessions
+            <h2 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
+              <span>Simulation Sessions</span>
+              <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
+                {filteredSessions.length}
+              </span>
             </h2>
             <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">
-              {sessions.length} backtest {sessions.length === 1 ? 'session' : 'sessions'} recorded
+              Select any session to inspect detailed trade journals, execution logs, and analytics
             </p>
+          </div>
+
+          {/* Type Filter Pills */}
+          <div className="flex items-center gap-1.5 bg-gray-100 dark:bg-gray-900 p-1 rounded-xl border border-gray-200 dark:border-gray-700 self-start md:self-center">
+            <button
+              onClick={() => setTypeFilter('all')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                typeFilter === 'all'
+                  ? 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm'
+                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+              }`}
+            >
+              All ({sessions.length})
+            </button>
+            <button
+              onClick={() => setTypeFilter('portfolio')}
+              className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                typeFilter === 'portfolio'
+                  ? 'bg-white dark:bg-gray-800 text-indigo-600 dark:text-indigo-400 shadow-sm'
+                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+              }`}
+            >
+              <BoltIcon className="w-3.5 h-3.5" />
+              Portfolio ({portfolioCount})
+            </button>
+            <button
+              onClick={() => setTypeFilter('ultimate')}
+              className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                typeFilter === 'ultimate'
+                  ? 'bg-white dark:bg-gray-800 text-purple-600 dark:text-purple-400 shadow-sm'
+                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+              }`}
+            >
+              <TrophyIcon className="w-3.5 h-3.5" />
+              Ultimate ({ultimateCount})
+            </button>
           </div>
         </div>
 
@@ -353,12 +424,12 @@ export default function BacktestsPage() {
             <ArrowPathIcon className="w-8 h-8 animate-spin mx-auto mb-3 text-indigo-500" />
             <p>Loading backtest sessions...</p>
           </div>
-        ) : sessions.length === 0 ? (
+        ) : filteredSessions.length === 0 ? (
           <div className="p-12 text-center text-gray-500 dark:text-gray-400 space-y-3">
             <DocumentMagnifyingGlassIcon className="w-12 h-12 mx-auto text-gray-300 dark:text-gray-600" />
-            <p className="text-base font-semibold text-gray-700 dark:text-gray-300">No Backtest Sessions Found</p>
+            <p className="text-base font-semibold text-gray-700 dark:text-gray-300">No Matching Backtest Sessions</p>
             <p className="text-sm max-w-md mx-auto">
-              Run a portfolio backtest from the CLI with <code className="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-xs">python scripts/run_portfolio_backtest.py --strategy Swing_Trading_v2 --period 5y</code>.
+              Try switching your filter above or run a backtest from the CLI with <code className="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-xs">python scripts/run_portfolio_backtest.py --strategy Swing_Trading_v2 --period 10y</code>.
             </p>
           </div>
         ) : (
@@ -376,6 +447,7 @@ export default function BacktestsPage() {
                       {renderSessSortIcon('strategy_name')}
                     </div>
                   </th>
+                  <th className="py-3.5 px-3 text-left w-[130px]">Type</th>
                   <th
                     onClick={() => handleSessSort('total_return_pct')}
                     className="py-3.5 px-4 text-right cursor-pointer select-none group hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
@@ -469,6 +541,20 @@ export default function BacktestsPage() {
                             {s.date_range?.start_date || 'N/A'} → {s.date_range?.end_date || 'N/A'}
                           </div>
                         </Link>
+                      </td>
+
+                      <td className="py-4 px-3">
+                        {isUltimate(s) ? (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-bold bg-purple-500/10 dark:bg-purple-500/20 text-purple-700 dark:text-purple-300 border border-purple-500/30">
+                            <TrophyIcon className="w-3.5 h-3.5 text-purple-500 shrink-0" />
+                            Ultimate
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold bg-indigo-500/10 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 border border-indigo-500/30">
+                            <BoltIcon className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                            Portfolio
+                          </span>
+                        )}
                       </td>
 
                       <td className="py-4 px-4 text-right font-semibold">

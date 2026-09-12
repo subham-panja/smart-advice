@@ -1,6 +1,6 @@
 import logging
 from datetime import timedelta, timezone
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from database import get_mongodb
 from utils.trading_clock import trading_now
@@ -117,15 +117,23 @@ class PersistenceHandler:
     # ------------------------------------------------------------------
 
     def create_backtest_session(
-        self, strategy_name: str, strategy_config: dict, capital_config: dict, symbols: list
+        self,
+        strategy_name: str,
+        strategy_config: dict,
+        capital_config: dict,
+        symbols: list,
+        session_type: str = "portfolio",
+        session_name: Optional[str] = None,
     ) -> Any:
-        """Creates a portfolio backtest session and returns its ID."""
+        """Creates a backtest session and returns its ID."""
         try:
             db = get_mongodb()
             now = trading_now(timezone.utc).replace(tzinfo=None)
+            default_label = "Ultimate" if session_type == "ultimate" else "Portfolio"
+            computed_name = session_name or f"{strategy_name}_{default_label}_{now.strftime('%Y_%m_%d_%H%M')}"
             doc = {
-                "session_type": "portfolio",
-                "session_name": f"{strategy_name}_Portfolio_{now.strftime('%Y_%m_%d_%H%M')}",
+                "session_type": session_type,
+                "session_name": computed_name,
                 "strategy_name": strategy_name,
                 "strategy_config_snapshot": strategy_config,
                 "capital_config": capital_config,
