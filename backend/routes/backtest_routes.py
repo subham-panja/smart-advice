@@ -108,6 +108,23 @@ def get_symbols(session_id: str):
         return jsonify({"status": "error", "error": str(e)}), 500
 
 
+@backtests_bp.route("/backtests/<session_id>/yearly", methods=["GET"])
+def get_yearly_breakdown(session_id: str):
+    """Retrieve year-by-year performance breakdown for a backtest session."""
+    try:
+        breakdown = backtests_handler.get_backtest_yearly_breakdown(session_id)
+        return jsonify(
+            {
+                "status": "success",
+                "count": len(breakdown),
+                "breakdown": breakdown,
+            }
+        )
+    except Exception as e:
+        logger.error(f"Error fetching yearly breakdown for {session_id}: {e}")
+        return jsonify({"status": "error", "error": str(e)}), 500
+
+
 @backtests_bp.route("/backtests/<session_id>", methods=["DELETE"])
 def delete_session(session_id: str):
     """Delete a backtest session and its trades."""

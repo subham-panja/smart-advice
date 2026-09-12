@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useState, useEffect, useMemo, Suspense } from 'react';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import {
   ArrowLeftIcon,
@@ -28,23 +28,29 @@ import {
   TableCellsIcon,
   Square3Stack3DIcon,
   Cog6ToothIcon,
+  CalendarDaysIcon,
 } from '@heroicons/react/24/outline';
 import {
   getBacktestSession,
   getBacktestTrades,
   getBacktestSymbols,
+  getBacktestYearlyBreakdown,
   BacktestSession,
   BacktestTrade,
   BacktestSymbolSummary,
+  BacktestYearlyBreakdownItem,
 } from '@/lib/api';
+import YearlyBreakdownTable from '@/components/backtests/YearlyBreakdownTable';
 
-export default function BacktestDetailPage() {
+function BacktestDetailPageContent() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const sessionId = params?.id as string;
 
   const [session, setSession] = useState<BacktestSession | null>(null);
   const [symbolsSummary, setSymbolsSummary] = useState<BacktestSymbolSummary[]>([]);
+  const [yearlyBreakdown, setYearlyBreakdown] = useState<BacktestYearlyBreakdownItem[]>([]);
   const [loadingSession, setLoadingSession] = useState(true);
 
   // Journal Trades State
@@ -56,7 +62,7 @@ export default function BacktestDetailPage() {
   const [loadingTrades, setLoadingTrades] = useState(false);
 
   // Filters State
-  const [activeTab, setActiveTab] = useState<'journal' | 'symbols' | 'config'>('journal');
+  const [activeTab, setActiveTab] = useState<'journal' | 'yearly' | 'symbols' | 'config'>('journal');
   const [search, setSearch] = useState('');
   const [tradeType, setTradeType] = useState('ALL');
   const [exitReason, setExitReason] = useState('ALL');
@@ -64,6 +70,14 @@ export default function BacktestDetailPage() {
   const [outcome, setOutcome] = useState('ALL');
   const [sortBy, setSortBy] = useState('entry_date');
   const [sortDir, setSortDir] = useState<'desc' | 'asc'>('desc');
+
+  // URL query sync
+  useEffect(() => {
+    const tabParam = searchParams?.get('tab');
+    if (tabParam === 'yearly' || tabParam === 'symbols' || tabParam === 'config' || tabParam === 'journal') {
+      setActiveTab(tabParam as any);
+    }
+  }, [searchParams]);
 
   // By Symbol Sorting State
   const [symSortBy, setSymSortBy] = useState<
@@ -123,8 +137,8 @@ export default function BacktestDetailPage() {
 
   const sortedSymbols = useMemo(() => {
     return [...symbolsSummary].sort((a, b) => {
-      const valA = a[symSortBy];
-      const valB = b[symSortBy];
+      const valA = a[symSortBy] ?? 0;
+      const valB = b[symSortBy] ?? 0;
       if (typeof valA === 'string' && typeof valB === 'string') {
         return symSortDir === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
       }
@@ -138,15 +152,22 @@ export default function BacktestDetailPage() {
     if (!sessionId) return;
     setLoadingSession(true);
     try {
-      const [sessRes, symRes] = await Promise.all([
+      const [sessRes, symRes, yearlyRes] = await Promise.all([
         getBacktestSession(sessionId),
         getBacktestSymbols(sessionId),
+        getBacktestYearlyBreakdown(sessionId),
       ]);
       if (sessRes.status === 'success' && sessRes.session) {
         setSession(sessRes.session);
+        if (sessRes.session.yearly_breakdown && sessRes.session.yearly_breakdown.length > 0) {
+          setYearlyBreakdown(sessRes.session.yearly_breakdown);
+        }
       }
       if (symRes.status === 'success' && symRes.symbols) {
         setSymbolsSummary(symRes.symbols);
+      }
+      if (yearlyRes.status === 'success' && yearlyRes.breakdown && yearlyRes.breakdown.length > 0) {
+        setYearlyBreakdown(yearlyRes.breakdown);
       }
     } catch (err) {
       console.error('Failed to load session details:', err);
@@ -353,6 +374,18 @@ export default function BacktestDetailPage() {
         >
           <TableCellsIcon className="w-4 h-4" />
           Trade Journal & Actions ({totalTrades})
+        </button>
+
+        <button
+          onClick={() => setActiveTab('yearly')}
+          className={`inline-flex items-center gap-2 py-3 px-4 text-sm font-semibold border-b-2 transition-colors ${
+            activeTab === 'yearly'
+              ? 'border-indigo-600 text-indigo-600 dark:border-indigo-400 dark:text-indigo-400'
+              : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
+          }`}
+        >
+          <CalendarDaysIcon className="w-4 h-4" />
+          YoY Performance {yearlyBreakdown.length > 0 && `(${yearlyBreakdown.length} Years)`}
         </button>
 
         <button
@@ -924,7 +957,23 @@ export default function BacktestDetailPage() {
         </div>
       )}
 
-      {/* TAB 3: STRATEGY CONFIGURATION */}
+      {/* TAB 2: YEAR-BY-YEAR PERFORMANCE BREAKDOWN */}
+      {activeTab === 'yearly' && (
+        <YearlyBreakdownTable
+          breakdown={yearlyBreakdown}
+          title={`Year-by-Year Performance Breakdown (${
+            yearlyBreakdown.length > 5 ? '10-Year' : `${yearlyBreakdown.length}-Year`
+          } Portfolio)`}
+          subtitle="Annual compounded returns, Indian market context, and regime behavior for this simulation run"
+          onFilterYear={(year) => {
+            setSearch(year);
+            setActiveTab('journal');
+            setPage(1);
+          }}
+        />
+      )}
+
+      {/* TAB 4: STRATEGY CONFIGURATION */}
       {activeTab === 'config' && (
         <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 space-y-6">
           <div>
@@ -1151,3 +1200,19 @@ export default function BacktestDetailPage() {
     </div>
   );
 }
+
+export default function BacktestDetailPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="p-12 text-center text-gray-500 dark:text-gray-400">
+          <div className="inline-block w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mb-3"></div>
+          <p className="text-sm font-semibold">Loading backtest simulation...</p>
+        </div>
+      }
+    >
+      <BacktestDetailPageContent />
+    </Suspense>
+  );
+}
+

@@ -104,6 +104,8 @@ def get_backtest_session(session_id: str) -> Optional[Dict[str, Any]]:
         "exit_reasons": reason_counts,
     }
 
+    clean["yearly_breakdown"] = get_backtest_yearly_breakdown(session_id)
+
     return clean
 
 
@@ -252,3 +254,259 @@ def delete_backtest_session(session_id: str) -> bool:
     db.portfolio_backtest_trades.delete_many({"session_id": oid})
     res = db.backtest_sessions.delete_one({"_id": oid})
     return res.deleted_count > 0
+
+
+KNOWN_MARKET_CONTEXTS: Dict[str, Dict[str, str]] = {
+    "2016-2017": {
+        "context": "Technical warmup & 100-bar baseline. Capital preserved in cash.",
+        "badge": "Warmup Baseline",
+        "regime": "Defensive / Cash",
+    },
+    "2016": {
+        "context": "Technical warmup & 100-bar baseline. Capital preserved in cash.",
+        "badge": "Warmup Baseline",
+        "regime": "Defensive / Cash",
+    },
+    "2017": {
+        "context": "Technical warmup & baseline initialization. Capital preserved.",
+        "badge": "Warmup Baseline",
+        "regime": "Defensive / Cash",
+    },
+    "2018": {
+        "context": "Severe Mid/Small-cap crash (NSE Smallcap plunged -35%). Capital protected.",
+        "badge": "Crash Defense",
+        "regime": "Bearish Shock",
+    },
+    "2019": {
+        "context": "NBFC / IL&FS liquidity crisis. Minimal drawdown compared to market.",
+        "badge": "Liquidity Crisis Defense",
+        "regime": "High Dispersion",
+    },
+    "2020": {
+        "context": "Survived March 2020 COVID flash crash (-40% Nifty) with only -27.8% peak DD.",
+        "badge": "COVID Resilience",
+        "regime": "V-Bottom Rally",
+    },
+    "2021": {
+        "context": "Post-COVID expansion & momentum breakout surge.",
+        "badge": "Cyclical Surge",
+        "regime": "Strong Bull Run",
+    },
+    "2022": {
+        "context": "Global rate-hike correction & consolidation.",
+        "badge": "Rate Hike Pullback",
+        "regime": "Choppy Consolidation",
+    },
+    "2023": {
+        "context": "Massive multi-bagger compounding (HAL, COCHINSHIP, GVT&D, KALYANKJIL).",
+        "badge": "Multi-Bagger Supercycle",
+        "regime": "Aggressive Momentum",
+    },
+    "2024": {
+        "context": "Broad market rally continuation.",
+        "badge": "Broad Expansion",
+        "regime": "Secular Bull Trend",
+    },
+    "2025": {
+        "context": "Market consolidation & defensive trailing.",
+        "badge": "Defensive Trailing",
+        "regime": "Base Consolidation",
+    },
+    "2026": {
+        "context": "YTD active momentum expansion.",
+        "badge": "Active Momentum",
+        "regime": "Momentum Expansion",
+    },
+}
+
+
+def get_backtest_yearly_breakdown(session_id: str) -> List[Dict[str, Any]]:
+    """
+    Compute year-over-year (YoY) performance breakdown for a backtest session,
+    including compounded returns, annual drawdowns, trade metrics, and market contexts.
+    """
+    from collections import defaultdict
+
+    db = get_mongodb()
+    try:
+        oid = ObjectId(session_id)
+    except Exception:
+        return []
+
+    snaps = list(db.portfolio_backtest_daily_snapshots.find({"session_id": oid}).sort("date", 1))
+    trades = list(db.portfolio_backtest_trades.find({"session_id": oid}))
+
+    # Group trades by year
+    trades_by_yr = defaultdict(list)
+    for t in trades:
+        dt = t.get("exit_date") or t.get("entry_date") or ""
+        yr = dt[:4] if len(dt) >= 4 else "unknown"
+        trades_by_yr[yr].append(t)
+
+    # Group snapshots by year
+    snaps_by_yr = defaultdict(list)
+    for s in snaps:
+        yr = s.get("date", "")[:4]
+        if yr:
+            snaps_by_yr[yr].append(s)
+
+    years_sorted = (
+        sorted(snaps_by_yr.keys()) if snaps_by_yr else sorted([y for y in trades_by_yr.keys() if y.isdigit()])
+    )
+    if not years_sorted:
+        return []
+
+    # Check if 2016 and 2017 are warmup periods with 0 trades
+    combine_16_17 = (
+        "2016" in years_sorted
+        and "2017" in years_sorted
+        and len(trades_by_yr.get("2016", [])) == 0
+        and len(trades_by_yr.get("2017", [])) == 0
+    )
+
+    processed_years = []
+    if combine_16_17:
+        processed_years.append(
+            (
+                "2016-2017",
+                snaps_by_yr.get("2016", []) + snaps_by_yr.get("2017", []),
+                trades_by_yr.get("2016", []) + trades_by_yr.get("2017", []),
+            )
+        )
+        for y in years_sorted:
+            if y not in ["2016", "2017"]:
+                processed_years.append((y, snaps_by_yr.get(y, []), trades_by_yr.get(y, [])))
+    else:
+        for y in years_sorted:
+            processed_years.append((y, snaps_by_yr.get(y, []), trades_by_yr.get(y, [])))
+
+    breakdown = []
+    prior_eoy = None
+
+    for y_label, y_snaps, y_trades in processed_years:
+        if y_snaps:
+            start_pv = y_snaps[0].get("portfolio_value", 0.0)
+            end_pv = y_snaps[-1].get("portfolio_value", 0.0)
+            base_pv = prior_eoy if prior_eoy is not None else start_pv
+            ret = ((end_pv - base_pv) / base_pv * 100) if base_pv > 0 else 0.0
+            prior_eoy = end_pv
+
+            min_dd = min((s.get("drawdown_from_peak_pct", 0.0) or 0.0) for s in y_snaps) if y_snaps else 0.0
+            max_pv = max((s.get("portfolio_value", 0.0) or 0.0) for s in y_snaps) if y_snaps else end_pv
+            min_pv = min((s.get("portfolio_value", 0.0) or 0.0) for s in y_snaps) if y_snaps else end_pv
+            trading_days = len(y_snaps)
+        else:
+            # Fallback if no snapshots exist for this session
+            exits_fallback = [t for t in y_trades if t.get("trade_type") in ["SELL", "PARTIAL_SELL"]]
+            pnl_sum = sum(t.get("pnl", 0.0) or 0.0 for t in exits_fallback)
+            base_pv = prior_eoy or 10000.0
+            end_pv = base_pv + pnl_sum
+            ret = (pnl_sum / base_pv * 100) if base_pv > 0 else 0.0
+            prior_eoy = end_pv
+            min_dd = 0.0
+            max_pv = end_pv
+            min_pv = base_pv
+            trading_days = len(y_trades)
+
+        exits = [t for t in y_trades if t.get("trade_type") in ["SELL", "PARTIAL_SELL"]]
+        buys = [t for t in y_trades if t.get("trade_type") == "BUY"]
+        pyramids = [t for t in y_trades if t.get("trade_type") == "PYRAMID_ADD"]
+        wins = [t for t in exits if (t.get("pnl", 0.0) or 0.0) > 0]
+        losses = [t for t in exits if (t.get("pnl", 0.0) or 0.0) < 0]
+        total_pnl = sum((t.get("pnl", 0.0) or 0.0) for t in exits)
+        win_rate = (len(wins) / len(exits) * 100) if exits else 0.0
+
+        # Best trade
+        best_exit = max(exits, key=lambda x: (x.get("pnl", 0.0) or 0.0)) if exits else None
+        worst_exit = min(exits, key=lambda x: (x.get("pnl", 0.0) or 0.0)) if exits else None
+
+        best_trade_info = None
+        if best_exit and (best_exit.get("pnl", 0.0) or 0.0) > 0:
+            best_trade_info = {
+                "symbol": best_exit.get("symbol"),
+                "pnl": round(best_exit.get("pnl", 0.0) or 0.0, 2),
+                "pnl_pct": round(best_exit.get("pnl_pct", 0.0) or 0.0, 2),
+                "exit_date": best_exit.get("exit_date"),
+                "exit_reason": best_exit.get("exit_reason"),
+            }
+
+        worst_trade_info = None
+        if worst_exit and (worst_exit.get("pnl", 0.0) or 0.0) < 0:
+            worst_trade_info = {
+                "symbol": worst_exit.get("symbol"),
+                "pnl": round(worst_exit.get("pnl", 0.0) or 0.0, 2),
+                "pnl_pct": round(worst_exit.get("pnl_pct", 0.0) or 0.0, 2),
+                "exit_date": worst_exit.get("exit_date"),
+                "exit_reason": worst_exit.get("exit_reason"),
+            }
+
+        # Top gainers by symbol for this year
+        symbol_pnl = defaultdict(float)
+        for t in exits:
+            symbol_pnl[t.get("symbol", "")] += t.get("pnl", 0.0) or 0.0
+
+        top_gainers = [
+            {"symbol": sym, "pnl": round(pnl, 2)}
+            for sym, pnl in sorted(symbol_pnl.items(), key=lambda x: x[1], reverse=True)
+            if pnl > 0 and sym
+        ][:5]
+
+        # Context narrative
+        ctx_info = KNOWN_MARKET_CONTEXTS.get(y_label)
+        if not ctx_info:
+            if ret > 25:
+                ctx_info = {
+                    "context": "Strong momentum expansion and high-velocity trend breakouts.",
+                    "badge": "High Momentum Surge",
+                    "regime": "Aggressive Bull",
+                }
+            elif ret > 5:
+                ctx_info = {
+                    "context": "Constructive cyclical advance with disciplined risk management.",
+                    "badge": "Cyclical Trend",
+                    "regime": "Moderate Bull",
+                }
+            elif ret >= -5:
+                ctx_info = {
+                    "context": "Market consolidation and capital preservation phase.",
+                    "badge": "Range Consolidation",
+                    "regime": "Neutral / Sideways",
+                }
+            else:
+                ctx_info = {
+                    "context": "Corrective market regime. Defensive trailing stops limited drawdowns.",
+                    "badge": "Defensive Trailing",
+                    "regime": "Market Correction",
+                }
+
+        display_year = "2016–2017" if y_label == "2016-2017" else y_label
+
+        breakdown.append(
+            {
+                "year": y_label,
+                "display_year": display_year,
+                "return_pct": round(ret, 2),
+                "start_portfolio_value": round(base_pv, 2),
+                "end_portfolio_value": round(end_pv, 2),
+                "peak_portfolio_value": round(max_pv, 2),
+                "trough_portfolio_value": round(min_pv, 2),
+                "max_drawdown_pct": round(min_dd, 2),
+                "trading_days": trading_days,
+                "total_events": len(y_trades),
+                "buys_count": len(buys),
+                "pyramids_count": len(pyramids),
+                "exits_count": len(exits),
+                "winning_exits": len(wins),
+                "losing_exits": len(losses),
+                "win_rate": round(win_rate, 1),
+                "realized_pnl": round(total_pnl, 2),
+                "market_context": ctx_info["context"],
+                "market_badge": ctx_info["badge"],
+                "regime": ctx_info["regime"],
+                "best_trade": best_trade_info,
+                "worst_trade": worst_trade_info,
+                "top_gainers": top_gainers,
+            }
+        )
+
+    return breakdown

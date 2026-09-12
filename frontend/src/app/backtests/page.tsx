@@ -17,14 +17,27 @@ import {
   ChevronUpDownIcon,
   ChevronUpIcon,
   ChevronDownIcon,
+  CalendarDaysIcon,
 } from '@heroicons/react/24/outline';
-import { getBacktestSessions, deleteBacktestSession, BacktestSession } from '@/lib/api';
+import {
+  getBacktestSessions,
+  deleteBacktestSession,
+  getBacktestYearlyBreakdown,
+  BacktestSession,
+  BacktestYearlyBreakdownItem,
+} from '@/lib/api';
+import YearlyBreakdownTable from '@/components/backtests/YearlyBreakdownTable';
 
 export default function BacktestsPage() {
   const [sessions, setSessions] = useState<BacktestSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  // YoY Breakdown State
+  const [selectedYoYSessionId, setSelectedYoYSessionId] = useState<string | null>(null);
+  const [yearlyBreakdown, setYearlyBreakdown] = useState<BacktestYearlyBreakdownItem[]>([]);
+  const [loadingYoY, setLoadingYoY] = useState(false);
 
   const [sessSortBy, setSessSortBy] = useState<
     'strategy_name' | 'total_return_pct' | 'cagr' | 'max_drawdown_pct' | 'sharpe_ratio' | 'win_rate' | 'total_trades' | 'final_portfolio_value'
@@ -65,13 +78,39 @@ export default function BacktestsPage() {
   }, [sessions, sessSortBy, sessSortDir]);
 
 
+  const fetchYoYBreakdown = async (sessionId: string) => {
+    setLoadingYoY(true);
+    try {
+      const res = await getBacktestYearlyBreakdown(sessionId);
+      if (res.status === 'success') {
+        setYearlyBreakdown(res.breakdown || []);
+        setSelectedYoYSessionId(sessionId);
+      }
+    } catch (err) {
+      console.error('Failed to load yearly breakdown:', err);
+    } finally {
+      setLoadingYoY(false);
+    }
+  };
+
   const fetchSessions = async () => {
     setLoading(true);
     setError(null);
     try {
       const res = await getBacktestSessions();
       if (res.status === 'success') {
-        setSessions(res.sessions || []);
+        const loadedSessions = res.sessions || [];
+        setSessions(loadedSessions);
+
+        // Automatically prioritize 10-Year or multi-year session for the YoY breakdown view
+        const prioritizedYoYSess =
+          loadedSessions.find((s) => s.date_range?.start_date?.startsWith('2016')) ||
+          loadedSessions.find((s) => s._id === '6aa3d083a1c42323322a41cf') ||
+          loadedSessions[0];
+
+        if (prioritizedYoYSess) {
+          fetchYoYBreakdown(prioritizedYoYSess._id);
+        }
       } else {
         setError(res.error || 'Failed to load backtest sessions');
       }
@@ -239,6 +278,60 @@ export default function BacktestsPage() {
               </span>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Year-by-Year Performance Breakdown Section */}
+      {yearlyBreakdown.length > 0 && (
+        <div className="space-y-4">
+          {/* Session Selector Pills */}
+          {sessions.length > 1 && (
+            <div className="flex items-center gap-2 overflow-x-auto pb-1">
+              <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 shrink-0">
+                Timeline Source:
+              </span>
+              {sessions.map((s) => {
+                const isSelected = selectedYoYSessionId === s._id;
+                const is10Y = s.date_range?.start_date?.startsWith('2016');
+                const is5Y = s.date_range?.start_date?.startsWith('2021');
+                const label = is10Y
+                  ? '10-Year Timeline (2016–2026)'
+                  : is5Y
+                  ? '5-Year Timeline (2021–2026)'
+                  : `${s.strategy_name} (${s.date_range?.start_date?.slice(0, 4) || 'N/A'}–${s.date_range?.end_date?.slice(0, 4) || 'N/A'})`;
+
+                return (
+                  <button
+                    key={s._id}
+                    onClick={() => fetchYoYBreakdown(s._id)}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all shrink-0 ${
+                      isSelected
+                        ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/20'
+                        : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700'
+                    }`}
+                  >
+                    <CalendarDaysIcon className="w-3.5 h-3.5" />
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {loadingYoY ? (
+            <div className="p-12 text-center text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700">
+              <ArrowPathIcon className="w-8 h-8 animate-spin mx-auto mb-3 text-indigo-500" />
+              <p className="text-sm font-medium">Computing year-over-year performance...</p>
+            </div>
+          ) : (
+            <YearlyBreakdownTable
+              breakdown={yearlyBreakdown}
+              title={`Year-by-Year Performance Breakdown (${
+                yearlyBreakdown.length > 5 ? '10-Year' : `${yearlyBreakdown.length}-Year`
+              } Portfolio)`}
+              subtitle="Annual compounded returns, Indian market context, and regime behavior timeline"
+            />
+          )}
         </div>
       )}
 
@@ -421,10 +514,19 @@ export default function BacktestsPage() {
                       </td>
 
                       <td className="py-4 px-4 sm:px-6 text-center">
-                        <div className="inline-flex items-center gap-2">
+                        <div className="inline-flex items-center gap-1.5">
+                          <Link
+                            href={`/backtests/${s._id}?tab=yearly`}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 font-medium text-xs transition-colors"
+                            title="Inspect Year-by-Year Breakdown"
+                          >
+                            <CalendarDaysIcon className="w-3.5 h-3.5" />
+                            YoY
+                          </Link>
+
                           <Link
                             href={`/backtests/${s._id}`}
-                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 font-medium text-xs transition-colors"
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 font-medium text-xs transition-colors"
                           >
                             <DocumentMagnifyingGlassIcon className="w-3.5 h-3.5" />
                             Journal

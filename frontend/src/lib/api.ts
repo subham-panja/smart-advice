@@ -478,6 +478,44 @@ export interface BacktestSessionSummary {
   };
 }
 
+export interface BacktestYearlyBreakdownItem {
+  year: string;
+  display_year: string;
+  return_pct: number;
+  start_portfolio_value: number;
+  end_portfolio_value: number;
+  peak_portfolio_value?: number;
+  trough_portfolio_value?: number;
+  max_drawdown_pct: number;
+  trading_days: number;
+  total_events: number;
+  buys_count?: number;
+  pyramids_count?: number;
+  exits_count: number;
+  winning_exits?: number;
+  losing_exits?: number;
+  win_rate: number;
+  realized_pnl: number;
+  market_context: string;
+  market_badge?: string;
+  regime?: string;
+  best_trade?: {
+    symbol: string;
+    pnl: number;
+    pnl_pct: number;
+    exit_date?: string;
+    exit_reason?: string;
+  } | null;
+  worst_trade?: {
+    symbol: string;
+    pnl: number;
+    pnl_pct: number;
+    exit_date?: string;
+    exit_reason?: string;
+  } | null;
+  top_gainers?: Array<{ symbol: string; pnl: number }>;
+}
+
 export interface BacktestSession {
   _id: string;
   session_type: string;
@@ -510,6 +548,7 @@ export interface BacktestSession {
     entry_patterns: Record<string, number>;
     exit_reasons: Record<string, number>;
   };
+  yearly_breakdown?: BacktestYearlyBreakdownItem[];
 }
 
 export interface BacktestTrade {
@@ -637,6 +676,20 @@ export const getBacktestSymbols = async (
       return { status: 'error', symbols: [], count: 0, error: error.response?.data?.error || 'Failed to fetch symbol summaries' };
     }
     return { status: 'error', symbols: [], count: 0, error: 'Failed to connect to server' };
+  }
+};
+
+export const getBacktestYearlyBreakdown = async (
+  sessionId: string
+): Promise<{ status: string; breakdown: BacktestYearlyBreakdownItem[]; count: number; error?: string }> => {
+  try {
+    const response = await api.get(`/backtests/${sessionId}/yearly`);
+    return response.data;
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      return { status: 'error', breakdown: [], count: 0, error: error.response?.data?.error || 'Failed to fetch yearly breakdown' };
+    }
+    return { status: 'error', breakdown: [], count: 0, error: 'Failed to connect to server' };
   }
 };
 
