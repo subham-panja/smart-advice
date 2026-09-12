@@ -174,7 +174,7 @@ export default function BacktestsPage() {
           <button
             onClick={fetchSessions}
             disabled={loading}
-            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors shadow-sm disabled:opacity-50"
+            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors shadow-sm disabled:opacity-50"
           >
             <ArrowPathIcon className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             Refresh
@@ -364,7 +364,7 @@ export default function BacktestsPage() {
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
-              <thead className="bg-gray-50 dark:bg-gray-850 text-gray-500 dark:text-gray-400 uppercase text-xs tracking-wider border-b border-gray-200 dark:border-gray-700 font-semibold">
+              <thead className="bg-gray-50 dark:bg-gray-900 text-gray-600 dark:text-gray-300 uppercase text-xs tracking-wider border-b border-gray-200 dark:border-gray-700 font-semibold">
                 <tr>
                   <th
                     onClick={() => handleSessSort('strategy_name')}
@@ -449,7 +449,7 @@ export default function BacktestsPage() {
                   <th className="py-3.5 px-4 sm:px-6 text-center">Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100 dark:divide-gray-750">
+              <tbody className="divide-y divide-gray-100 dark:divide-gray-700/80">
                 {sortedSessions.map((s) => {
                   const returnPct = s.total_return_pct ?? 0;
                   const isPositive = returnPct >= 0;
@@ -457,7 +457,7 @@ export default function BacktestsPage() {
                   return (
                     <tr
                       key={s._id}
-                      className="hover:bg-gray-50/80 dark:hover:bg-gray-750/50 transition-colors group cursor-pointer"
+                      className="hover:bg-gray-50/80 dark:hover:bg-gray-700/40 transition-colors group cursor-pointer"
                     >
                       <td className="py-4 px-4 sm:px-6">
                         <Link href={`/backtests/${s._id}`} className="block">

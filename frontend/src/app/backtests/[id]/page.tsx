@@ -242,7 +242,7 @@ function BacktestDetailPageContent() {
         <div className="flex items-center gap-3">
           <Link
             href="/backtests"
-            className="p-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors shadow-sm"
+            className="p-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors shadow-sm"
             title="Back to Backtests"
           >
             <ArrowLeftIcon className="w-5 h-5" />
@@ -273,7 +273,7 @@ function BacktestDetailPageContent() {
               fetchSessionInfo();
               fetchTrades();
             }}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-sm font-medium rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors shadow-sm"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-sm font-medium rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors shadow-sm"
           >
             <ArrowPathIcon className={`w-4 h-4 ${loadingTrades ? 'animate-spin' : ''}`} />
             Refresh
@@ -535,7 +535,7 @@ function BacktestDetailPageContent() {
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-sm">
-                  <thead className="bg-gray-50 dark:bg-gray-850 text-gray-500 dark:text-gray-400 uppercase text-xs tracking-wider border-b border-gray-200 dark:border-gray-700 font-semibold">
+                  <thead className="bg-gray-50 dark:bg-gray-900 text-gray-600 dark:text-gray-300 uppercase text-xs tracking-wider border-b border-gray-200 dark:border-gray-700 font-semibold">
                     <tr>
                       <th
                         onClick={() => handleSort('entry_date')}
@@ -620,7 +620,7 @@ function BacktestDetailPageContent() {
                       <th className="py-3.5 px-4 text-center">Inspect</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-100 dark:divide-gray-750">
+                  <tbody className="divide-y divide-gray-100 dark:divide-gray-700/80">
                     {trades.map((t) => {
                       const isSell = t.trade_type === 'SELL' || t.trade_type === 'PARTIAL_SELL';
                       const pnl = t.pnl ?? 0;
@@ -633,7 +633,7 @@ function BacktestDetailPageContent() {
                         <tr
                           key={t._id}
                           onClick={() => setSelectedTrade(t)}
-                          className="hover:bg-gray-50/80 dark:hover:bg-gray-750/50 transition-colors cursor-pointer group"
+                          className="hover:bg-gray-50/80 dark:hover:bg-gray-700/40 transition-colors cursor-pointer group"
                         >
                           {/* Date */}
                           <td className="py-3.5 px-4 sm:px-6 font-mono text-xs text-gray-600 dark:text-gray-300">
@@ -769,7 +769,7 @@ function BacktestDetailPageContent() {
                   <button
                     onClick={() => setPage((p) => Math.max(1, p - 1))}
                     disabled={page <= 1}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 disabled:opacity-40 hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors"
+                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 disabled:opacity-40 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
                   >
                     <ChevronLeftIcon className="w-4 h-4" />
                     Previous
@@ -778,7 +778,7 @@ function BacktestDetailPageContent() {
                   <button
                     onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                     disabled={page >= totalPages}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 disabled:opacity-40 hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors"
+                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 disabled:opacity-40 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
                   >
                     Next
                     <ChevronRightIcon className="w-4 h-4" />
@@ -804,7 +804,7 @@ function BacktestDetailPageContent() {
 
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
-              <thead className="bg-gray-50 dark:bg-gray-850 text-gray-500 dark:text-gray-400 uppercase text-xs tracking-wider border-b border-gray-200 dark:border-gray-700 font-semibold">
+              <thead className="bg-gray-50 dark:bg-gray-900 text-gray-600 dark:text-gray-300 uppercase text-xs tracking-wider border-b border-gray-200 dark:border-gray-700 font-semibold">
                 <tr>
                   <th
                     onClick={() => handleSymSort('symbol')}
@@ -889,13 +889,13 @@ function BacktestDetailPageContent() {
                   <th className="py-3.5 px-4 text-center">Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100 dark:divide-gray-750">
+              <tbody className="divide-y divide-gray-100 dark:divide-gray-700/80">
                 {sortedSymbols.map((s) => {
                   const isProfit = s.total_pnl > 0;
                   return (
                     <tr
                       key={s.symbol}
-                      className="hover:bg-gray-50/80 dark:hover:bg-gray-750/50 transition-colors"
+                      className="hover:bg-gray-50/80 dark:hover:bg-gray-700/40 transition-colors"
                     >
                       <td className="py-3.5 px-4 sm:px-6 font-bold text-gray-900 dark:text-white">
                         {s.symbol}
@@ -987,7 +987,7 @@ function BacktestDetailPageContent() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Capital & Portfolio Config */}
-            <div className="p-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-850/50 space-y-3">
+            <div className="p-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/50 space-y-3">
               <h3 className="font-semibold text-sm text-gray-900 dark:text-white flex items-center gap-2">
                 <CurrencyRupeeIcon className="w-4 h-4 text-indigo-500" />
                 Capital & Execution Settings
@@ -1021,7 +1021,7 @@ function BacktestDetailPageContent() {
             </div>
 
             {/* Strategy Snapshot */}
-            <div className="p-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-850/50 space-y-3">
+            <div className="p-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/50 space-y-3">
               <h3 className="font-semibold text-sm text-gray-900 dark:text-white flex items-center gap-2">
                 <ShieldCheckIcon className="w-4 h-4 text-emerald-500" />
                 Strategy Gates & Rules
@@ -1059,9 +1059,9 @@ function BacktestDetailPageContent() {
 
       {/* DETAILED TRADE INSPECTOR MODAL */}
       {selectedTrade && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-150">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-150">
           <div
-            className="bg-white dark:bg-gray-850 rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-gray-200 dark:border-gray-700 space-y-5"
+            className="bg-white dark:bg-gray-900 rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-gray-200 dark:border-gray-700 space-y-5"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Modal Header */}
@@ -1074,12 +1074,12 @@ function BacktestDetailPageContent() {
                   <span
                     className={`px-2 py-0.5 rounded text-xs font-semibold ${
                       selectedTrade.trade_type === 'BUY'
-                        ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300'
+                        ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800'
                         : selectedTrade.trade_type === 'PYRAMID_ADD'
-                        ? 'bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300'
+                        ? 'bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 border border-blue-300 dark:border-blue-800'
                         : selectedTrade.trade_type === 'PARTIAL_SELL'
-                        ? 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300'
-                        : 'bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300'
+                        ? 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-800'
+                        : 'bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-800'
                     }`}
                   >
                     {selectedTrade.trade_type}
@@ -1092,7 +1092,7 @@ function BacktestDetailPageContent() {
 
               <button
                 onClick={() => setSelectedTrade(null)}
-                className="p-1 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-750"
+                className="p-1 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800"
               >
                 <XMarkIcon className="w-5 h-5" />
               </button>
@@ -1100,7 +1100,7 @@ function BacktestDetailPageContent() {
 
             {/* Execution Details Grid */}
             <div className="grid grid-cols-2 gap-3 text-xs">
-              <div className="p-3 rounded-xl bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+              <div className="p-3 rounded-xl bg-gray-50 dark:bg-gray-800/90 border border-gray-200 dark:border-gray-700">
                 <span className="text-gray-400 block">Entry Date & Price</span>
                 <span className="font-semibold text-gray-900 dark:text-white text-sm">
                   ₹{Number(selectedTrade.entry_price).toFixed(2)}
@@ -1108,7 +1108,7 @@ function BacktestDetailPageContent() {
                 <div className="text-[11px] text-gray-500 mt-0.5">{selectedTrade.entry_date}</div>
               </div>
 
-              <div className="p-3 rounded-xl bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+              <div className="p-3 rounded-xl bg-gray-50 dark:bg-gray-800/90 border border-gray-200 dark:border-gray-700">
                 <span className="text-gray-400 block">Exit Date & Price</span>
                 <span className="font-semibold text-gray-900 dark:text-white text-sm">
                   {selectedTrade.exit_price ? `₹${Number(selectedTrade.exit_price).toFixed(2)}` : '—'}
@@ -1118,7 +1118,7 @@ function BacktestDetailPageContent() {
                 </div>
               </div>
 
-              <div className="p-3 rounded-xl bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+              <div className="p-3 rounded-xl bg-gray-50 dark:bg-gray-800/90 border border-gray-200 dark:border-gray-700">
                 <span className="text-gray-400 block">Quantity & Value</span>
                 <span className="font-semibold text-gray-900 dark:text-white text-sm">
                   {selectedTrade.quantity} Shares
@@ -1129,7 +1129,7 @@ function BacktestDetailPageContent() {
                 </div>
               </div>
 
-              <div className="p-3 rounded-xl bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+              <div className="p-3 rounded-xl bg-gray-50 dark:bg-gray-800/90 border border-gray-200 dark:border-gray-700">
                 <span className="text-gray-400 block">Net Realized P&L</span>
                 <span
                   className={`font-semibold text-sm ${
@@ -1150,7 +1150,7 @@ function BacktestDetailPageContent() {
             </div>
 
             {/* Risk & Rules Snapshot */}
-            <div className="p-4 rounded-xl bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 space-y-2 text-xs">
+            <div className="p-4 rounded-xl bg-gray-50 dark:bg-gray-800/90 border border-gray-200 dark:border-gray-700 space-y-2 text-xs">
               <div className="flex justify-between">
                 <span className="text-gray-400">Stop Loss Level</span>
                 <span className="font-mono text-rose-500 font-semibold">
@@ -1189,7 +1189,7 @@ function BacktestDetailPageContent() {
             <div className="flex justify-end">
               <button
                 onClick={() => setSelectedTrade(null)}
-                className="px-4 py-2 rounded-xl bg-gray-100 dark:bg-gray-750 text-gray-700 dark:text-gray-200 font-medium text-xs hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+                className="px-4 py-2 rounded-xl bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200 font-medium text-xs hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors border border-transparent dark:border-gray-700"
               >
                 Close
               </button>

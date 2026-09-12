@@ -110,7 +110,7 @@ export default function YearlyBreakdownTable({
     <div className="space-y-6">
       {/* Top Banner & Summary Cards */}
       <div className="bg-white dark:bg-gray-800 rounded-2xl p-5 sm:p-6 shadow-sm border border-gray-200 dark:border-gray-700">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 pb-5 border-b border-gray-100 dark:border-gray-750">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 pb-5 border-b border-gray-100 dark:border-gray-700">
           <div>
             <div className="flex items-center gap-2.5">
               <div className="p-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400">
@@ -128,7 +128,7 @@ export default function YearlyBreakdownTable({
           <div className="flex items-center gap-2.5 self-start md:self-center">
             <button
               onClick={toggleExpandAll}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 text-xs font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors shadow-sm"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 text-xs font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors shadow-sm"
             >
               {breakdown.every((item) => expandedYears[item.year]) ? (
                 <>
@@ -147,7 +147,7 @@ export default function YearlyBreakdownTable({
 
         {/* Quick Highlights Bar */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 mt-5">
-          <div className="bg-gray-50 dark:bg-gray-850 rounded-xl p-3 sm:p-3.5 border border-gray-100 dark:border-gray-750">
+          <div className="bg-gray-50 dark:bg-gray-900/70 rounded-xl p-3 sm:p-3.5 border border-gray-100 dark:border-gray-700">
             <span className="text-[11px] font-medium text-gray-500 dark:text-gray-400 block">Overall Compounding</span>
             <div className="flex items-baseline gap-1.5 mt-0.5">
               <span className="text-lg sm:text-xl font-bold text-emerald-600 dark:text-emerald-400">
@@ -159,7 +159,7 @@ export default function YearlyBreakdownTable({
             </div>
           </div>
 
-          <div className="bg-gray-50 dark:bg-gray-850 rounded-xl p-3 sm:p-3.5 border border-gray-100 dark:border-gray-750">
+          <div className="bg-gray-50 dark:bg-gray-900/70 rounded-xl p-3 sm:p-3.5 border border-gray-100 dark:border-gray-700">
             <span className="text-[11px] font-medium text-gray-500 dark:text-gray-400 block">Best Supercycle Year</span>
             <div className="flex items-baseline gap-1.5 mt-0.5">
               <span className="text-lg sm:text-xl font-bold text-indigo-600 dark:text-indigo-400">
@@ -171,7 +171,7 @@ export default function YearlyBreakdownTable({
             </div>
           </div>
 
-          <div className="bg-gray-50 dark:bg-gray-850 rounded-xl p-3 sm:p-3.5 border border-gray-100 dark:border-gray-750">
+          <div className="bg-gray-50 dark:bg-gray-900/70 rounded-xl p-3 sm:p-3.5 border border-gray-100 dark:border-gray-700">
             <span className="text-[11px] font-medium text-gray-500 dark:text-gray-400 block">Max Annual Drawdown</span>
             <div className="flex items-baseline gap-1.5 mt-0.5">
               <span className="text-lg sm:text-xl font-bold text-amber-600 dark:text-amber-400">
@@ -181,7 +181,7 @@ export default function YearlyBreakdownTable({
             </div>
           </div>
 
-          <div className="bg-gray-50 dark:bg-gray-850 rounded-xl p-3 sm:p-3.5 border border-gray-100 dark:border-gray-750">
+          <div className="bg-gray-50 dark:bg-gray-900/70 rounded-xl p-3 sm:p-3.5 border border-gray-100 dark:border-gray-700">
             <span className="text-[11px] font-medium text-gray-500 dark:text-gray-400 block">Positive / Defended Years</span>
             <div className="flex items-baseline gap-1.5 mt-0.5">
               <span className="text-lg sm:text-xl font-bold text-gray-900 dark:text-white">
@@ -199,7 +199,7 @@ export default function YearlyBreakdownTable({
       <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm border-collapse">
-            <thead className="bg-gray-50/90 dark:bg-gray-850/90 backdrop-blur text-gray-600 dark:text-gray-400 uppercase text-[11px] tracking-wider border-b border-gray-200 dark:border-gray-700 font-semibold">
+            <thead className="bg-gray-50/95 dark:bg-gray-900/95 backdrop-blur text-gray-600 dark:text-gray-300 uppercase text-[11px] tracking-wider border-b border-gray-200 dark:border-gray-700 font-semibold">
               <tr>
                 <th className="py-3.5 px-4 sm:px-6 w-[140px]">Year</th>
                 <th className="py-3.5 px-4 text-right w-[120px]">Return</th>
@@ -210,7 +210,7 @@ export default function YearlyBreakdownTable({
                 <th className="py-3.5 px-3 text-center w-[60px]">Details</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100 dark:divide-gray-750">
+            <tbody className="divide-y divide-gray-100 dark:divide-gray-700/80">
               {breakdown.map((row) => {
                 const isExpanded = !!expandedYears[row.year];
                 const isPositive = row.return_pct > 0;
@@ -224,8 +224,8 @@ export default function YearlyBreakdownTable({
                       isHighlighted
                         ? 'bg-indigo-50/60 dark:bg-indigo-950/40'
                         : isExpanded
-                        ? 'bg-gray-50/70 dark:bg-gray-850/50'
-                        : 'hover:bg-gray-50/50 dark:hover:bg-gray-750/30'
+                        ? 'bg-gray-50/70 dark:bg-gray-900/70'
+                        : 'hover:bg-gray-50/50 dark:hover:bg-gray-700/40'
                     }`}
                   >
                     {/* Year Column */}
@@ -355,7 +355,7 @@ export default function YearlyBreakdownTable({
                                 </div>
                               </div>
                             ) : (
-                              <div className="p-3 rounded-xl bg-gray-50 dark:bg-gray-850 border border-gray-200 dark:border-gray-700 text-xs text-gray-500 flex items-center justify-center">
+                              <div className="p-3 rounded-xl bg-gray-50 dark:bg-gray-900/70 border border-gray-200 dark:border-gray-700 text-xs text-gray-500 dark:text-gray-400 flex items-center justify-center">
                                 No closed trades in this period
                               </div>
                             )}
@@ -381,13 +381,13 @@ export default function YearlyBreakdownTable({
                                 </div>
                               </div>
                             ) : (
-                              <div className="p-3 rounded-xl bg-gray-50 dark:bg-gray-850 border border-gray-200 dark:border-gray-700 text-xs text-gray-500 flex items-center justify-center">
+                              <div className="p-3 rounded-xl bg-gray-50 dark:bg-gray-900/70 border border-gray-200 dark:border-gray-700 text-xs text-gray-500 dark:text-gray-400 flex items-center justify-center">
                                 Zero losing exits
                               </div>
                             )}
 
                             {/* Multi-Baggers & Capital Profile */}
-                            <div className="p-3 rounded-xl bg-gray-50 dark:bg-gray-850 border border-gray-200 dark:border-gray-700">
+                            <div className="p-3 rounded-xl bg-gray-50 dark:bg-gray-900/70 border border-gray-200 dark:border-gray-700">
                               <span className="text-xs font-semibold text-gray-700 dark:text-gray-300 block mb-1">
                                 Equity Range in {row.display_year}
                               </span>

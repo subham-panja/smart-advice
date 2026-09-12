@@ -5,6 +5,8 @@
 @theme {
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --color-gray-750: #1e293b;
+  --color-gray-850: #0f172a;
 }
 
 /* Ensure smooth transitions for theme changes */
