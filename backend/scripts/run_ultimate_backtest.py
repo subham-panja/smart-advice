@@ -409,7 +409,7 @@ def main():
             strategy_name=args.strategy,
             strategy_config={"months": args.months},
             capital_config={"initial_capital": 100000},
-            symbols=[],
+            symbols=list(historical.get("_symbols_data", {}).keys()),
             session_type="ultimate",
         )
         print(f"  → Session ID: {session_id}")
