@@ -69,6 +69,7 @@ export default function YearlyBreakdownTable({
   const positiveYears = breakdown.filter((item) => item.return_pct > 0);
   const bestYear = [...breakdown].sort((a, b) => b.return_pct - a.return_pct)[0];
   const worstYear = [...breakdown].sort((a, b) => a.return_pct - b.return_pct)[0];
+  const worstDDYear = [...breakdown].sort((a, b) => a.max_drawdown_pct - b.max_drawdown_pct)[0];
   const maxAnnualDD = Math.min(...breakdown.map((item) => item.max_drawdown_pct));
 
   const initialCap = breakdown[0]?.start_portfolio_value ?? 0;
@@ -177,7 +178,9 @@ export default function YearlyBreakdownTable({
               <span className="text-lg sm:text-xl font-bold text-amber-600 dark:text-amber-400">
                 {maxAnnualDD.toFixed(1)}%
               </span>
-              <span className="text-[11px] text-gray-400">(COVID 2020 Peak)</span>
+              <span className="text-[11px] text-gray-400">
+                ({worstDDYear?.display_year || worstDDYear?.year || 'Max'} Trough)
+              </span>
             </div>
           </div>
 

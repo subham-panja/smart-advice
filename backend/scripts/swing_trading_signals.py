@@ -270,14 +270,18 @@ class SwingTradingSignalAnalyzer:
         if not all_gates_passed:
             return {"symbol": symbol, "all_gates_passed": False, "gates": gates, "reason": "Gates failed"}
 
-        # Market Breadth Filter
+        # Market Breadth Filter (with Relative Strength Leader Exception)
         if not market_breadth_ok:
-            return {
-                "symbol": symbol,
-                "all_gates_passed": False,
-                "gates": gates,
-                "reason": "Market breadth weak - broad market sell-off detected",
-            }
+            high_52 = df["High"].tail(252).max() if len(df) >= 50 else df["High"].max()
+            prox_52w = (high_52 - c) / high_52 if high_52 > 0 else 1.0
+            is_rs_leader = (prox_52w <= 0.15) and trend_ok
+            if not is_rs_leader:
+                return {
+                    "symbol": symbol,
+                    "all_gates_passed": False,
+                    "gates": gates,
+                    "reason": "Market breadth weak - non-leader filtered out",
+                }
 
         # 2. INDICATOR SIGNALS (Hard & Bonus)
         # ----------------------------------

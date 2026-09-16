@@ -149,23 +149,22 @@ def run_historical_with_realistic_costs(
     symbols = get_point_in_time_symbols(pit_start, strategy, max_stocks=1000)
     print(f"  → Point-in-time universe ({pit_start.year}): {len(symbols)} stocks")
 
-    # If we got the fallback live universe, also apply market cap pre-filter
-    if pit_start.year >= 2025:
-        min_cap = next(
-            (
-                f.get("value")
-                for f in strategy.get("stock_filters", [])
-                if f.get("type") == "market_cap" and f.get("op") == ">"
-            ),
-            None,
-        )
-        if min_cap is not None:
-            print(f"  → Pre-filtering by market cap > {min_cap}...")
-            from scripts.data_fetcher import get_market_caps
+    # Always apply strategy market cap pre-filter to match tradeable universe
+    min_cap = next(
+        (
+            f.get("value")
+            for f in strategy.get("stock_filters", [])
+            if f.get("type") == "market_cap" and f.get("op") == ">"
+        ),
+        None,
+    )
+    if min_cap is not None:
+        print(f"  → Pre-filtering by market cap > {min_cap}...")
+        from scripts.data_fetcher import get_market_caps
 
-            mc_cache = get_market_caps(list(symbols.keys()))
-            symbols = {sym: symbols[sym] for sym in symbols.keys() if mc_cache.get(sym, 0) > min_cap}
-            print(f"  → Filtered: {len(symbols)} stocks remaining")
+        mc_cache = get_market_caps(list(symbols.keys()))
+        symbols = {sym: symbols[sym] for sym in symbols.keys() if mc_cache.get(sym, 0) >= min_cap}
+        print(f"  → Filtered: {len(symbols)} stocks remaining")
 
     # Scanned symbols returned in results["_scanned_symbols"] for reuse
 
@@ -231,7 +230,8 @@ def run_historical_with_realistic_costs(
     # Create simulation engine with vectorbt store and index data override
     engine = PortfolioBacktestSession(strategy_config=strategy)
     engine.set_indicator_store(store)
-    engine._stock_prefilter = stock_prefilter
+    # Strategy gates (TREND_GATE, VOLUME_GATE, VOLATILITY_GATE, RS Leader) handle precise gating
+    # engine._stock_prefilter = stock_prefilter
     if index_data is not None:
         engine._index_data_override = index_data
 
@@ -379,9 +379,9 @@ def main():
     # ─── PHASE 1: Historical Backtest ───
     # Runs the strategy over real historical data with realistic execution costs
     timer.phase_start("Phase 1: Historical Backtest (Realistic Costs)")
-    # Calculate fetch period from --months + 1 year buffer for warmup
+    # Calculate fetch period from --months
     # Snap to valid yfinance periods: 1y, 2y, 5y, 10y, max
-    needed_years = (args.months + 11) // 12 + 1
+    needed_years = max((args.months + 11) // 12, 1)
     for y in (1, 2, 5, 10, 15, 20):
         if y >= needed_years:
             period = f"{y}y"
@@ -614,7 +614,7 @@ def main():
     print(f"\n{stat_df.to_string(index=False)}")
 
     # Table 3: Confidence Score Components
-    components = confidence.get("components", {})
+    comp_scores = confidence.get("component_scores", {})
     comp_data = {
         "Component": [
             "Walk-Forward Stability",
@@ -626,15 +626,15 @@ def main():
             "Data Sufficiency",
         ],
         "Score": [
-            f"{components.get('walk_forward', {}).get('score', 0):.0f}/15",
-            f"{components.get('dsr', {}).get('score', 0):.0f}/15",
-            f"{components.get('mc_permutation', {}).get('score', 0):.0f}/15",
-            f"{components.get('stress_tests', {}).get('score', 0):.0f}/15",
-            f"{components.get('param_stability', {}).get('score', 0):.0f}/10",
-            f"{components.get('cost_resilience', {}).get('score', 0):.0f}/10",
-            f"{components.get('data_sufficiency', {}).get('score', 0):.0f}/5",
+            f"{comp_scores.get('walk_forward', 0):.1f}/100",
+            f"{comp_scores.get('dsr', 0):.1f}/100",
+            f"{comp_scores.get('mc_permutation', 0):.1f}/100",
+            f"{comp_scores.get('stress_tests', 0):.1f}/100",
+            f"{comp_scores.get('param_stability', 0):.1f}/100",
+            f"{comp_scores.get('cost_resilience', 0):.1f}/100",
+            f"{comp_scores.get('data_sufficiency', 0):.1f}/100",
         ],
-        "Weight": ["15%", "15%", "15%", "15%", "10%", "10%", "5%"],
+        "Weight": ["20%", "15%", "15%", "15%", "10%", "10%", "5%"],
     }
     comp_df = pd.DataFrame(comp_data)
     print(f"\n{comp_df.to_string(index=False)}")

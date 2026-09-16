@@ -156,7 +156,8 @@ def compute_confidence_score(
         "haircut": haircut,
         "realistic_cagr": round(realistic_cagr, 2),
         "action": action,
-        "edge_verified": total_score >= 65,
+        "edge_verified": (validation_results.get("edge_verified", False) if validation_results else False)
+        or (total_score >= 65),
     }
 
 

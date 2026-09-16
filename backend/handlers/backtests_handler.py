@@ -452,7 +452,7 @@ def get_backtest_yearly_breakdown(session_id: str) -> List[Dict[str, Any]]:
         ][:5]
 
         # Context narrative
-        ctx_info = KNOWN_MARKET_CONTEXTS.get(y_label)
+        ctx_info = dict(KNOWN_MARKET_CONTEXTS.get(y_label, {})) if y_label in KNOWN_MARKET_CONTEXTS else None
         if not ctx_info:
             if ret > 25:
                 ctx_info = {
@@ -478,6 +478,15 @@ def get_backtest_yearly_breakdown(session_id: str) -> List[Dict[str, Any]]:
                     "badge": "Defensive Trailing",
                     "regime": "Market Correction",
                 }
+        else:
+            if ret < -15 and "Capital protected" in ctx_info.get("context", ""):
+                ctx_info["badge"] = "Severe Drawdown"
+                ctx_info["context"] = (
+                    f"Challenging bear market phase ({ret:+.1f}% annual return). Strict capital controls engaged."
+                )
+            elif ret < -15 and "Minimal drawdown" in ctx_info.get("context", ""):
+                ctx_info["badge"] = "Liquidity Crisis Drag"
+                ctx_info["context"] = f"Liquidity crunch regime ({ret:+.1f}% annual return). Exposure throttled."
 
         display_year = "2016–2017" if y_label == "2016-2017" else y_label
 

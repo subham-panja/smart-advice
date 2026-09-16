@@ -246,7 +246,7 @@
       {
         "name": "Target 1",
         "atr_multiplier": 3.0,
-        "sell_percentage": 0.2
+        "sell_percentage": 0.25
       },
       {
         "name": "Target 2",
@@ -295,7 +295,7 @@
       "max_weeks": 30,
       "action": "hold_and_trail"
     },
-    "hard_stop_loss_pct": null
+    "hard_stop_loss_pct": 6.0
   },
   "risk_management": {
     "risk_per_trade_pct": 4.2,
@@ -305,15 +305,18 @@
     "regime_adaptive_risk": {
       "bull": {
         "max_positions": 3,
+        "max_position_pct": 36.0,
         "risk_per_trade_pct": 4.5
       },
       "sideways": {
-        "max_positions": 4,
-        "risk_per_trade_pct": 2.0
+        "max_positions": 2,
+        "max_position_pct": 24.0,
+        "risk_per_trade_pct": 2.5
       },
       "bear": {
-        "max_positions": 3,
-        "risk_per_trade_pct": 1.2
+        "max_positions": 1,
+        "max_position_pct": 18.0,
+        "risk_per_trade_pct": 1.5
       }
     },
     "stop_loss_type": "ATR",

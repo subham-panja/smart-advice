@@ -188,22 +188,88 @@ def check_position_exit_signal(
         if current_price <= oneil_stop:
             return f"ONEIL_STOP_{stop_loss_pct}%", current_price, None
 
-    # 1. O'Neil Absolute Profit Target
-    oneil_target_pct = regime_params.get("oneil_target_pct", exit_cfg.get("oneil_target_pct", 25.0))
     gain_pct = (current_price - pos.entry_price) / pos.entry_price * 100
+
+    # 1. Leader Exception Detection
     leader_cfg = exit_cfg.get("leader_exception", {})
     weeks_held = days_held / 7.0
-
     is_leader = False
-    if leader_cfg.get("enabled", False) and gain_pct >= leader_cfg.get("min_gain_pct", 20.0):
-        if weeks_held <= leader_cfg.get("max_weeks", 8):
+    if leader_cfg.get("enabled", False) and gain_pct >= leader_cfg.get("min_gain_pct", 15.0):
+        if weeks_held <= leader_cfg.get("max_weeks", 30):
             is_leader = True
 
+    # 2. Early Breakeven Protection: If gain reaches >= 3.0%, lock in breakeven
+    if gain_pct >= 3.0:
+        be_stop = pos.entry_price * 1.003
+        if be_stop > pos.current_stop_loss:
+            pos.current_stop_loss = be_stop
+
+    # 3. Trailing Stop update (Gated: only trail after Target 1 is hit or min gain reached)
+    trail_only_after_t1 = exit_cfg.get("trail_only_after_t1", True)
+    trail_min_gain_pct = exit_cfg.get("trail_min_gain_pct", 5.0)
+    targets_hit = getattr(pos, "targets_hit", getattr(pos, "current_target_idx", 0))
+
+    can_trail = True
+    if trail_only_after_t1 and targets_hit == 0 and gain_pct < trail_min_gain_pct:
+        can_trail = False
+
+    if can_trail:
+        trail_type = regime_params.get("trail_stop_type", "atr")
+        if trail_type == "ma" and len(df) >= regime_params.get("trail_stop_ma_period", 20):
+            ma_period = regime_params.get("trail_stop_ma_period", 20)
+            ma_value = df["Close"].rolling(ma_period).mean().iloc[-1]
+            if ma_value > pos.current_stop_loss:
+                pos.current_stop_loss = ma_value
+        elif atr > 0:
+            if gain_pct >= 8.0:
+                trail_mult = min(
+                    2.0, regime_params.get("trail_stop_atr_multiplier", exit_cfg.get("trail_stop_atr", 2.5))
+                )
+            else:
+                trail_mult = regime_params.get("trail_stop_atr_multiplier", exit_cfg.get("trail_stop_atr", 2.5))
+            new_sl = current_price - (atr * trail_mult)
+            if new_sl > pos.current_stop_loss:
+                pos.current_stop_loss = new_sl
+
+    # 4. Runner Profit Preservation:
+    # Leaders get 35% breathing room (lock 65% of peak gain) so multi-baggers can compound to +200%-300%.
+    # Normal swing positions lock 78% of peak gain.
+    if gain_pct >= 15.0:
+        peak_gain = getattr(pos, "peak_gain_pct", gain_pct)
+        if gain_pct > peak_gain:
+            pos.peak_gain_pct = gain_pct
+            peak_gain = gain_pct
+        lock_pct = 0.65 if is_leader else 0.78
+        guaranteed_gain = peak_gain * lock_pct
+        profit_floor_sl = pos.entry_price * (1 + guaranteed_gain / 100.0)
+        if profit_floor_sl > pos.current_stop_loss:
+            pos.current_stop_loss = profit_floor_sl
+
+    # 5. Universal Stop Loss / Trailing Stop Check (Protects ALL positions including leaders)
+    stop_loss_type = exit_cfg.get("stop_loss_type", "ATR")
+    if stop_loss_type == "swing_low":
+        lookback = max(10, min(20, bars_held))
+        idx = date_idx_dict.get(date)
+        if idx is not None:
+            start = max(0, idx - lookback + 1)
+            recent_lows = df["Low"].iloc[start : idx + 1]
+            swing_low = recent_lows.min()
+            swing_stop = swing_low * 0.98
+            if current_price <= swing_stop:
+                return f"SWING_LOW_STOP@{swing_low:.2f}", current_price, None
+            if swing_stop > pos.current_stop_loss:
+                pos.current_stop_loss = swing_stop
+    if current_price <= pos.current_stop_loss:
+        return "STOP_LOSS", current_price, None
+
+    # 6. Target 1 / O'Neil Target Check
+    oneil_target_pct = regime_params.get("oneil_target_pct", exit_cfg.get("oneil_target_pct", 25.0))
     if gain_pct >= oneil_target_pct and not is_leader:
         return f"ONEIL_TARGET_{oneil_target_pct:.0f}%", current_price, None
 
-    if not (is_leader and leader_cfg.get("action") == "hold_and_trail"):
-        # 2. Dynamic Time Stop - cut stagnant losers; extend runway for healthy basing / profitable runners
+    # 6. Targets and Time Stop for Non-Leaders
+    if not is_leader:
+        # Dynamic Time Stop - cut stagnant losers; extend runway for healthy basing / profitable runners
         effective_time_stop = time_stop
         dynamic_cfg = exit_cfg.get("dynamic_time_stop", {})
         if dynamic_cfg.get("enabled", True):
@@ -215,11 +281,11 @@ def check_position_exit_signal(
                 is_above_ema = current_price >= ema20
 
             if gain_pct >= 1.0 and is_above_ema:
-                effective_time_stop = int(time_stop * 2.0)  # Double runway for profitable basing runners
+                effective_time_stop = int(time_stop * 2.0)
             elif gain_pct >= 0.0:
-                effective_time_stop = int(time_stop * 1.5)  # +50% runway for breakeven/modest gainers
+                effective_time_stop = int(time_stop * 1.5)
             elif gain_pct < -3.0:
-                effective_time_stop = max(5, int(time_stop * 0.8))  # Faster cutoff for clear losers
+                effective_time_stop = max(5, int(time_stop * 0.8))
 
         if bars_held >= effective_time_stop and getattr(pos, "current_target_idx", 0) == 0:
             idx = date_idx_dict.get(date)
@@ -231,24 +297,7 @@ def check_position_exit_signal(
             if not is_healthy:
                 return "TIME_STOP", current_price, None
 
-        # 3. Stop Loss
-        stop_loss_type = exit_cfg.get("stop_loss_type", "ATR")
-        if stop_loss_type == "swing_low":
-            lookback = max(10, min(20, bars_held))
-            idx = date_idx_dict.get(date)
-            if idx is not None:
-                start = max(0, idx - lookback + 1)
-                recent_lows = df["Low"].iloc[start : idx + 1]
-                swing_low = recent_lows.min()
-                swing_stop = swing_low * 0.98
-                if current_price <= swing_stop:
-                    return f"SWING_LOW_STOP@{swing_low:.2f}", current_price, None
-                if swing_stop > pos.current_stop_loss:
-                    pos.current_stop_loss = swing_stop
-        elif current_price <= pos.current_stop_loss:
-            return "STOP_LOSS", current_price, None
-
-        # 4. Targets
+        # Profit Targets
         targets = exit_cfg.get("targets", [])
         if targets and targets[0].get("type") == "swing_structure" and pos.current_target_idx == 0:
             lookback = max(10, min(20, bars_held + 10))
@@ -276,28 +325,6 @@ def check_position_exit_signal(
                 if sell_pct < 1.0:
                     return target_cfg["name"], current_price, sell_qty
                 return f"FINAL_{target_cfg['name']}", current_price, None
-
-    # Trailing Stop update (Gated: only trail after Target 1 is hit or min gain reached)
-    trail_only_after_t1 = exit_cfg.get("trail_only_after_t1", True)
-    trail_min_gain_pct = exit_cfg.get("trail_min_gain_pct", 5.0)
-    targets_hit = getattr(pos, "targets_hit", getattr(pos, "current_target_idx", 0))
-
-    can_trail = True
-    if trail_only_after_t1 and targets_hit == 0 and gain_pct < trail_min_gain_pct:
-        can_trail = False
-
-    if can_trail:
-        trail_type = regime_params.get("trail_stop_type", "atr")
-        if trail_type == "ma" and len(df) >= regime_params.get("trail_stop_ma_period", 20):
-            ma_period = regime_params.get("trail_stop_ma_period", 20)
-            ma_value = df["Close"].rolling(ma_period).mean().iloc[-1]
-            if ma_value > pos.current_stop_loss:
-                pos.current_stop_loss = ma_value
-        elif atr > 0:
-            trail_mult = regime_params.get("trail_stop_atr_multiplier", exit_cfg.get("trail_stop_atr", 2.8))
-            new_sl = current_price - (atr * trail_mult)
-            if new_sl > pos.current_stop_loss:
-                pos.current_stop_loss = new_sl
 
     return None
 

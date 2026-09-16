@@ -124,42 +124,62 @@ class RiskManager:
         # Support different position sizing methods
         position_sizing_method = risk_cfg.get("position_sizing", "risk_based")
 
+        # Normalize regime key
+        regime_risk_cfg = app_config.get("risk_management", {}).get("regime_adaptive_risk", {})
+        regime_key = regime_status.lower() if regime_status != "UNKNOWN" else "bull"
+        if regime_key in ("neutral", "sideways"):
+            regime_key = "sideways" if "sideways" in regime_risk_cfg else "neutral"
+
+        raw_max_risk = risk_cfg_extract["max_risk_per_trade"]
+        max_risk_pct = (raw_max_risk / 100.0) if raw_max_risk > 1.0 else raw_max_risk
+
         if position_sizing_method == "risk_based":
-            max_risk_pct = risk_cfg_extract["max_risk_per_trade"]
             effective_risk_pct = self._calculate_volatility_scaled_risk(df, atr, max_risk_pct, vol_scale_cfg)
 
             # Regime-adaptive risk (from strategy config)
-            regime_risk_cfg = app_config.get("risk_management", {}).get("regime_adaptive_risk", {})
-            regime_key = regime_status.lower() if regime_status != "UNKNOWN" else "bull"
             if regime_key in regime_risk_cfg:
                 regime_risk = regime_risk_cfg[regime_key]
-                effective_risk_pct = regime_risk.get("risk_per_trade_pct", effective_risk_pct) / 100.0
+                r_val = regime_risk.get("risk_per_trade_pct", effective_risk_pct)
+                effective_risk_pct = (r_val / 100.0) if r_val > 1.0 else r_val
 
             risk_amt = self.balance * effective_risk_pct
             size_based_on_risk = int(risk_amt / risk_per_share)
             size = size_based_on_risk
         elif position_sizing_method == "fixed_pct":
             # Fixed percentage of capital per trade
-            fixed_pct = risk_cfg.get("risk_per_trade_pct", 2.0) / 100.0
+            raw_fixed = risk_cfg.get("risk_per_trade_pct", 2.0)
+            fixed_pct = (raw_fixed / 100.0) if raw_fixed > 1.0 else raw_fixed
             effective_risk_pct = fixed_pct
             allocation = self.balance * fixed_pct
             size = int(allocation / entry)
         elif position_sizing_method == "volatility_weighted":
             # Weight position size by inverse of volatility
             vol_scale_cfg = risk_cfg.get("volatility_scaling", {})
-            max_risk_pct = risk_cfg_extract["max_risk_per_trade"]
             effective_risk_pct = self._calculate_volatility_scaled_risk(df, atr, max_risk_pct, vol_scale_cfg)
+            if regime_key in regime_risk_cfg:
+                regime_risk = regime_risk_cfg[regime_key]
+                r_val = regime_risk.get("risk_per_trade_pct", effective_risk_pct)
+                effective_risk_pct = (r_val / 100.0) if r_val > 1.0 else r_val
             risk_amt = self.balance * effective_risk_pct
             size = int(risk_amt / risk_per_share)
         else:
             # Default to risk_based
-            max_risk_pct = risk_cfg_extract["max_risk_per_trade"]
             effective_risk_pct = self._calculate_volatility_scaled_risk(df, atr, max_risk_pct, vol_scale_cfg)
+            if regime_key in regime_risk_cfg:
+                regime_risk = regime_risk_cfg[regime_key]
+                r_val = regime_risk.get("risk_per_trade_pct", effective_risk_pct)
+                effective_risk_pct = (r_val / 100.0) if r_val > 1.0 else r_val
             risk_amt = self.balance * effective_risk_pct
             size = int(risk_amt / risk_per_share)
 
-        # 3. Position Sizing based on Capital Cap
-        max_pos_pct = risk_cfg_extract["max_position_pct"] / 100.0  # Convert from percentage (10.0) to decimal (0.10)
+        # 3. Position Sizing based on Capital Cap (Respect regime-adaptive max_position_pct)
+        base_max_pos = risk_cfg_extract["max_position_pct"]
+        if regime_key in regime_risk_cfg:
+            regime_max_pos = regime_risk_cfg[regime_key].get("max_position_pct", base_max_pos)
+        else:
+            regime_max_pos = base_max_pos
+        effective_max_pos = min(base_max_pos, regime_max_pos)
+        max_pos_pct = (effective_max_pos / 100.0) if effective_max_pos > 1.0 else effective_max_pos
         max_capital_allowed = self.balance * max_pos_pct
         size_based_on_capital = int(max_capital_allowed / entry)
 

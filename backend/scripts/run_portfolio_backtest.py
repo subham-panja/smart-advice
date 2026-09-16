@@ -316,8 +316,8 @@ def run_portfolio_backtest(
     engine.session_id = session_id
     if store is not None:
         engine.set_indicator_store(store)
-    if prefilter_matrix is not None:
-        engine._stock_prefilter = prefilter_matrix
+    # Note: Strategy gates (TREND_GATE, VOLUME_GATE, VOLATILITY_GATE) handle precise bar-by-bar gating
+    # engine._stock_prefilter = prefilter_matrix
 
     index_symbol = strategy.get("market_regime_config", {}).get("index", "^NSEI")
     stock_only = {k: v for k, v in symbols_data.items() if k != index_symbol}
