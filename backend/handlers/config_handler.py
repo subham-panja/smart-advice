@@ -29,19 +29,25 @@ def get_cycle_stats():
     positions = get_open_positions()
     closed_positions = list(db[config.MONGODB_COLLECTIONS["positions"]].find({"status": "CLOSED"}))
     initial_cap = config.TRADING_OPTIONS.get("initial_capital", 100000.0)
-    total_invested = sum(p.get("total_investment", p["quantity"] * p["entry_price"]) for p in positions)
+    brokerage_pct = config.TRADING_OPTIONS.get("brokerage_charges", 0.0020)
+
+    def pos_cost(p):
+        return p.get("quantity", 0) * p.get("entry_price", 0) * (1 + brokerage_pct)
+
+    total_invested = sum(pos_cost(p) for p in positions)
     total_mkt_val = sum(p.get("current_price", p["entry_price"]) * p["quantity"] for p in positions)
 
     cash_info = get_available_cash(initial_cap, positions, closed_positions)
     cash_remaining = cash_info["available_cash"]
-    total_equity = total_mkt_val + cash_remaining
+    unsettled_funds = cash_info["unsettled_funds"]
+    total_equity = total_mkt_val + cash_info["total_cash"]
     pnl_pct = ((total_equity - initial_cap) / initial_cap) * 100 if initial_cap > 0 else 0
 
     return {
         "open_positions": len(positions),
         "total_invested": round(total_invested, 2),
         "cash_remaining": round(cash_remaining, 2),
-        "unsettled_funds": round(cash_info["unsettled_funds"], 2),
+        "unsettled_funds": round(unsettled_funds, 2),
         "total_equity": round(total_equity, 2),
         "pnl_pct": round(pnl_pct, 2),
         "initial_capital": initial_cap,
@@ -54,11 +60,15 @@ def get_dashboard_stats():
     db = get_mongodb()
     col = config.MONGODB_COLLECTIONS["positions"]
     initial_cap = config.TRADING_OPTIONS.get("initial_capital", 100000.0)
+    brokerage_pct = config.TRADING_OPTIONS.get("brokerage_charges", 0.0020)
 
     open_positions = get_open_positions()
     closed_positions = list(db[col].find({"status": "CLOSED"}))
 
-    total_invested = sum(p.get("total_investment", p["quantity"] * p["entry_price"]) for p in open_positions)
+    def pos_cost(p):
+        return p.get("quantity", 0) * p.get("entry_price", 0) * (1 + brokerage_pct)
+
+    total_invested = sum(pos_cost(p) for p in open_positions)
     total_mkt_val = sum(p.get("current_price", p["entry_price"]) * p["quantity"] for p in open_positions)
 
     # Settlement-aware cash calculation
@@ -67,12 +77,23 @@ def get_dashboard_stats():
     cash_info = get_available_cash(initial_cap, open_positions, closed_positions)
     cash_remaining = cash_info["available_cash"]
     unsettled_funds = cash_info["unsettled_funds"]
-    total_equity = total_mkt_val + cash_remaining
+    total_equity = total_mkt_val + cash_info["total_cash"]
 
-    realized_pnl = sum(
+    closed_realized = sum(
         (p.get("exit_price", 0) - p.get("entry_price", 0)) * p.get("quantity", 0) for p in closed_positions
     )
-    unrealized_pnl = total_mkt_val - total_invested
+    partial_realized = sum(
+        sum(
+            (pe.get("price", p.get("entry_price", 0)) - p.get("entry_price", 0)) * pe.get("quantity", 0)
+            for pe in p.get("partial_exits", [])
+        )
+        for p in open_positions
+    )
+    realized_pnl = closed_realized + partial_realized
+
+    unrealized_pnl = sum(
+        (p.get("current_price", p["entry_price"]) - p["entry_price"]) * p["quantity"] for p in open_positions
+    )
     total_pnl = realized_pnl + unrealized_pnl
     pnl_pct = (total_pnl / initial_cap) * 100 if initial_cap > 0 else 0
     deployed_pct = (total_invested / initial_cap) * 100 if initial_cap > 0 else 0
@@ -137,7 +158,7 @@ def get_dashboard_stats():
                 "quantity": qty,
                 "entry_price": round(entry, 2),
                 "current_price": round(current, 2),
-                "total_investment": round(p.get("total_investment", 0), 2),
+                "total_investment": round(pos_cost(p), 2),
                 "unrealized_pnl": round(pnl, 2),
                 "pnl_pct": round(pnl_pct_pos, 2),
                 "stop_loss": round(p.get("current_stop_loss", p.get("stop_loss", 0)), 2),

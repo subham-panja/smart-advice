@@ -254,7 +254,7 @@ def get_available_cash(initial_capital, open_positions, closed_positions):
     """Calculate available cash accounting for T+1 settlement.
 
     This replaces the simple `initial_capital - total_invested` calculation.
-    Available = initial_capital + realized_pnl - total_invested - unsettled_20%
+    Available = initial_capital + realized_pnl - total_invested - unsettled_amount
 
     Args:
         initial_capital: Starting capital.
@@ -264,18 +264,33 @@ def get_available_cash(initial_capital, open_positions, closed_positions):
     Returns:
         dict with 'available_cash', 'unsettled_funds', 'total_cash'.
     """
-    total_invested = sum(p.get("total_investment", p["quantity"] * p["entry_price"]) for p in open_positions)
+    brokerage_pct = getattr(config, "TRADING_OPTIONS", {}).get("brokerage_charges", 0.0020)
 
-    realized_pnl = sum(
+    def pos_cost(p):
+        return p.get("quantity", 0) * p.get("entry_price", 0) * (1 + brokerage_pct)
+
+    total_invested = sum(pos_cost(p) for p in open_positions)
+
+    # Realized PnL from closed positions
+    closed_realized = sum(
         (p.get("exit_price", 0) - p.get("entry_price", 0)) * p.get("quantity", 0) for p in closed_positions
     )
+    # Realized PnL from partial exits on open positions
+    partial_realized = sum(
+        sum(
+            (pe.get("price", p.get("entry_price", 0)) - p.get("entry_price", 0)) * pe.get("quantity", 0)
+            for pe in p.get("partial_exits", [])
+        )
+        for p in open_positions
+    )
+    realized_pnl = closed_realized + partial_realized
 
     # Total cash without settlement restriction
     total_cash = initial_capital + realized_pnl - total_invested
 
-    # Subtract unsettled 20% that hasn't cleared T+1 yet
+    # Subtract unsettled amount that hasn't cleared T+1 yet
     unsettled = get_total_unsettled()
-    available_cash = total_cash - unsettled
+    available_cash = max(0.0, total_cash - unsettled)
 
     return {
         "available_cash": round(available_cash, 2),

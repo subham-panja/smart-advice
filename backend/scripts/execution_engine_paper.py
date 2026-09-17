@@ -612,11 +612,16 @@ class ExecutionEngine:
                                 f"✅ FULL EXIT: {symbol} | Price: {price} | Net: {net_price:.2f} | Reason: {reason}"
                             )
                         else:
-                            # Record partial exit with net price
+                            # Record partial exit with net price and reduce total_investment proportionally
+                            old_inv = pos.get(
+                                "total_investment", current_qty * pos["entry_price"] * (1 + self.brokerage_pct)
+                            )
+                            new_inv = round(old_inv * (new_qty / current_qty), 2)
                             update_position(
                                 symbol,
                                 {
                                     "quantity": new_qty,
+                                    "total_investment": new_inv,
                                     "partial_exits": pos.get("partial_exits", [])
                                     + [
                                         {

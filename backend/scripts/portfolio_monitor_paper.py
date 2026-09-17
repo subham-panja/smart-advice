@@ -180,8 +180,11 @@ class PortfolioMonitor:
                                 symbol, current_price, f"PARTIAL_{target_obj['name']}", quantity=sell_qty
                             )
                             rem_qty = pos["quantity"] - sell_qty
+                            old_inv = pos.get("total_investment", pos["quantity"] * entry_price * (1 + 0.0020))
+                            new_inv = round(old_inv * (rem_qty / pos["quantity"]), 2)
                             update_data = {
                                 "quantity": rem_qty,
+                                "total_investment": new_inv,
                                 "current_target_idx": current_target_idx + 1,
                                 "targets_hit": current_target_idx + 1,
                                 "is_scaled_out": True,
