@@ -400,9 +400,9 @@ class SwingTradingSignalAnalyzer:
 
             elif pat_name == "bollinger_squeeze_breakout":
                 if use_store:
-                    upper = indicator_store.get_full_series(symbol, "bb_upper")
-                    middle = indicator_store.get_full_series(symbol, "bb_middle")
-                    lower = indicator_store.get_full_series(symbol, "bb_lower")
+                    upper = self._get_series(symbol, df, indicator_store, "bb_upper")
+                    middle = self._get_series(symbol, df, indicator_store, "bb_middle")
+                    lower = self._get_series(symbol, df, indicator_store, "bb_lower")
                 else:
                     upper, middle, lower = ta.BBANDS(df["Close"], pat["bb_period"], pat["bb_std"], pat["bb_std"])
                 bandwidth = (upper - lower) / middle
@@ -427,8 +427,8 @@ class SwingTradingSignalAnalyzer:
 
             elif pat_name == "macd_zero_cross":
                 if use_store:
-                    macd_line = indicator_store.get_full_series(symbol, "macd")
-                    histogram = indicator_store.get_full_series(symbol, "macd_hist")
+                    macd_line = self._get_series(symbol, df, indicator_store, "macd")
+                    histogram = self._get_series(symbol, df, indicator_store, "macd_hist")
                 else:
                     macd_line, _, histogram = ta.MACD(df["Close"], pat["fast"], pat["slow"], pat["signal"])
                 cross_ok = macd_line.iloc[-2] < 0 and macd_line.iloc[-1] > 0
@@ -461,7 +461,7 @@ class SwingTradingSignalAnalyzer:
 
             elif pat_name == "volatility_contraction":
                 if use_store:
-                    atr_series = indicator_store.get_full_series(symbol, "atr_14")
+                    atr_series = self._get_series(symbol, df, indicator_store, "atr_14")
                 else:
                     atr_series = ta.ATR(df["High"], df["Low"], df["Close"], 14)
 
@@ -506,7 +506,7 @@ class SwingTradingSignalAnalyzer:
 
                     if len(df) >= 20:
                         if use_store:
-                            atr_series = indicator_store.get_full_series(symbol, "atr_14")
+                            atr_series = self._get_series(symbol, df, indicator_store, "atr_14")
                         else:
                             atr_series = ta.ATR(df["High"], df["Low"], df["Close"], 14)
                         atr_contracting = atr_series.iloc[-2] <= atr_series.iloc[-10:].mean() * 1.15
@@ -527,7 +527,7 @@ class SwingTradingSignalAnalyzer:
 
                 if breakout_ok and pat.get("max_distance_from_21ema_pct") is not None:
                     if use_store:
-                        ema21_series = indicator_store.get_full_series(symbol, "ema_21")
+                        ema21_series = self._get_series(symbol, df, indicator_store, "ema_21")
                         ema21_val = ema21_series.iloc[-1] if len(ema21_series) > 0 else np.nan
                     else:
                         ema21_val = ta.EMA(df["Close"], 21).iloc[-1]
@@ -596,8 +596,8 @@ class SwingTradingSignalAnalyzer:
                             macd_confirmed = True
                             if pat.get("macd_confirmed", False):
                                 if use_store:
-                                    macd_line = indicator_store.get_full_series(symbol, "macd")
-                                    histogram = indicator_store.get_full_series(symbol, "macd_hist")
+                                    macd_line = self._get_series(symbol, df, indicator_store, "macd")
+                                    histogram = self._get_series(symbol, df, indicator_store, "macd_hist")
                                 else:
                                     macd_line, _, histogram = ta.MACD(df["Close"], 21, 39, 9)
                                 macd_confirmed = histogram.iloc[-1] > 0 or (
@@ -610,7 +610,7 @@ class SwingTradingSignalAnalyzer:
                                 rsi_wma_confirmed = True
                                 if pat.get("rsi_wma_confirmed", False):
                                     if use_store:
-                                        rsi_9_series = indicator_store.get_full_series(symbol, "rsi_9")
+                                        rsi_9_series = self._get_series(symbol, df, indicator_store, "rsi_9")
                                         rsi_9_val = rsi_9_series.iloc[-1]
                                         rsi_wma_val = (
                                             rsi_9_series.rolling(21, min_periods=1).mean().iloc[-1]
@@ -633,7 +633,7 @@ class SwingTradingSignalAnalyzer:
         # RSI Momentum Filter
         if entry_signals and any(v == 1 for v in entry_signals.values()):
             if use_store:
-                rsi_14_series = indicator_store.get_full_series(symbol, "rsi_14")
+                rsi_14_series = self._get_series(symbol, df, indicator_store, "rsi_14")
             else:
                 rsi_14_series = ta.RSI(df["Close"], 14)
             rsi_current = rsi_14_series.iloc[-1]
@@ -685,8 +685,9 @@ class SwingTradingSignalAnalyzer:
             if p_val == 1:
                 final_reasons.append(f"Pattern({p_name})")
 
-        all_signals = [s for s in signals.values()]
-        technical_score = sum(all_signals) / len(all_signals) if all_signals else 0.0
+        core_indicator_keys = ["MACD", "RSI", "BBANDS", "ADX_Strength", "Candlesticks"]
+        core_signals = [signals[k] for k in core_indicator_keys if k in signals]
+        technical_score = sum(core_signals) / len(core_signals) if core_signals else 0.50
 
         return {
             "symbol": symbol,

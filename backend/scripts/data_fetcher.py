@@ -145,7 +145,7 @@ def get_historical_data(symbol: str, period: str = "2y", interval: str = "1d") -
     from utils.data_cache import fetch_historical_data_cached
 
     df = fetch_historical_data_cached(symbol, period=period, interval=interval, sync_live=True)
-    if df.index.tz is not None:
+    if hasattr(df.index, "tz") and df.index.tz is not None:
         df.index = df.index.tz_localize(None)
     return df
 
@@ -155,7 +155,7 @@ def get_subdaily_historical_data(symbol: str, period: str = "60d", interval: str
     from utils.data_cache import fetch_historical_data_cached
 
     df = fetch_historical_data_cached(symbol, period=period, interval=interval)
-    if df.index.tz is not None:
+    if hasattr(df.index, "tz") and df.index.tz is not None:
         df.index = df.index.tz_localize(None)
     return df
 

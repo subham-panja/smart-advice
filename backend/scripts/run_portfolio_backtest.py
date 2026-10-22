@@ -25,7 +25,7 @@ import random
 import re
 import sys
 from collections import defaultdict
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from typing import Dict, Optional
 
@@ -458,8 +458,17 @@ def run_walk_forward_backtest(
     for df in symbols_data.values():
         all_dates.update(df.index)
     all_dates = sorted(all_dates)
-    start_date = all_dates[0]
     end_date = all_dates[-1]
+    if period.endswith("y"):
+        years_back = int(period[:-1])
+        target_start = end_date - pd.DateOffset(years=years_back)
+        start_date = next((d for d in all_dates if d >= target_start), all_dates[0])
+    elif period.endswith("mo"):
+        months_back = int(period[:-2])
+        target_start = end_date - pd.DateOffset(months=months_back)
+        start_date = next((d for d in all_dates if d >= target_start), all_dates[0])
+    else:
+        start_date = all_dates[0]
     total_days = (end_date - start_date).days
     logger.info(f"Full date range: {start_date.date()} → {end_date.date()} ({total_days} days)")
 
@@ -542,7 +551,7 @@ def run_walk_forward_backtest(
         window_data = {}
         for sym, df in symbols_data.items():
             sliced = df[(df.index >= window_start - pd.Timedelta(days=warmup_days)) & (df.index <= window_end)]
-            if len(sliced) >= 200:
+            if len(sliced) >= 30:
                 window_data[sym] = sliced
 
         if len(window_data) < 5:
@@ -561,43 +570,112 @@ def run_walk_forward_backtest(
 
     # Submit one task per (window, mc_iter) — pre-sliced data avoids redundant slicing
     use_precomputed = bool(full_signals)
-    fork_ctx = mp.get_context("fork")
-    with ProcessPoolExecutor(max_workers=max_workers, mp_context=fork_ctx) as executor:
-        futures = {}
-        for window_idx, window_start, window_end, window_data, mc_samples in window_tasks:
-            for mc_iter, sampled_symbols in mc_samples:
-                sampled_data = {sym: window_data[sym] for sym in sampled_symbols if sym in window_data}
-                if use_precomputed:
-                    future = executor.submit(
-                        _walk_forward_mc_worker_with_signals,
-                        strategy,
-                        sampled_data,
-                        window_idx + 1,
-                        mc_iter,
-                        window_start,
-                        window_end,
-                        full_signals,
-                    )
-                else:
-                    future = executor.submit(
-                        _walk_forward_mc_worker_sequential,
-                        strategy,
-                        sampled_data,
-                        window_idx + 1,
-                        mc_iter,
-                        window_start,
-                        window_end,
-                        full_indicators,
-                        full_prefilter,
-                    )
-                futures[future] = (window_idx, mc_iter)
+    task_items = []
+    for window_idx, window_start, window_end, window_data, mc_samples in window_tasks:
+        for mc_iter, sampled_symbols in mc_samples:
+            sampled_data = {sym: window_data[sym] for sym in sampled_symbols if sym in window_data}
+            task_items.append((window_idx, window_start, window_end, sampled_data, mc_iter))
 
-        for future in as_completed(futures):
-            result = future.result()
-            completed_count += 1
-            if result and result.get("status") in ("success", "completed"):
-                all_cagrs.append(result["cagr"])
-                all_results.append(result)
+    def _execute_single_task(item):
+        w_idx, w_start, w_end, s_data, m_iter = item
+        if use_precomputed:
+            return _walk_forward_mc_worker_with_signals(
+                strategy,
+                s_data,
+                w_idx + 1,
+                m_iter,
+                w_start,
+                w_end,
+                full_signals,
+            )
+        else:
+            return _walk_forward_mc_worker_sequential(
+                strategy,
+                s_data,
+                w_idx + 1,
+                m_iter,
+                w_start,
+                w_end,
+                full_indicators,
+                full_prefilter,
+            )
+
+    # Use ThreadPoolExecutor when signals are precomputed (fast, concurrent, & zero malloc/fork issues on macOS)
+    if use_precomputed or sys.platform == "darwin":
+        worker_count = min(6, os.cpu_count() or 4)
+        with ThreadPoolExecutor(max_workers=worker_count) as pool:
+            futures = {pool.submit(_execute_single_task, item): item for item in task_items}
+            for fut in as_completed(futures):
+                try:
+                    result = fut.result()
+                    completed_count += 1
+                    if result and result.get("status") in ("success", "completed"):
+                        all_cagrs.append(result["cagr"])
+                        all_results.append(result)
+                except Exception as e:
+                    logger.error(f"Task execution error: {e}")
+                if completed_count % max(1, total_runs // 10) == 0 or completed_count >= total_runs:
+                    elapsed = (datetime.now() - start_time).total_seconds()
+                    pct = completed_count / total_runs * 100
+                    remaining = total_runs - completed_count
+                    eta = (elapsed / completed_count * remaining) if completed_count > 0 else 0
+                    eta_td = timedelta(seconds=int(eta))
+                    logger.info(f"Walk-forward progress: {pct:.0f}% ({completed_count}/{total_runs}) | ETA: {eta_td}")
+    else:
+        try:
+            fork_ctx = mp.get_context("fork")
+            with ProcessPoolExecutor(max_workers=max_workers, mp_context=fork_ctx) as executor:
+                futures = {}
+                for item in task_items:
+                    w_idx, w_start, w_end, s_data, m_iter = item
+                    if use_precomputed:
+                        future = executor.submit(
+                            _walk_forward_mc_worker_with_signals,
+                            strategy,
+                            s_data,
+                            w_idx + 1,
+                            m_iter,
+                            w_start,
+                            w_end,
+                            full_signals,
+                        )
+                    else:
+                        future = executor.submit(
+                            _walk_forward_mc_worker_sequential,
+                            strategy,
+                            s_data,
+                            w_idx + 1,
+                            m_iter,
+                            w_start,
+                            w_end,
+                            full_indicators,
+                            full_prefilter,
+                        )
+                    futures[future] = item
+
+                for future in as_completed(futures):
+                    result = future.result()
+                    completed_count += 1
+                    if result and result.get("status") in ("success", "completed"):
+                        all_cagrs.append(result["cagr"])
+                        all_results.append(result)
+                    if completed_count % max(1, total_runs // 10) == 0 or completed_count >= total_runs:
+                        elapsed = (datetime.now() - start_time).total_seconds()
+                        pct = completed_count / total_runs * 100
+                        remaining = total_runs - completed_count
+                        eta = (elapsed / completed_count * remaining) if completed_count > 0 else 0
+                        eta_td = timedelta(seconds=int(eta))
+                        logger.info(
+                            f"Walk-forward progress: {pct:.0f}% ({completed_count}/{total_runs}) | ETA: {eta_td}"
+                        )
+        except Exception as e:
+            logger.warning(f"Parallel walk-forward failed ({e}), falling back to sequential...")
+            for item in task_items[completed_count:]:
+                result = _execute_single_task(item)
+                completed_count += 1
+                if result and result.get("status") in ("success", "completed"):
+                    all_cagrs.append(result["cagr"])
+                    all_results.append(result)
 
             elapsed = (datetime.now() - start_time).total_seconds()
             pct = completed_count / total_runs * 100

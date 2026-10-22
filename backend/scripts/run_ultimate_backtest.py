@@ -413,8 +413,22 @@ def main():
             session_type="ultimate",
         )
         print(f"  → Session ID: {session_id}")
-        print(f"  → Saving {len(historical.get('trades', []))} trades...")
-        persister.save_portfolio_backtest_trades(session_id, historical.get("trades", []))
+        raw_trades = historical.get("trades", [])
+
+        def _to_native(obj):
+            if hasattr(obj, "item"):
+                return obj.item()
+            if isinstance(obj, dict):
+                return {k: _to_native(v) for k, v in obj.items()}
+            if isinstance(obj, list):
+                return [_to_native(v) for v in obj]
+            if hasattr(obj, "__dict__"):
+                return _to_native(obj.__dict__)
+            return obj
+
+        trade_dicts = [_to_native(t) for t in raw_trades]
+        print(f"  → Saving {len(trade_dicts)} trades...")
+        persister.save_portfolio_backtest_trades(session_id, trade_dicts)
         print(f"  → Saving {len(historical.get('daily_snapshots', []))} daily snapshots...")
         persister.save_portfolio_backtest_snapshots(session_id, historical.get("daily_snapshots", []))
         summary_metrics = {
@@ -497,7 +511,7 @@ def main():
     timer.phase_start("Phase 5: Trade Diagnostics")
     from scripts.trade_diagnostics import run_all_diagnostics
 
-    diagnostics = run_all_diagnostics(strategy_name=args.strategy)
+    diagnostics = run_all_diagnostics(session_id=session_id, strategy_name=args.strategy)
     timer.phase_end()
     phases_done += 1
     print(f"   ⏳ {timer.estimate_remaining(phases_done, total_phases)}")

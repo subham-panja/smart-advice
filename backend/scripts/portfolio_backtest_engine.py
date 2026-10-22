@@ -623,17 +623,22 @@ class PortfolioBacktestSession:
         )
 
         curr_dd = ((self.peak_value - portfolio_value) / self.peak_value) * 100 if self.peak_value > 0 else 0
-        if curr_dd >= 15.0:
-            max_pct *= 0.20
-        elif curr_dd >= 11.0:
-            max_pct *= 0.35
-        elif curr_dd >= 7.0:
-            max_pct *= 0.60
-        elif curr_dd >= 4.0:
-            max_pct *= 0.80
+        dd_cfg = self.strategy_config.get("risk_management", {}).get("drawdown_scaling", {})
+        if dd_cfg.get("enabled", False):
+            if curr_dd >= 15.0:
+                max_pct *= 0.20
+            elif curr_dd >= 11.0:
+                max_pct *= 0.35
+            elif curr_dd >= 7.0:
+                max_pct *= 0.60
+            elif curr_dd >= 4.0:
+                max_pct *= 0.80
 
-        if getattr(self, "consecutive_losses", 0) >= 2 and (self.bar_count - getattr(self, "last_loss_bar", 0)) <= 4:
-            max_pct *= 0.50
+            if (
+                getattr(self, "consecutive_losses", 0) >= 2
+                and (self.bar_count - getattr(self, "last_loss_bar", 0)) <= 4
+            ):
+                max_pct *= 0.50
         return max_pct, curr_dd
 
     def _execute_buy(self, candidate: dict, date: pd.Timestamp, symbols_data: Dict[str, pd.DataFrame]):
@@ -761,12 +766,13 @@ class PortfolioBacktestSession:
 
             add_qty, cost, total_cost = pyramid_res
             self.cash -= total_cost
-            self._cached_pv = None
-            pos.quantity += add_qty
+            new_total_qty = pos.quantity + add_qty
+            pos.entry_price = ((pos.quantity * pos.entry_price) + cost) / new_total_qty
+            pos.quantity = new_total_qty
             pos.adds_count += 1
             pos.last_add_price = current_price
             pos.current_stop_loss = max(pos.current_stop_loss, pos.entry_price)
-            logger.info(f"🛡️ PYRAMID STOP: Moved stop loss on {symbol} to entry ₹{pos.entry_price:.2f}")
+            logger.info(f"🛡️ PYRAMID STOP: Moved stop loss on {symbol} to avg entry ₹{pos.entry_price:.2f}")
 
             trade = PortfolioTrade(
                 symbol=symbol,
@@ -948,13 +954,15 @@ class PortfolioBacktestSession:
         regime_risk_cfg = self.strategy_config.get("risk_management", {}).get("regime_adaptive_risk", {})
         max_pos = regime_risk_cfg.get(self._get_regime_key(), {}).get("max_positions", self.max_positions)
 
-        curr_val = self._cached_pv if self._cached_pv is not None else self.cash
-        if self.peak_value > 0 and curr_val < self.peak_value:
-            curr_dd = ((self.peak_value - curr_val) / self.peak_value) * 100
-            if curr_dd >= 16.0:
-                max_pos = min(max_pos, 1)
-            elif curr_dd >= 12.0:
-                max_pos = min(max_pos, 2)
+        dd_cfg = self.strategy_config.get("risk_management", {}).get("drawdown_scaling", {})
+        if dd_cfg.get("enabled", False):
+            curr_val = self._cached_pv if self._cached_pv is not None else self.cash
+            if self.peak_value > 0 and curr_val < self.peak_value:
+                curr_dd = ((self.peak_value - curr_val) / self.peak_value) * 100
+                if curr_dd >= 16.0:
+                    max_pos = min(max_pos, 1)
+                elif curr_dd >= 12.0:
+                    max_pos = min(max_pos, 2)
 
         return len(self.positions) < max_pos
 

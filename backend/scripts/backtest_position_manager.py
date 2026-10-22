@@ -198,8 +198,8 @@ def check_position_exit_signal(
         if weeks_held <= leader_cfg.get("max_weeks", 30):
             is_leader = True
 
-    # 2. Early Breakeven Protection: If gain reaches >= 3.0%, lock in breakeven
-    if gain_pct >= 3.0:
+    # 2. Early Breakeven Protection: If gain reaches >= 7.5%, lock in breakeven
+    if gain_pct >= 7.5:
         be_stop = pos.entry_price * 1.003
         if be_stop > pos.current_stop_loss:
             pos.current_stop_loss = be_stop

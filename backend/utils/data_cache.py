@@ -301,6 +301,8 @@ def fetch_historical_data_cached(
         try:
             df = pd.read_parquet(cache_path)
             if not df.empty:
+                if is_replay():
+                    return df
                 is_recent = _is_cache_recent(df, max_age_days=1)
                 cache_mtime = os.path.getmtime(cache_path)
                 recently_refreshed = (time.time() - cache_mtime) < (48 * 3600)
@@ -327,6 +329,10 @@ def fetch_historical_data_cached(
                     logger.info(f"Cache for {symbol} has {len(df)} rows, need {needed} for {period}. Re-fetching...")
         except Exception as e:
             logger.warning(f"Cache read error for {symbol}: {e}. Fetching fresh.")
+
+    # In replay mode, do not hit network for uncached / missing symbols
+    if is_replay():
+        return pd.DataFrame()
 
     # Fetch fresh data
     logger.info(f"Fetching {symbol} ({period})...")

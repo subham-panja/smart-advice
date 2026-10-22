@@ -33,9 +33,9 @@ STRATEGIES_DIR = os.path.join(BACKEND_DIR, "strategies")
 
 # Performance & Pipeline
 MAX_WORKER_THREADS = 10  # Thread limit for parallel fetching
-DATA_FETCH_THREADS = 4  # Reduced to avoid rate limiting
+DATA_FETCH_THREADS = 12  # Parallel fetching for fast caching
 BATCH_SIZE = 8  # Batch size for processing
-REQUEST_DELAY = 1.0  # Increased delay between requests
+REQUEST_DELAY = 0.05  # Slight delay to respect API limits
 MAX_RETRIES = 1  # Max retries for failed requests
 TIMEOUT_SECONDS = 10  # Request timeout
 RATE_LIMIT_DELAY = 2.0  # Delay when rate limited
@@ -96,7 +96,7 @@ TRADING_OPTIONS = {
 # PORTFOLIO BACKTEST CONFIGURATION (app-level defaults)
 PORTFOLIO_BACKTEST_CONFIG = {
     "enabled": True,
-    "initial_capital": 9759.0,
+    "initial_capital": 100000.0,
     "brokerage_charges": 0.0003,  # 0.03% discount broker (was 0.20%)
     "slippage_pct": 0.0015,  # 0.15% realistic mid-cap slippage (was 0.05%)
     "gap_risk_seed": 42,  # Reproducible gap risk modeling

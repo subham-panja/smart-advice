@@ -197,13 +197,12 @@ def run_trading_cycle():
             logger.info(f"Auto-closed {pos['symbol']}: quantity was 0")
 
     # Phase 0: Settle T+1 funds from previous day's exits
-    if not is_replay():
-        try:
-            released = settle_pending_funds()
-            if released > 0:
-                logger.important(f"Phase 0: Released ₹{released:.2f} from T+1 settlement")
-        except Exception as e:
-            logger.error(f"Settlement check failed: {e}")
+    try:
+        released = settle_pending_funds()
+        if released > 0:
+            logger.important(f"Phase 0: Released ₹{released:.2f} from T+1 settlement")
+    except Exception as e:
+        logger.error(f"Settlement check failed: {e}")
 
     positions_before = get_open_positions()
     symbols_before = {p["symbol"] for p in positions_before}
@@ -284,7 +283,7 @@ def run_trading_cycle():
             mkt_val_now = sum(
                 p.get("current_price", p.get("entry_price", 0)) * p.get("quantity", 0) for p in open_positions
             )
-            curr_equity = mkt_val_now + remaining_capital
+            curr_equity = mkt_val_now + cash_info.get("total_cash", remaining_capital)
             peak_doc = db.portfolio_peaks.find_one({"strategy_name": strat_name})
             peak_val = peak_doc["peak_equity"] if peak_doc else max(initial_capital, curr_equity)
             if curr_equity > peak_val:
@@ -371,7 +370,7 @@ def run_trading_cycle():
     closed_positions = list(db.positions.find({"status": "CLOSED"}))
     cash_info = get_available_cash(initial_cap, final_positions, closed_positions)
     cash_left = cash_info["available_cash"]
-    total_equity = total_mkt_val + cash_left
+    total_equity = total_mkt_val + cash_info.get("total_cash", cash_left)
 
     cycle_stats = {
         "date": sim,

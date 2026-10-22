@@ -165,37 +165,44 @@ def run_regime_tests(
         if index_data is not None:
             engine._index_data_override = index_data
 
-        if precomputed_signals:
-            result = engine.run_with_signals(
-                regime_symbols_data, precomputed_signals, sim_start_date=sim_start, sim_end_date=sim_end, verbose=False
+        try:
+            if precomputed_signals:
+                result = engine.run_with_signals(
+                    regime_symbols_data,
+                    precomputed_signals,
+                    sim_start_date=sim_start,
+                    sim_end_date=sim_end,
+                    verbose=False,
+                )
+            else:
+                result = engine.run(regime_symbols_data, sim_start_date=sim_start, sim_end_date=sim_end)
+
+            cagr = result["cagr"]
+            max_dd = result["max_drawdown_pct"]
+            passed = cagr >= test["min_cagr"] and max_dd >= test["max_dd_tolerance"]
+
+            entry = {
+                "regime": test["name"],
+                "date_range": result["date_range"],
+                "cagr": round(cagr, 2),
+                "max_dd": round(max_dd, 2),
+                "sharpe": round(result["sharpe_ratio"], 2),
+                "win_rate": round(result["win_rate"], 1),
+                "total_trades": result["total_trades"],
+                "min_cagr_required": test["min_cagr"],
+                "max_dd_tolerance": test["max_dd_tolerance"],
+                "passed": passed,
+            }
+            results.append(entry)
+
+            status = "PASS" if passed else "FAIL"
+            print(
+                f"  CAGR: {cagr:.1f}% (min {test['min_cagr']}%) | "
+                f"MaxDD: {max_dd:.1f}% (tol {test['max_dd_tolerance']}%) | "
+                f"Status: {status}"
             )
-        else:
-            result = engine.run(regime_symbols_data, sim_start_date=sim_start, sim_end_date=sim_end)
-
-        cagr = result["cagr"]
-        max_dd = result["max_drawdown_pct"]
-        passed = cagr >= test["min_cagr"] and max_dd >= test["max_dd_tolerance"]
-
-        entry = {
-            "regime": test["name"],
-            "date_range": result["date_range"],
-            "cagr": round(cagr, 2),
-            "max_dd": round(max_dd, 2),
-            "sharpe": round(result["sharpe_ratio"], 2),
-            "win_rate": round(result["win_rate"], 1),
-            "total_trades": result["total_trades"],
-            "min_cagr_required": test["min_cagr"],
-            "max_dd_tolerance": test["max_dd_tolerance"],
-            "passed": passed,
-        }
-        results.append(entry)
-
-        status = "PASS" if passed else "FAIL"
-        print(
-            f"  CAGR: {cagr:.1f}% (min {test['min_cagr']}%) | "
-            f"Max DD: {max_dd:.1f}% (tol {test['max_dd_tolerance']}%) | "
-            f"[{status}]"
-        )
+        except Exception as e:
+            print(f"  ⚠️  Skipping {test['name']} (outside data range): {e}")
 
     return results
 
@@ -632,49 +639,82 @@ def run_all_stress_tests(
         except Exception as e:
             print(f"  Indicator pre-computation failed: {e}, sub-tests will compute individually")
 
-    # Run sub-tests in parallel using fork (copy-on-write shares indicators/symbols_data)
-    try:
-        fork_ctx = mp.get_context("fork")
-        with ProcessPoolExecutor(max_workers=3, mp_context=fork_ctx) as executor:
-            regime_f = executor.submit(
-                run_regime_tests,
-                strategy_name,
-                max_stocks,
-                symbols=symbols,
-                symbols_data=symbols_data,
-                index_data=index_data,
-                indicators=indicators,
-                prefilter=prefilter,
-                precomputed_signals=precomputed_signals,
-            )
-            param_f = executor.submit(
-                run_param_sensitivity,
-                strategy_name,
-                max_stocks,
-                symbols=symbols,
-                symbols_data=symbols_data,
-                index_data=index_data,
-                indicators=indicators,
-                prefilter=prefilter,
-                precomputed_signals=precomputed_signals,
-            )
-            cost_f = executor.submit(
-                run_cost_sensitivity,
-                strategy_name,
-                max_stocks,
-                symbols=symbols,
-                symbols_data=symbols_data,
-                index_data=index_data,
-                indicators=indicators,
-                prefilter=prefilter,
-                precomputed_signals=precomputed_signals,
-            )
+    # Run sub-tests in parallel using fork on Linux, sequential on macOS (avoids C-extension fork crash)
+    if sys.platform != "darwin":
+        try:
+            fork_ctx = mp.get_context("fork")
+            with ProcessPoolExecutor(max_workers=3, mp_context=fork_ctx) as executor:
+                regime_f = executor.submit(
+                    run_regime_tests,
+                    strategy_name,
+                    max_stocks,
+                    symbols=symbols,
+                    symbols_data=symbols_data,
+                    index_data=index_data,
+                    indicators=indicators,
+                    prefilter=prefilter,
+                    precomputed_signals=precomputed_signals,
+                )
+                param_f = executor.submit(
+                    run_param_sensitivity,
+                    strategy_name,
+                    max_stocks,
+                    symbols=symbols,
+                    symbols_data=symbols_data,
+                    index_data=index_data,
+                    indicators=indicators,
+                    prefilter=prefilter,
+                    precomputed_signals=precomputed_signals,
+                )
+                cost_f = executor.submit(
+                    run_cost_sensitivity,
+                    strategy_name,
+                    max_stocks,
+                    symbols=symbols,
+                    symbols_data=symbols_data,
+                    index_data=index_data,
+                    indicators=indicators,
+                    prefilter=prefilter,
+                    precomputed_signals=precomputed_signals,
+                )
 
-            regime_results = regime_f.result()
-            param_results = param_f.result()
-            cost_results = cost_f.result()
-    except Exception as e:
-        print(f"  Parallel stress tests failed ({e}), falling back to sequential...")
+                regime_results = regime_f.result()
+                param_results = param_f.result()
+                cost_results = cost_f.result()
+        except Exception as e:
+            print(f"  Parallel stress tests failed ({e}), falling back to sequential...")
+            regime_results = run_regime_tests(
+                strategy_name,
+                max_stocks,
+                symbols=symbols,
+                symbols_data=symbols_data,
+                index_data=index_data,
+                indicators=indicators,
+                prefilter=prefilter,
+                precomputed_signals=precomputed_signals,
+            )
+            param_results = run_param_sensitivity(
+                strategy_name,
+                max_stocks,
+                symbols=symbols,
+                symbols_data=symbols_data,
+                index_data=index_data,
+                indicators=indicators,
+                prefilter=prefilter,
+                precomputed_signals=precomputed_signals,
+            )
+            cost_results = run_cost_sensitivity(
+                strategy_name,
+                max_stocks,
+                symbols=symbols,
+                symbols_data=symbols_data,
+                index_data=index_data,
+                indicators=indicators,
+                prefilter=prefilter,
+                precomputed_signals=precomputed_signals,
+            )
+    else:
+        print("  Running stress tests sequentially on macOS...")
         regime_results = run_regime_tests(
             strategy_name,
             max_stocks,

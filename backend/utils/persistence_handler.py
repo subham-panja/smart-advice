@@ -222,7 +222,9 @@ class PersistenceHandler:
         def sanitize(d):
             import numpy as np
 
-            if isinstance(d, dict):
+            if hasattr(d, "__dict__"):
+                return sanitize(d.__dict__)
+            elif isinstance(d, dict):
                 return {str(k): sanitize(v) for k, v in d.items()}
             elif isinstance(d, list):
                 return [sanitize(x) for x in d]
@@ -232,7 +234,9 @@ class PersistenceHandler:
                 return int(d)
             elif isinstance(d, (np.floating, float)):
                 return float(d)
-            return d
+            elif hasattr(d, "item"):
+                return d.item()
+            return str(d) if not isinstance(d, (str, bytes, type(None))) else d
 
         try:
             db = get_mongodb()
