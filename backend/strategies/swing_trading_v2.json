@@ -29,7 +29,7 @@
   "market_regime_config": {
     "index": "^NSEI",
     "bull_market_rule": "sma(200)",
-    "pause_buying_if_bearish": false
+    "pause_buying_if_bearish": true
   },
   "options_oi_config": {
     "enabled": true,

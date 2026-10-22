@@ -174,10 +174,14 @@ def _prepare_index_data(strategy: dict, symbols_data: dict, period: str) -> Opti
         index_data = fetch_multiple_symbols_cached({index_symbol: index_symbol}, period="10y", verbose=False)
         res_df = index_data.get(index_symbol)
         if res_df is not None and not res_df.empty:
+            if res_df.index.tz is not None:
+                res_df.index = res_df.index.tz_localize(None)
             return res_df
     except Exception as e:
         logger.warning(f"Failed to pre-fetch index data for {index_symbol}: {e}")
 
+    if pop_df is not None and not pop_df.empty and pop_df.index.tz is not None:
+        pop_df.index = pop_df.index.tz_localize(None)
     return pop_df
 
 
@@ -207,7 +211,14 @@ def _run_with_filter_tracking(
 
 def fetch_symbols_data(symbols: Dict[str, str], period: str = "5y", verbose: bool = False) -> Dict[str, pd.DataFrame]:
     """Fetch historical data for all symbols using incremental parquet cache."""
-    return fetch_multiple_symbols_cached(symbols, period=period, verbose=verbose)
+    raw = fetch_multiple_symbols_cached(symbols, period=period, verbose=verbose)
+    cleaned = {}
+    for s, df in raw.items():
+        if df is not None and not df.empty:
+            if df.index.tz is not None:
+                df.index = df.index.tz_localize(None)
+            cleaned[s] = df
+    return cleaned
 
 
 # ---------------------------------------------------------------------------

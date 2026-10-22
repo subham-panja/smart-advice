@@ -276,30 +276,54 @@ def run_trading_cycle():
         cash_info = get_available_cash(initial_capital, open_positions, closed_positions)
         remaining_capital = cash_info["available_cash"]
 
-        # 1. Hard Drawdown Circuit Breaker (strictly cap drawdown below 14%)
+        # 1. Hard Drawdown Circuit Breaker
         dd_cfg = risk_cfg.get("drawdown_pause", {})
         if dd_cfg.get("enabled", True):
             pause_thresh = dd_cfg.get("pause_threshold_pct", 8.5)
+            cooldown_bars = dd_cfg.get("cooldown_bars", 20)
             mkt_val_now = sum(
                 p.get("current_price", p.get("entry_price", 0)) * p.get("quantity", 0) for p in open_positions
             )
             curr_equity = mkt_val_now + cash_info.get("total_cash", remaining_capital)
             peak_doc = db.portfolio_peaks.find_one({"strategy_name": strat_name})
             peak_val = peak_doc["peak_equity"] if peak_doc else max(initial_capital, curr_equity)
+            paused_count = peak_doc.get("paused_count", 0) if peak_doc else 0
             if curr_equity > peak_val:
                 peak_val = curr_equity
                 db.portfolio_peaks.update_one(
                     {"strategy_name": strat_name},
-                    {"$set": {"peak_equity": peak_val, "updated_at": trading_now(timezone.utc)}},
+                    {"$set": {"peak_equity": peak_val, "paused_count": 0, "updated_at": trading_now(timezone.utc)}},
                     upsert=True,
                 )
             if peak_val > 0:
                 dd_pct = ((peak_val - curr_equity) / peak_val) * 100.0
                 if dd_pct >= pause_thresh:
-                    logger.important(
-                        f"🛑 DRAWDOWN CIRCUIT BREAKER ACTIVE: DD {dd_pct:.1f}% >= {pause_thresh}% — pausing new buys for {strat_name}"
-                    )
-                    continue
+                    paused_count += 1
+                    if paused_count >= cooldown_bars:
+                        logger.important(
+                            f"▶️ DRAWDOWN PAUSE LIFTED: {strat_name} paused for {paused_count} bars >= cooldown {cooldown_bars}. Resetting peak equity to current equity ₹{curr_equity:.2f}."
+                        )
+                        db.portfolio_peaks.update_one(
+                            {"strategy_name": strat_name},
+                            {
+                                "$set": {
+                                    "peak_equity": curr_equity,
+                                    "paused_count": 0,
+                                    "updated_at": trading_now(timezone.utc),
+                                }
+                            },
+                            upsert=True,
+                        )
+                    else:
+                        db.portfolio_peaks.update_one(
+                            {"strategy_name": strat_name},
+                            {"$set": {"paused_count": paused_count}},
+                            upsert=True,
+                        )
+                        logger.important(
+                            f"🛑 DRAWDOWN CIRCUIT BREAKER ACTIVE: DD {dd_pct:.1f}% >= {pause_thresh}% — pausing new buys for {strat_name} (cooldown: {paused_count}/{cooldown_bars})"
+                        )
+                        continue
 
         # 2. Leading Macro Filter: Market Breadth < 40% pauses buys before lagging SMA breakdown
         if not engine._check_market_breadth_paper(strategy):
