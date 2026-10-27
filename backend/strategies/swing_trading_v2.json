@@ -29,7 +29,7 @@
   "market_regime_config": {
     "index": "^NSEI",
     "bull_market_rule": "sma(200)",
-    "pause_buying_if_bearish": true
+    "pause_buying_if_bearish": false
   },
   "options_oi_config": {
     "enabled": true,
@@ -295,25 +295,25 @@
     "hard_stop_loss_pct": 10.0
   },
   "risk_management": {
-    "risk_per_trade_pct": 3.5,
-    "max_risk_per_trade_pct": 4.0,
-    "max_position_pct": 30.0,
-    "max_positions": 4,
+    "risk_per_trade_pct": 4.2,
+    "max_risk_per_trade_pct": 5.0,
+    "max_position_pct": 36.0,
+    "max_positions": 3,
     "regime_adaptive_risk": {
       "bull": {
-        "max_positions": 4,
-        "max_position_pct": 32.0,
-        "risk_per_trade_pct": 4.0
+        "max_positions": 3,
+        "max_position_pct": 36.0,
+        "risk_per_trade_pct": 4.5
       },
       "sideways": {
         "max_positions": 3,
-        "max_position_pct": 22.0,
-        "risk_per_trade_pct": 2.5
+        "max_position_pct": 32.0,
+        "risk_per_trade_pct": 3.5
       },
       "bear": {
         "max_positions": 2,
-        "max_position_pct": 15.0,
-        "risk_per_trade_pct": 1.5
+        "max_position_pct": 25.0,
+        "risk_per_trade_pct": 2.5
       }
     },
     "stop_loss_type": "ATR",
@@ -326,7 +326,7 @@
       "min_risk_multiplier": 0.7
     },
     "drawdown_scaling": {
-      "enabled": true
+      "enabled": false
     },
     "drawdown_pause": {
       "enabled": true,
