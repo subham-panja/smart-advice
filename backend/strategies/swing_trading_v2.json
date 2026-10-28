@@ -29,7 +29,7 @@
   "market_regime_config": {
     "index": "^NSEI",
     "bull_market_rule": "sma(200)",
-    "pause_buying_if_bearish": false
+    "pause_buying_if_bearish": true
   },
   "options_oi_config": {
     "enabled": true,
@@ -251,11 +251,11 @@
         "sell_percentage": 0.30
       }
     ],
-    "atr_stop_multiplier": 2.5,
+    "atr_stop_multiplier": 1.75,
     "trail_only_after_t1": true,
-    "trail_min_gain_pct": 5.0,
-    "trail_stop_atr": 3.0,
-    "time_stop_bars": 40,
+    "trail_min_gain_pct": 3.0,
+    "trail_stop_atr": 2.0,
+    "time_stop_bars": 30,
     "dynamic_time_stop": {
       "enabled": true,
       "extend_if_profitable": true,
@@ -292,28 +292,28 @@
       "max_weeks": 30,
       "action": "hold_and_trail"
     },
-    "hard_stop_loss_pct": 10.0
+    "hard_stop_loss_pct": 7.0
   },
   "risk_management": {
-    "risk_per_trade_pct": 4.2,
-    "max_risk_per_trade_pct": 5.0,
-    "max_position_pct": 36.0,
-    "max_positions": 3,
+    "risk_per_trade_pct": 1.25,
+    "max_risk_per_trade_pct": 1.5,
+    "max_position_pct": 18.0,
+    "max_positions": 6,
     "regime_adaptive_risk": {
       "bull": {
-        "max_positions": 3,
-        "max_position_pct": 36.0,
-        "risk_per_trade_pct": 4.5
+        "max_positions": 6,
+        "max_position_pct": 18.0,
+        "risk_per_trade_pct": 1.5
       },
       "sideways": {
-        "max_positions": 3,
-        "max_position_pct": 32.0,
-        "risk_per_trade_pct": 3.5
+        "max_positions": 4,
+        "max_position_pct": 15.0,
+        "risk_per_trade_pct": 1.0
       },
       "bear": {
-        "max_positions": 2,
-        "max_position_pct": 25.0,
-        "risk_per_trade_pct": 2.5
+        "max_positions": 0,
+        "max_position_pct": 0.0,
+        "risk_per_trade_pct": 0.0
       }
     },
     "stop_loss_type": "ATR",
@@ -326,16 +326,16 @@
       "min_risk_multiplier": 0.7
     },
     "drawdown_scaling": {
-      "enabled": false
+      "enabled": true
     },
     "drawdown_pause": {
       "enabled": true,
-      "pause_threshold_pct": 20.0,
-      "resume_threshold_pct": 12.0,
+      "pause_threshold_pct": 12.0,
+      "resume_threshold_pct": 8.0,
       "pause_days_min": 7,
-      "cooldown_bars": 20
+      "cooldown_bars": 15
     },
-    "max_sector_exposure_pct": 45.0
+    "max_sector_exposure_pct": 30.0
   },
   "pyramiding": {
     "enabled": true,
