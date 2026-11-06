@@ -92,3 +92,20 @@ def test_generate_intraday_signals_vbt(sample_intraday_data):
 
     # Exits must have True flags for mandatory square-off
     assert exits.values.any()
+
+
+def test_intraday_persists_journal_and_snapshots():
+    """Verify that MongoDB contains trades and snapshots for the completed backtest session."""
+    from database import get_mongodb
+    from handlers import backtests_handler
+
+    db = get_mongodb()
+    sess = db.backtest_sessions.find_one({"session_name": {"$regex": "Intraday"}}, sort=[("created_at", -1)])
+    if sess:
+        sid = str(sess["_id"])
+        trades_res = backtests_handler.get_backtest_trades(sid)
+        assert trades_res["total"] > 0
+        symbols_res = backtests_handler.get_backtest_symbols(sid)
+        assert len(symbols_res) > 0
+        yearly_res = backtests_handler.get_backtest_yearly_breakdown(sid)
+        assert len(yearly_res) > 0

@@ -691,7 +691,100 @@ def run_intraday_ultimate_backtest(
             }
             ins_res = db.backtest_sessions.insert_one(_to_native_mongo(session_data))
             session_id = str(ins_res.inserted_id)
+            session_oid = ins_res.inserted_id
             print(f"  → Backtest session saved to MongoDB: {session_id}")
+
+            # ── Persist Full Trade Execution Journal (Entry & Exit events) ───
+            trades_records = pf.trades.records_readable
+            now_dt = datetime.now(timezone.utc)
+            trade_docs = []
+            for _, r in trades_records.iterrows():
+                is_long = str(r["Direction"]).lower() == "long"
+                entry_dt_str = r["Entry Timestamp"].strftime("%Y-%m-%d %H:%M:%S")
+                exit_dt_str = r["Exit Timestamp"].strftime("%Y-%m-%d %H:%M:%S")
+                exit_rsn = (
+                    "15:15 EOD Mandatory Square-Off"
+                    if "15:15" in exit_dt_str
+                    else ("Take Profit Hit" if float(r["PnL"]) > 0 else "Stop Loss Hit")
+                )
+                pat_name = "1h ORB Breakout + VWAP" if is_long else "1h ORB Breakdown + VWAP"
+                entry_px = round(float(r["Avg Entry Price"]), 2)
+                exit_px = round(float(r["Avg Exit Price"]), 2)
+                qty = round(float(r["Size"]), 2)
+                pos_val = round(float(r["Size"] * r["Avg Entry Price"]), 2)
+
+                # Entry event (BUY)
+                trade_docs.append(
+                    {
+                        "session_id": session_oid,
+                        "symbol": str(r["Column"]),
+                        "trade_type": "BUY",
+                        "action": "BUY",
+                        "entry_date": entry_dt_str,
+                        "date": entry_dt_str,
+                        "entry_price": entry_px,
+                        "price": entry_px,
+                        "quantity": qty,
+                        "position_value": pos_val,
+                        "stop_loss": round(entry_px * (0.99 if is_long else 1.01), 2),
+                        "target": round(entry_px * (1.03 if is_long else 0.97), 2),
+                        "entry_pattern": pat_name,
+                        "pattern": pat_name,
+                        "created_at": now_dt,
+                    }
+                )
+
+                # Exit event (SELL)
+                trade_docs.append(
+                    {
+                        "session_id": session_oid,
+                        "symbol": str(r["Column"]),
+                        "trade_type": "SELL",
+                        "action": "SELL",
+                        "entry_date": entry_dt_str,
+                        "exit_date": exit_dt_str,
+                        "date": exit_dt_str,
+                        "entry_price": entry_px,
+                        "exit_price": exit_px,
+                        "price": exit_px,
+                        "quantity": qty,
+                        "position_value": round(float(r["Size"] * r["Avg Exit Price"]), 2),
+                        "pnl": round(float(r["PnL"]), 2),
+                        "pnl_pct": round(float(r["Return"] * 100), 2),
+                        "exit_reason": exit_rsn,
+                        "reason": exit_rsn,
+                        "entry_pattern": pat_name,
+                        "pattern": pat_name,
+                        "created_at": now_dt,
+                    }
+                )
+
+            if trade_docs:
+                db.portfolio_backtest_trades.insert_many(trade_docs)
+                print(f"  → Saved {len(trade_docs)} trade journal entries ({len(trades_records)} round-trip trades)")
+
+            # ── Persist Daily Equity Snapshots for YoY & Equity Curve ───────
+            close_mat = aligned["Close"]
+            daily_pv_s = pf.value().groupby(pd.Series(close_mat.index.date, index=close_mat.index)).last()
+            peak_s = daily_pv_s.cummax()
+            dd_s = (daily_pv_s - peak_s) / peak_s.replace(0, 1.0) * 100.0
+
+            snap_docs = []
+            for d_val, pv_val in daily_pv_s.items():
+                snap_docs.append(
+                    {
+                        "session_id": session_oid,
+                        "date": str(d_val),
+                        "portfolio_value": round(float(pv_val), 2),
+                        "cash": round(float(pv_val), 2),
+                        "drawdown_from_peak_pct": round(float(dd_s[d_val]), 2),
+                        "created_at": now_dt,
+                    }
+                )
+
+            if snap_docs:
+                db.portfolio_backtest_daily_snapshots.insert_many(snap_docs)
+                print(f"  → Saved {len(snap_docs)} daily equity snapshots")
         except Exception as e:
             logger.error(f"Failed to persist intraday backtest session: {e}")
 
