@@ -58,7 +58,7 @@ DEFAULT_LIQUID_SYMBOLS = [
     "SBIN",
     "LT",
     "BAJFINANCE",
-    "TATAMOTORS",
+    "HCLTECH",
     "AXISBANK",
     "KOTAKBANK",
     "ITC",
