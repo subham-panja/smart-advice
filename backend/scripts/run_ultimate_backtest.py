@@ -360,6 +360,54 @@ def main():
     setup_logging()
     timer = Timer()
     end_date = datetime.now().strftime("%Y-%m-%d")
+
+    # Check if strategy is Intraday or Swing
+    strat_dict = None
+    try:
+        strat_dict = StrategyLoader.get_strategy_by_name(args.strategy)
+    except Exception:
+        pass
+
+    is_intraday = False
+    if strat_dict:
+        is_intraday = strat_dict.get("_category") == "intraday" or "intraday" in strat_dict.get("name", "").lower()
+    else:
+        is_intraday = "intraday" in args.strategy.lower()
+
+    if is_intraday:
+        print(f"\n⚡ Detected Intraday Strategy: {args.strategy}")
+        print("Routing to Vectorbt Intraday Ultimate Backtest Engine (1-Hour candles)...")
+        from scripts.vectorbt_intraday_engine import run_intraday_ultimate_backtest
+
+        intraday_period = "730d"  # Up to 2 years for 1h candles
+        res = run_intraday_ultimate_backtest(
+            strategy_name=args.strategy,
+            period=intraday_period,
+            save_to_db=True,
+        )
+        if args.telegram and res.get("confidence_score"):
+            confidence = res["confidence_score"]
+            base = res.get("base_results", {})
+            msg = (
+                f"🔬 <b>Intraday Ultimate Backtest Complete</b>\n"
+                f"━━━━━━━━━━━━━━━━━━━━\n"
+                f"Strategy: {args.strategy} (1H)\n"
+                f"Period: {base.get('start_date')} → {base.get('end_date')}\n\n"
+                f"📊 <b>Results</b>:\n"
+                f"• Return: {base.get('total_return_pct', 0):.1f}%\n"
+                f"• Max DD: {base.get('max_drawdown_pct', 0):.1f}%\n"
+                f"• Sharpe: {base.get('sharpe_ratio', 0):.2f}\n"
+                f"• Win Rate: {base.get('win_rate', 0):.1f}%\n\n"
+                f"🎯 <b>Confidence</b>:\n"
+                f"• Score: {confidence.get('total_score', 0)}/100\n"
+                f"• Level: {confidence.get('confidence_level', 'N/A')}\n"
+                f"• Realistic CAGR: {confidence.get('realistic_cagr', 0):.1f}%\n"
+                f"• Edge Verified: {'YES' if confidence.get('edge_verified') else 'NO'}\n\n"
+                f"⏱️ Duration: {res.get('elapsed_seconds', 0)}s"
+            )
+            _send_telegram(msg)
+        return
+
     run_wf = (not args.skip_wf) and (args.mc_iterations > 0) and (3 not in skipped_phases)
 
     print(f"\n{'='*70}")

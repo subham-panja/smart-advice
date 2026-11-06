@@ -220,6 +220,15 @@ function IntradayDashboard() {
           </div>
 
           <button
+            onClick={() => router.push('/backtests')}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-950/40 hover:bg-indigo-900/50 text-indigo-300 rounded-lg text-xs font-semibold border border-indigo-700/50 transition shadow-sm"
+            title="Inspect 1H Intraday Vectorbt Ultimate Backtests & Confidence Scores"
+          >
+            <SparklesIcon className="w-3.5 h-3.5 text-indigo-400" />
+            1H Backtests
+          </button>
+
+          <button
             onClick={() => setShowConfigModal(true)}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 rounded-lg text-xs font-medium border border-zinc-800 transition"
           >

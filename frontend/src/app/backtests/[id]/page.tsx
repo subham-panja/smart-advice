@@ -277,6 +277,15 @@ function BacktestDetailPageContent() {
                   Portfolio Backtest
                 </span>
               )}
+              {session?.timeframe === '1h' || session?.category === 'intraday' || session?.strategy_name?.toLowerCase().includes('intraday') ? (
+                <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30">
+                  ⚡ 1H Intraday
+                </span>
+              ) : (
+                <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-500/15 text-blue-600 dark:text-blue-400 border border-blue-500/30">
+                  📈 1D Swing
+                </span>
+              )}
               <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
                 {session?.status || 'Completed'}
               </span>

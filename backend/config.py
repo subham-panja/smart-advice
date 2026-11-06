@@ -2,7 +2,12 @@ import os
 
 from dotenv import load_dotenv
 
-load_dotenv()  # Load env variables
+# Load env variables (check backend/.env first, then fallback to current dir)
+_backend_env = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+if os.path.exists(_backend_env):
+    load_dotenv(_backend_env)
+else:
+    load_dotenv()
 
 # System & Threading
 LIBRARY_MAX_THREADS = "1"

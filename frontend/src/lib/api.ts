@@ -575,6 +575,16 @@ export interface BacktestSession {
   };
   yearly_breakdown?: BacktestYearlyBreakdownItem[];
   ultimate_phases?: any;
+  timeframe?: string;
+  category?: 'swing' | 'intraday';
+  is_intraday?: boolean;
+  confidence_score?: {
+    total_score: number;
+    confidence_level: string;
+    realistic_cagr: number;
+    edge_verified: boolean;
+    component_scores?: Record<string, number>;
+  };
 }
 
 export interface BacktestTrade {
@@ -728,6 +738,22 @@ export const deleteBacktestSession = async (
   } catch (error) {
     if (axios.isAxiosError(error)) {
       return { status: 'error', error: error.response?.data?.error || 'Failed to delete session' };
+    }
+    return { status: 'error', error: 'Failed to connect to server' };
+  }
+};
+
+export const runIntradayBacktest = async (params?: {
+  strategy?: string;
+  period?: string;
+  symbols?: string[];
+}): Promise<{ status: string; message?: string; session_id?: string; results?: any; error?: string }> => {
+  try {
+    const response = await api.post('/backtests/run-intraday', params || {});
+    return response.data;
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      return { status: 'error', error: error.response?.data?.error || 'Failed to trigger intraday backtest' };
     }
     return { status: 'error', error: 'Failed to connect to server' };
   }

@@ -141,3 +141,33 @@ def delete_session(session_id: str):
     except Exception as e:
         logger.error(f"Error deleting session {session_id}: {e}")
         return jsonify({"status": "error", "error": str(e)}), 500
+
+
+@backtests_bp.route("/backtests/run-intraday", methods=["POST"])
+def run_intraday_backtest_api():
+    """Execute high-speed vectorbt 1-Hour Intraday Ultimate Backtest."""
+    try:
+        from scripts.vectorbt_intraday_engine import run_intraday_ultimate_backtest
+
+        data = request.get_json(silent=True) or {}
+        strategy_name = data.get("strategy", "Intraday_Trading_v1")
+        period = data.get("period", "730d")
+        symbols = data.get("symbols")
+
+        res = run_intraday_ultimate_backtest(
+            strategy_name=strategy_name,
+            period=period,
+            symbols=symbols,
+            save_to_db=True,
+        )
+        return jsonify(
+            {
+                "status": "success",
+                "message": "Intraday Ultimate Backtest completed",
+                "session_id": res.get("session_id"),
+                "results": res,
+            }
+        )
+    except Exception as e:
+        logger.error(f"Error executing intraday backtest: {e}")
+        return jsonify({"status": "error", "error": str(e)}), 500

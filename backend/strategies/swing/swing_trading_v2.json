@@ -372,5 +372,17 @@
     "min_advance_pct": 35.0,
     "description": "Block new buys when <35% of stocks are above 20-SMA (broad market weakness)"
   },
+  "vectorbt_backtest": {
+    "enabled": true,
+    "timeframe": "1d",
+    "freq": "1d",
+    "benchmark": "^NSEI",
+    "initial_capital": 100000.0,
+    "max_positions": 5,
+    "risk_per_trade_pct": 2.0,
+    "commission_pct": 0.0020,
+    "slippage_pct": 0.0010,
+    "default_period": "5y"
+  },
   "_file_name": "swing_trading_v2.json"
 }

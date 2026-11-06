@@ -1,15 +1,30 @@
 {
   "name": "Intraday_Trading_v1",
   "enabled": true,
-  "description": "Institutional multi-timeframe intraday confluence system utilizing ORB (15m), VWAP, and CPR on liquid NSE equities with automated 15:15 IST square-off.",
+  "description": "Institutional 1-Hour chart multi-confluence intraday system utilizing 1h ORB, daily-anchored VWAP, and CPR on liquid NSE equities with automated EOD 15:15 IST square-off and zero overnight holding.",
   "timeframe_config": {
-    "macro_timeframe": "15m",
-    "execution_timeframe": "5m",
+    "macro_timeframe": "1h",
+    "chart_timeframe": "1h",
+    "execution_timeframe": "1h",
     "market_open_time": "09:15",
-    "trading_start_time": "09:30",
-    "no_new_entries_time": "14:45",
+    "trading_start_time": "10:15",
+    "no_new_entries_time": "14:15",
     "auto_square_off_time": "15:15",
     "market_close_time": "15:30"
+  },
+  "vectorbt_backtest": {
+    "enabled": true,
+    "timeframe": "1h",
+    "freq": "1h",
+    "benchmark": "^NSEI",
+    "initial_capital": 100000.0,
+    "max_positions": 3,
+    "risk_per_trade_pct": 1.0,
+    "commission_pct": 0.0005,
+    "slippage_pct": 0.0005,
+    "default_period": "730d",
+    "enforce_eod_square_off": true,
+    "eod_square_off_hour": 15
   },
   "stock_universe_filters": [
     {
@@ -41,16 +56,16 @@
     "MARKET_HOURS_GATE": {
       "enabled": true,
       "params": {
-        "allow_entries_after": "09:30",
-        "block_entries_after": "14:45",
-        "observe_opening_range_mins": 15
+        "allow_entries_after": "10:15",
+        "block_entries_after": "14:15",
+        "observe_opening_range_mins": 60
       }
     },
     "CPR_GATE": {
       "enabled": true,
       "params": {
         "require_cpr_alignment": true,
-        "narrow_cpr_threshold_pct": 0.4,
+        "narrow_cpr_threshold_pct": 0.5,
         "skip_trading_if_super_wide_cpr": true
       }
     },
@@ -58,39 +73,35 @@
       "enabled": true,
       "params": {
         "require_price_above_vwap_for_long": true,
-        "require_price_below_vwap_for_short": true,
-        "max_distance_from_vwap_pct": 1.2
+        "require_price_below_vwap_for_short": false,
+        "max_distance_from_vwap_pct": 1.5
       }
     },
     "VOLATILITY_GATE": {
       "enabled": true,
       "params": {
-        "min_5m_atr": 1.0,
-        "max_5m_atr_pct": 2.5
+        "min_1h_atr": 1.0,
+        "max_1h_atr_pct": 3.0
       }
     }
   },
   "entry_patterns": [
     {
-      "name": "orb_15m_breakout",
+      "name": "orb_1h_breakout",
       "enabled": true,
-      "opening_range_minutes": 15,
+      "opening_range_minutes": 60,
       "candle_close_confirmation": true,
-      "volume_surge_multiplier": 1.5,
+      "volume_surge_multiplier": 1.2,
       "require_vwap_support": true
     },
     {
       "name": "vwap_pullback_rejection",
       "enabled": true,
-      "max_distance_from_vwap_pct": 0.35,
+      "max_distance_from_vwap_pct": 0.5,
       "reversal_candle_types": [
         "hammer",
         "bullish_engulfing",
         "pin_bar"
-      ],
-      "rsi_5m_range": [
-        42,
-        65
       ]
     },
     {
@@ -98,18 +109,12 @@
       "enabled": true,
       "breakout_pivot": "TC",
       "retest_confirmation_required": true
-    },
-    {
-      "name": "ema_9_21_momentum_cross",
-      "enabled": true,
-      "supertrend_confirmation": true,
-      "adx_5m_min": 20
     }
   ],
   "exit_rules": {
     "stop_loss_type": "ATR_OR_PIVOT",
     "atr_stop_multiplier": 1.2,
-    "max_stop_loss_pct": 1.0,
+    "max_stop_loss_pct": 1.5,
     "target_1_multiplier": 1.8,
     "target_1_sell_pct": 0.50,
     "target_2_multiplier": 3.0,
@@ -123,10 +128,10 @@
   "risk_management": {
     "max_positions": 3,
     "capital_allocation_pct": 30.0,
-    "risk_per_trade_pct": 0.8,
+    "risk_per_trade_pct": 1.0,
     "max_daily_loss_pct": 2.0,
     "max_consecutive_losses": 2,
     "pause_trading_after_two_losses": true
-  }
+  },
+  "_file_name": "intraday_trading.json"
 }
-

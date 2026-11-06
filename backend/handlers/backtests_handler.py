@@ -55,6 +55,18 @@ def list_backtest_sessions() -> List[Dict[str, Any]]:
         clean["total_trades"] = metrics.get("total_trades")
         clean["initial_capital"] = metrics.get("initial_capital")
         clean["final_portfolio_value"] = metrics.get("final_portfolio_value")
+
+        # Hoist timeframe, category, and confidence score
+        strat_name = str(clean.get("strategy_name") or clean.get("session_name") or "").lower()
+        sess_type = str(clean.get("session_type") or "").lower()
+        is_intraday = "intraday" in strat_name or "intraday" in sess_type or clean.get("timeframe") == "1h"
+        clean["category"] = "intraday" if is_intraday else "swing"
+        clean["timeframe"] = clean.get("timeframe") or metrics.get("timeframe") or ("1h" if is_intraday else "1d")
+        clean["is_intraday"] = is_intraday
+
+        if not clean.get("confidence_score") and isinstance(clean.get("ultimate_phases"), dict):
+            clean["confidence_score"] = clean["ultimate_phases"].get("confidence_score")
+
         sessions.append(clean)
     return sessions
 
@@ -103,6 +115,19 @@ def get_backtest_session(session_id: str) -> Optional[Dict[str, Any]]:
         "entry_patterns": pattern_counts,
         "exit_reasons": reason_counts,
     }
+
+    # Hoist timeframe, category, and confidence score
+    strat_name = str(clean.get("strategy_name") or clean.get("session_name") or "").lower()
+    sess_type = str(clean.get("session_type") or "").lower()
+    is_intraday = "intraday" in strat_name or "intraday" in sess_type or clean.get("timeframe") == "1h"
+    clean["category"] = "intraday" if is_intraday else "swing"
+    clean["timeframe"] = (
+        clean.get("timeframe") or clean.get("summary_metrics", {}).get("timeframe") or ("1h" if is_intraday else "1d")
+    )
+    clean["is_intraday"] = is_intraday
+
+    if not clean.get("confidence_score") and isinstance(clean.get("ultimate_phases"), dict):
+        clean["confidence_score"] = clean["ultimate_phases"].get("confidence_score")
 
     clean["yearly_breakdown"] = get_backtest_yearly_breakdown(session_id)
 

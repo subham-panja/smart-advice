@@ -25,6 +25,7 @@ import {
   getBacktestSessions,
   deleteBacktestSession,
   getBacktestYearlyBreakdown,
+  runIntradayBacktest,
   BacktestSession,
   BacktestYearlyBreakdownItem,
 } from '@/lib/api';
@@ -68,22 +69,37 @@ export default function BacktestsPage() {
     );
   };
 
-  // Type Filter State: 'all' | 'portfolio' | 'ultimate'
+  // Filters: Category (Swing 1D vs Intraday 1H) & Type (Portfolio vs Ultimate)
+  const [categoryFilter, setCategoryFilter] = useState<'all' | 'swing' | 'intraday'>('all');
   const [typeFilter, setTypeFilter] = useState<'all' | 'portfolio' | 'ultimate'>('all');
+  const [runningIntraday, setRunningIntraday] = useState(false);
 
   const isUltimate = (s: BacktestSession) =>
     s.session_type === 'ultimate' ||
     s.session_name?.toLowerCase().includes('ultimate') ||
     !!s.ultimate_phases;
 
+  const isIntraday = (s: BacktestSession) =>
+    s.category === 'intraday' ||
+    s.is_intraday === true ||
+    s.timeframe === '1h' ||
+    s.strategy_name?.toLowerCase().includes('intraday') ||
+    s.session_type?.toLowerCase().includes('intraday');
+
+  const swingCount = useMemo(() => sessions.filter((s) => !isIntraday(s)).length, [sessions]);
+  const intradayCount = useMemo(() => sessions.filter((s) => isIntraday(s)).length, [sessions]);
   const portfolioCount = useMemo(() => sessions.filter((s) => !isUltimate(s)).length, [sessions]);
   const ultimateCount = useMemo(() => sessions.filter((s) => isUltimate(s)).length, [sessions]);
 
   const filteredSessions = useMemo(() => {
-    if (typeFilter === 'portfolio') return sessions.filter((s) => !isUltimate(s));
-    if (typeFilter === 'ultimate') return sessions.filter((s) => isUltimate(s));
-    return sessions;
-  }, [sessions, typeFilter]);
+    return sessions.filter((s) => {
+      if (categoryFilter === 'swing' && isIntraday(s)) return false;
+      if (categoryFilter === 'intraday' && !isIntraday(s)) return false;
+      if (typeFilter === 'portfolio' && isUltimate(s)) return false;
+      if (typeFilter === 'ultimate' && !isUltimate(s)) return false;
+      return true;
+    });
+  }, [sessions, categoryFilter, typeFilter]);
 
   const sortedSessions = useMemo(() => {
     return [...filteredSessions].sort((a, b) => {
@@ -95,6 +111,25 @@ export default function BacktestsPage() {
       return sessSortDir === 'asc' ? Number(valA) - Number(valB) : Number(valB) - Number(valA);
     });
   }, [filteredSessions, sessSortBy, sessSortDir]);
+
+  const handleRunIntraday = async () => {
+    if (!confirm('Run a 2-Year 1-Hour Intraday Ultimate Backtest with vectorbt across liquid NSE equities?')) {
+      return;
+    }
+    setRunningIntraday(true);
+    try {
+      const res = await runIntradayBacktest();
+      if (res.status === 'success') {
+        await fetchSessions();
+      } else {
+        alert(res.error || 'Failed to execute intraday backtest');
+      }
+    } catch (err: any) {
+      alert(err?.message || 'Error running intraday backtest');
+    } finally {
+      setRunningIntraday(false);
+    }
+  };
 
 
   const fetchYoYBreakdown = async (sessionId: string) => {
@@ -190,6 +225,15 @@ export default function BacktestsPage() {
         </div>
 
         <div className="flex items-center gap-3">
+          <button
+            onClick={handleRunIntraday}
+            disabled={runningIntraday || loading}
+            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg bg-gradient-to-r from-amber-500 to-orange-600 text-white hover:from-amber-600 hover:to-orange-700 shadow-md shadow-orange-500/20 transition-all disabled:opacity-50"
+            title="Execute 1-Hour Intraday Ultimate Backtest with vectorbt"
+          >
+            <BoltIcon className={`w-4 h-4 ${runningIntraday ? 'animate-spin' : ''}`} />
+            {runningIntraday ? 'Simulating 1H...' : 'Run 1H Intraday Backtest'}
+          </button>
           <button
             onClick={fetchSessions}
             disabled={loading}
@@ -382,40 +426,77 @@ export default function BacktestsPage() {
             </p>
           </div>
 
-          {/* Type Filter Pills */}
-          <div className="flex items-center gap-1.5 bg-gray-100 dark:bg-gray-900 p-1 rounded-xl border border-gray-200 dark:border-gray-700 self-start md:self-center">
-            <button
-              onClick={() => setTypeFilter('all')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                typeFilter === 'all'
-                  ? 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm'
-                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
-              }`}
-            >
-              All ({sessions.length})
-            </button>
-            <button
-              onClick={() => setTypeFilter('portfolio')}
-              className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                typeFilter === 'portfolio'
-                  ? 'bg-white dark:bg-gray-800 text-indigo-600 dark:text-indigo-400 shadow-sm'
-                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
-              }`}
-            >
-              <BoltIcon className="w-3.5 h-3.5" />
-              Portfolio ({portfolioCount})
-            </button>
-            <button
-              onClick={() => setTypeFilter('ultimate')}
-              className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                typeFilter === 'ultimate'
-                  ? 'bg-white dark:bg-gray-800 text-purple-600 dark:text-purple-400 shadow-sm'
-                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
-              }`}
-            >
-              <TrophyIcon className="w-3.5 h-3.5" />
-              Ultimate ({ultimateCount})
-            </button>
+          {/* Dual Filter Pills: Strategy Category & Backtest Type */}
+          <div className="flex flex-wrap items-center gap-2 self-start md:self-center">
+            {/* Category Pills */}
+            <div className="flex items-center gap-1 bg-gray-100 dark:bg-gray-900 p-1 rounded-xl border border-gray-200 dark:border-gray-700">
+              <button
+                onClick={() => setCategoryFilter('all')}
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  categoryFilter === 'all'
+                    ? 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm'
+                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                }`}
+              >
+                All Strats ({sessions.length})
+              </button>
+              <button
+                onClick={() => setCategoryFilter('swing')}
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  categoryFilter === 'swing'
+                    ? 'bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400 shadow-sm'
+                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                }`}
+              >
+                1D Swing ({swingCount})
+              </button>
+              <button
+                onClick={() => setCategoryFilter('intraday')}
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  categoryFilter === 'intraday'
+                    ? 'bg-white dark:bg-gray-800 text-amber-600 dark:text-amber-400 shadow-sm'
+                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                }`}
+              >
+                1H Intraday ({intradayCount})
+              </button>
+            </div>
+
+            {/* Type Pills */}
+            <div className="flex items-center gap-1 bg-gray-100 dark:bg-gray-900 p-1 rounded-xl border border-gray-200 dark:border-gray-700">
+              <button
+                onClick={() => setTypeFilter('all')}
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  typeFilter === 'all'
+                    ? 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm'
+                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                }`}
+              >
+                All Types
+              </button>
+              <button
+                onClick={() => setTypeFilter('portfolio')}
+                className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  typeFilter === 'portfolio'
+                    ? 'bg-white dark:bg-gray-800 text-indigo-600 dark:text-indigo-400 shadow-sm'
+                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                }`}
+              >
+                <BoltIcon className="w-3.5 h-3.5" />
+                Portfolio ({portfolioCount})
+              </button>
+              <button
+                onClick={() => setTypeFilter('ultimate')}
+                className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  typeFilter === 'ultimate'
+                    ? 'bg-white dark:bg-gray-800 text-purple-600 dark:text-purple-400 shadow-sm'
+                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                }`}
+              >
+                <TrophyIcon className="w-3.5 h-3.5" />
+                Ultimate ({ultimateCount})
+              </button>
+            </div>
           </div>
         </div>
 
@@ -533,8 +614,19 @@ export default function BacktestsPage() {
                     >
                       <td className="py-4 px-4 sm:px-6">
                         <Link href={`/backtests/${s._id}`} className="block">
-                          <div className="font-semibold text-gray-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
-                            {s.strategy_name}
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold text-gray-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+                              {s.strategy_name}
+                            </span>
+                            {isIntraday(s) ? (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30">
+                                1H INTRADAY
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-500/15 text-blue-600 dark:text-blue-400 border border-blue-500/30">
+                                1D SWING
+                              </span>
+                            )}
                           </div>
                           <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 flex items-center gap-1.5">
                             <ClockIcon className="w-3.5 h-3.5" />
@@ -544,17 +636,26 @@ export default function BacktestsPage() {
                       </td>
 
                       <td className="py-4 px-3">
-                        {isUltimate(s) ? (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-bold bg-purple-500/10 dark:bg-purple-500/20 text-purple-700 dark:text-purple-300 border border-purple-500/30">
-                            <TrophyIcon className="w-3.5 h-3.5 text-purple-500 shrink-0" />
-                            Ultimate
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold bg-indigo-500/10 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 border border-indigo-500/30">
-                            <BoltIcon className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
-                            Portfolio
-                          </span>
-                        )}
+                        <div className="space-y-1">
+                          {isUltimate(s) ? (
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-bold bg-purple-500/10 dark:bg-purple-500/20 text-purple-700 dark:text-purple-300 border border-purple-500/30">
+                              <TrophyIcon className="w-3.5 h-3.5 text-purple-500 shrink-0" />
+                              Ultimate
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold bg-indigo-500/10 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 border border-indigo-500/30">
+                              <BoltIcon className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                              Portfolio
+                            </span>
+                          )}
+                          {s.confidence_score?.total_score !== undefined && (
+                            <div>
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
+                                🎯 {s.confidence_score.total_score}/100
+                              </span>
+                            </div>
+                          )}
+                        </div>
                       </td>
 
                       <td className="py-4 px-4 text-right font-semibold">
