@@ -281,7 +281,7 @@ export default function IntradayPage() {
       </div>
 
       {/* Active Positions Table */}
-      <div className="bg-zinc-900/60 border border-zinc-800 rounded-xl overflow-hidden">
+      <div id="positions" className="bg-zinc-900/60 border border-zinc-800 rounded-xl overflow-hidden scroll-mt-6">
         <div className="px-5 py-4 border-b border-zinc-800 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <ArrowTrendingUpIcon className="w-4 h-4 text-emerald-400" />
@@ -371,12 +371,12 @@ export default function IntradayPage() {
       </div>
 
       {/* Live Intraday Scanner / Opportunities */}
-      <div className="bg-zinc-900/60 border border-zinc-800 rounded-xl overflow-hidden">
+      <div id="recommendations" className="bg-zinc-900/60 border border-zinc-800 rounded-xl overflow-hidden scroll-mt-6">
         <div className="px-5 py-4 border-b border-zinc-800 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <FireIcon className="w-4 h-4 text-amber-400" />
             <h2 className="text-sm font-semibold text-zinc-200">
-              Live Intraday Scanner Feed ({signals.length} Qualified Candidates)
+              Intraday Recommendations & Scanner Feed ({signals.length} Qualified Candidates)
             </h2>
           </div>
           <span className="text-xs text-zinc-500">

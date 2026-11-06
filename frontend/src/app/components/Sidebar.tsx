@@ -9,8 +9,6 @@ import {
   ChartBarIcon,
   PlayIcon,
   CogIcon,
-  Bars3Icon,
-  XMarkIcon,
   HomeIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
@@ -20,102 +18,111 @@ import {
   ClockIcon,
   DocumentMagnifyingGlassIcon,
   BoltIcon,
+  ArrowTrendingUpIcon,
+  BriefcaseIcon,
+  FireIcon,
 } from '@heroicons/react/24/outline';
+
 const Sidebar = () => {
   const pathname = usePathname();
   const { isCollapsed, toggleSidebar } = useSidebar();
-  const [expandedMenus, setExpandedMenus] = useState<string[]>([]);
+  const [expandedMenus, setExpandedMenus] = useState<string[]>([
+    'Swing Trading',
+    'Intraday Trading',
+  ]);
 
   const navigationItems = [
     {
       name: 'Dashboard',
       href: '/',
       icon: HomeIcon,
-      description: 'Main dashboard'
+      description: 'Overview & metrics',
     },
     {
-      name: 'Stock Analysis',
-      icon: ChartBarIcon,
-      description: 'Stock market analysis tools',
+      name: 'Swing Trading',
+      icon: ArrowTrendingUpIcon,
+      description: 'Daily analysis & holding',
       submenu: [
         {
           name: 'Trading Cycle',
           href: '/analysis',
           icon: PlayIcon,
-          description: 'Run trading cycle'
+          description: 'Run swing analysis cycle',
         },
         {
-          name: 'View Recommendations',
+          name: 'Stock Recommendations',
           href: '/recommendations',
           icon: ChartBarIcon,
-          description: 'Browse stock recommendations'
-        }
-      ]
-    },
-    {
-      name: 'Positions',
-      href: '/positions',
-      icon: ChartBarIcon,
-      description: 'View and manage positions'
+          description: 'Qualified swing stock setups',
+        },
+        {
+          name: 'Positions',
+          href: '/positions',
+          icon: BriefcaseIcon,
+          description: 'Manage open swing positions',
+        },
+      ],
     },
     {
       name: 'Intraday Trading',
-      href: '/intraday',
       icon: BoltIcon,
-      description: 'ORB, VWAP & CPR live intraday engine'
-    },
-    {
-      name: 'Activity Log',
-      href: '/activity-log',
-      icon: ClockIcon,
-      description: 'Position history and updates'
+      description: 'ORB, VWAP & CPR intraday',
+      submenu: [
+        {
+          name: 'Live Cockpit & Cycle',
+          href: '/intraday',
+          icon: FireIcon,
+          description: 'Intraday status & square-off',
+        },
+        {
+          name: 'Recommendations',
+          href: '/intraday#recommendations',
+          icon: ChartBarIcon,
+          description: 'Breakout & confluence setups',
+        },
+        {
+          name: 'Active Positions',
+          href: '/intraday#positions',
+          icon: BriefcaseIcon,
+          description: '15:15 IST active trades',
+        },
+      ],
     },
     {
       name: 'Backtests',
       href: '/backtests',
       icon: DocumentMagnifyingGlassIcon,
-      description: 'Portfolio backtest sessions and trade journal'
+      description: 'Walk-forward & MC sessions',
     },
-
-    // F&O Analysis — disabled
-    // {
-    //   name: 'F&O Analysis',
-    //   icon: PlayIcon,
-    //   description: 'Futures & Options analysis',
-    //   submenu: [
-    //     {
-    //       name: 'F&O Analysis',
-    //       href: '/fo-analysis',
-    //       icon: PlayIcon,
-    //       description: 'Create F&O analysis'
-    //     },
-    //     {
-    //       name: 'View F&O Recommendations',
-    //       href: '/fo-recommendations',
-    //       icon: ChartBarIcon,
-    //       description: 'Browse F&O recommendations'
-    //     }
-    //   ]
-    // },
+    {
+      name: 'Activity Log',
+      href: '/activity-log',
+      icon: ClockIcon,
+      description: 'Audit logs & trade events',
+    },
   ];
 
   const settingsItem = {
     name: 'Settings',
     href: '/settings',
     icon: CogIcon,
-    description: 'Configure preferences'
+    description: 'Configure preferences',
   };
 
   return (
-    <div className={`fixed left-0 top-0 h-full bg-white dark:bg-gray-800 shadow-lg border-r border-gray-200 dark:border-gray-700 transition-all duration-300 z-40 flex flex-col ${
-      isCollapsed ? 'w-16' : 'w-64'
-    }`}>
+    <div
+      className={`fixed left-0 top-0 h-full bg-white dark:bg-gray-800 shadow-lg border-r border-gray-200 dark:border-gray-700 transition-all duration-300 z-40 flex flex-col ${
+        isCollapsed ? 'w-16' : 'w-64'
+      }`}
+    >
       {/* Header with Logo, Theme Toggle and Collapse Toggle */}
       <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
         {!isCollapsed && (
           <Link href="/" className="flex items-center space-x-2">
             <ChartBarIcon className="h-8 w-8 text-blue-600 dark:text-blue-400" />
-            <span className="text-xl font-bold text-gray-900 dark:text-gray-100">Stock Advisor</span>
+            <span className="text-xl font-bold text-gray-900 dark:text-gray-100">
+              Stock Advisor
+            </span>
           </Link>
         )}
         {isCollapsed && (
@@ -140,60 +147,80 @@ const Sidebar = () => {
       </div>
 
       {/* Navigation Links */}
-      <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
+      <nav className="flex-1 p-3 space-y-1.5 overflow-y-auto">
         {navigationItems.map((item) => {
           const Icon = item.icon;
           const hasSubmenu = Array.isArray(item.submenu);
           const isExpanded = expandedMenus.includes(item.name);
           const toggleExpand = () =>
-            setExpandedMenus(prev =>
+            setExpandedMenus((prev) =>
               prev.includes(item.name)
-                ? prev.filter(name => name !== item.name)
+                ? prev.filter((name) => name !== item.name)
                 : [...prev, item.name]
             );
 
           if (hasSubmenu) {
+            const isSubChildActive = item.submenu?.some(
+              (sub) =>
+                pathname === sub.href ||
+                (sub.href.startsWith('/intraday') && pathname === '/intraday')
+            );
+
             return (
-              <div key={item.name}>
+              <div key={item.name} className="space-y-1">
                 <div
                   onClick={toggleExpand}
-                  className={`flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors group cursor-pointer ${
+                  className={`flex items-center px-3 py-2 rounded-lg text-sm font-medium transition-colors group cursor-pointer ${
                     isCollapsed ? 'justify-center' : ''
-                  } text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700`}
+                  } ${
+                    isSubChildActive
+                      ? 'text-blue-600 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-900/20'
+                      : 'text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700'
+                  }`}
                   title={isCollapsed ? item.name : ''}
                 >
-                  <Icon className={`h-5 w-5 flex-shrink-0 ${isCollapsed ? '' : 'mr-3'}`} />
+                  <Icon
+                    className={`h-5 w-5 flex-shrink-0 ${
+                      isCollapsed ? '' : 'mr-3'
+                    } ${isSubChildActive ? 'text-blue-600 dark:text-blue-400' : ''}`}
+                  />
                   {!isCollapsed && (
                     <div className="flex-1">
-                      <div className="font-medium">{item.name}</div>
-                      <div className="text-xs text-gray-500 dark:text-gray-400">
-                        {item.description}
+                      <div className="font-semibold text-xs uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                        {item.name}
                       </div>
                     </div>
                   )}
                   {!isCollapsed && (
-                    <div className="ml-auto">
-                      {isExpanded ? <ChevronUpIcon className="h-4 w-4" /> : <ChevronDownIcon className="h-4 w-4" />}
+                    <div className="ml-auto text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-200">
+                      {isExpanded ? (
+                        <ChevronUpIcon className="h-4 w-4" />
+                      ) : (
+                        <ChevronDownIcon className="h-4 w-4" />
+                      )}
                     </div>
                   )}
                 </div>
+
                 {isExpanded && !isCollapsed && (
-                  <ul className="pl-8 mt-1 space-y-1">
+                  <ul className="pl-4 space-y-1 border-l-2 border-gray-100 dark:border-gray-700/60 ml-4">
                     {item.submenu?.map((subItem) => {
                       const SubIcon = subItem.icon;
-                      const isSubActive = pathname === subItem.href;
+                      const isSubActive =
+                        pathname === subItem.href ||
+                        (subItem.href === '/intraday' && pathname === '/intraday');
                       return (
                         <li key={subItem.name}>
                           <Link
                             href={subItem.href}
-                            className={`flex items-center px-3 py-1 rounded-md text-sm font-medium transition-colors group ${
+                            className={`flex items-center px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors group ${
                               isSubActive
-                                ? 'bg-blue-50 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300'
-                                : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700'
+                                ? 'bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 font-semibold'
+                                : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700/50'
                             }`}
                           >
-                            <SubIcon className="h-4 w-4 flex-shrink-0 mr-2" />
-                            <div>{subItem.name}</div>
+                            <SubIcon className="h-3.5 w-3.5 flex-shrink-0 mr-2" />
+                            <div className="truncate">{subItem.name}</div>
                           </Link>
                         </li>
                       );
@@ -208,20 +235,22 @@ const Sidebar = () => {
               <Link
                 key={item.name}
                 href={item.href!}
-                className={`flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors group ${
+                className={`flex items-center px-3 py-2 rounded-lg text-sm font-medium transition-colors group ${
                   isCollapsed ? 'justify-center' : ''
                 } ${
                   isActive
                     ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300'
-                    : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700'
+                    : 'text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700'
                 }`}
                 title={isCollapsed ? item.name : ''}
               >
-                <Icon className={`h-5 w-5 flex-shrink-0 ${isCollapsed ? '' : 'mr-3'}`} />
+                <Icon
+                  className={`h-5 w-5 flex-shrink-0 ${isCollapsed ? '' : 'mr-3'}`}
+                />
                 {!isCollapsed && (
                   <div>
-                    <div className="font-medium">{item.name}</div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400">
+                    <div className="font-medium text-xs">{item.name}</div>
+                    <div className="text-[11px] text-gray-500 dark:text-gray-400">
                       {item.description}
                     </div>
                   </div>
@@ -234,8 +263,7 @@ const Sidebar = () => {
 
       {/* Bottom Section with Settings */}
       <div className="mt-auto">
-        {/* Settings Link */}
-        <div className="p-4 border-t border-gray-200 dark:border-gray-700">
+        <div className="p-3 border-t border-gray-200 dark:border-gray-700">
           <Link
             href={settingsItem.href}
             className={`flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors group ${
@@ -247,23 +275,27 @@ const Sidebar = () => {
             }`}
             title={isCollapsed ? settingsItem.name : ''}
           >
-            <CogIcon className={`h-5 w-5 flex-shrink-0 ${isCollapsed ? '' : 'mr-3'}`} />
+            <CogIcon
+              className={`h-5 w-5 flex-shrink-0 ${isCollapsed ? '' : 'mr-3'}`}
+            />
             {!isCollapsed && (
               <div>
-                <div className="font-medium">{settingsItem.name}</div>
-                <div className="text-xs text-gray-500 dark:text-gray-400">
+                <div className="font-medium text-xs">{settingsItem.name}</div>
+                <div className="text-[11px] text-gray-500 dark:text-gray-400">
                   {settingsItem.description}
                 </div>
               </div>
             )}
           </Link>
         </div>
-        
+
         {/* Footer with About */}
-        <div className="p-4 border-t border-gray-200 dark:border-gray-700">
-          <div className="flex items-center justify-center space-x-2">
+        <div className="p-3 border-t border-gray-200 dark:border-gray-700">
+          <div className="flex items-center justify-between">
             {!isCollapsed && (
-              <span className="text-xs text-gray-500 dark:text-gray-400">Stock Advisor v1.0</span>
+              <span className="text-[11px] text-gray-500 dark:text-gray-400">
+                Stock Advisor v1.0
+              </span>
             )}
             <Link
               href="/about"
