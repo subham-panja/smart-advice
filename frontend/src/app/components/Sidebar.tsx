@@ -1,8 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { useState } from 'react';
+import { usePathname, useSearchParams } from 'next/navigation';
+import { useState, Suspense } from 'react';
 import { useSidebar } from '../contexts/SidebarContext';
 import ThemeToggle from './ThemeToggle';
 import {
@@ -23,8 +23,10 @@ import {
   FireIcon,
 } from '@heroicons/react/24/outline';
 
-const Sidebar = () => {
+function SidebarContent() {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const currentView = searchParams.get('view');
   const { isCollapsed, toggleSidebar } = useSidebar();
   const [expandedMenus, setExpandedMenus] = useState<string[]>([
     'Swing Trading',
@@ -73,18 +75,21 @@ const Sidebar = () => {
           href: '/intraday',
           icon: FireIcon,
           description: 'Intraday status & square-off',
+          matchView: null,
         },
         {
           name: 'Recommendations',
-          href: '/intraday#recommendations',
+          href: '/intraday?view=recommendations',
           icon: ChartBarIcon,
           description: 'Breakout & confluence setups',
+          matchView: 'recommendations',
         },
         {
           name: 'Active Positions',
-          href: '/intraday#positions',
+          href: '/intraday?view=positions',
           icon: BriefcaseIcon,
           description: '15:15 IST active trades',
+          matchView: 'positions',
         },
       ],
     },
@@ -160,11 +165,13 @@ const Sidebar = () => {
             );
 
           if (hasSubmenu) {
-            const isSubChildActive = item.submenu?.some(
-              (sub) =>
-                pathname === sub.href ||
-                (sub.href.startsWith('/intraday') && pathname === '/intraday')
-            );
+            const isSubChildActive = item.submenu?.some((sub: any) => {
+              if (pathname === '/intraday' && sub.href.startsWith('/intraday')) {
+                if (sub.matchView) return currentView === sub.matchView;
+                return !currentView;
+              }
+              return pathname === sub.href;
+            });
 
             return (
               <div key={item.name} className="space-y-1">
@@ -204,11 +211,15 @@ const Sidebar = () => {
 
                 {isExpanded && !isCollapsed && (
                   <ul className="pl-4 space-y-1 border-l-2 border-gray-100 dark:border-gray-700/60 ml-4">
-                    {item.submenu?.map((subItem) => {
+                    {item.submenu?.map((subItem: any) => {
                       const SubIcon = subItem.icon;
-                      const isSubActive =
-                        pathname === subItem.href ||
-                        (subItem.href === '/intraday' && pathname === '/intraday');
+                      let isSubActive = false;
+                      if (pathname === '/intraday' && subItem.href.startsWith('/intraday')) {
+                        isSubActive = subItem.matchView ? currentView === subItem.matchView : !currentView;
+                      } else {
+                        isSubActive = pathname === subItem.href;
+                      }
+
                       return (
                         <li key={subItem.name}>
                           <Link
@@ -309,6 +320,12 @@ const Sidebar = () => {
       </div>
     </div>
   );
-};
+}
 
-export default Sidebar;
+export default function Sidebar() {
+  return (
+    <Suspense fallback={<div className="w-64 bg-white dark:bg-gray-800 h-full fixed" />}>
+      <SidebarContent />
+    </Suspense>
+  );
+}

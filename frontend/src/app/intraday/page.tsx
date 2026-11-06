@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, Suspense } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import {
   getIntradayStatus,
   getIntradayConfig,
@@ -22,9 +23,16 @@ import {
   ArrowTrendingUpIcon,
   ArrowPathIcon,
   AdjustmentsHorizontalIcon,
+  BriefcaseIcon,
+  SparklesIcon,
 } from "@heroicons/react/24/outline";
 
-export default function IntradayPage() {
+function IntradayDashboard() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const viewParam = searchParams.get("view");
+
+  const [activeTab, setActiveTab] = useState<"all" | "positions" | "recommendations">("all");
   const [clock, setClock] = useState<IntradayClock | null>(null);
   const [stats, setStats] = useState<IntradayDayStats | null>(null);
   const [config, setConfig] = useState<any>(null);
@@ -34,6 +42,26 @@ export default function IntradayPage() {
   const [squareOffLoading, setSquareOffLoading] = useState(false);
   const [showConfigModal, setShowConfigModal] = useState(false);
   const [currentTime, setCurrentTime] = useState("");
+
+  // Sync tab with URL search parameter
+  useEffect(() => {
+    if (viewParam === "positions") {
+      setActiveTab("positions");
+    } else if (viewParam === "recommendations") {
+      setActiveTab("recommendations");
+    } else {
+      setActiveTab("all");
+    }
+  }, [viewParam]);
+
+  const handleTabChange = (tab: "all" | "positions" | "recommendations") => {
+    setActiveTab(tab);
+    if (tab === "all") {
+      router.push("/intraday");
+    } else {
+      router.push(`/intraday?view=${tab}`);
+    }
+  };
 
   // Update IST clock every second
   useEffect(() => {
@@ -136,6 +164,7 @@ export default function IntradayPage() {
         note: sig.reason,
       });
       await loadData();
+      setActiveTab("positions");
     } catch (err: any) {
       alert("Execution failed: " + (err?.message || err));
     }
@@ -169,7 +198,7 @@ export default function IntradayPage() {
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2">
               <FireIcon className="w-6 h-6 text-amber-500" />
-              Intraday Multi-Confluence Engine
+              Intraday Trading Cockpit
             </h1>
             <span
               className={`px-3 py-0.5 text-xs font-semibold rounded-full border ${getPhaseBadgeColor(
@@ -280,215 +309,258 @@ export default function IntradayPage() {
         </div>
       </div>
 
+      {/* Navigation Filter Tabs */}
+      <div className="flex items-center gap-2 border-b border-zinc-800 pb-3">
+        <button
+          onClick={() => handleTabChange("all")}
+          className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-medium transition ${
+            activeTab === "all"
+              ? "bg-blue-600 text-white shadow-sm"
+              : "bg-zinc-900 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800"
+          }`}
+        >
+          <SparklesIcon className="w-3.5 h-3.5" />
+          All Cockpit Overview
+        </button>
+
+        <button
+          onClick={() => handleTabChange("positions")}
+          className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-medium transition ${
+            activeTab === "positions"
+              ? "bg-blue-600 text-white shadow-sm"
+              : "bg-zinc-900 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800"
+          }`}
+        >
+          <BriefcaseIcon className="w-3.5 h-3.5" />
+          Active Positions ({positions.length})
+        </button>
+
+        <button
+          onClick={() => handleTabChange("recommendations")}
+          className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-medium transition ${
+            activeTab === "recommendations"
+              ? "bg-blue-600 text-white shadow-sm"
+              : "bg-zinc-900 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800"
+          }`}
+        >
+          <FireIcon className="w-3.5 h-3.5" />
+          Recommendations & Scanner ({signals.length})
+        </button>
+      </div>
+
       {/* Active Positions Table */}
-      <div id="positions" className="bg-zinc-900/60 border border-zinc-800 rounded-xl overflow-hidden scroll-mt-6">
-        <div className="px-5 py-4 border-b border-zinc-800 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <ArrowTrendingUpIcon className="w-4 h-4 text-emerald-400" />
-            <h2 className="text-sm font-semibold text-zinc-200">
-              Active Intraday Positions ({positions.length})
-            </h2>
+      {(activeTab === "all" || activeTab === "positions") && (
+        <div id="positions" className="bg-zinc-900/60 border border-zinc-800 rounded-xl overflow-hidden scroll-mt-6">
+          <div className="px-5 py-4 border-b border-zinc-800 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <ArrowTrendingUpIcon className="w-4 h-4 text-emerald-400" />
+              <h2 className="text-sm font-semibold text-zinc-200">
+                Active Intraday Positions ({positions.length})
+              </h2>
+            </div>
+            <span className="text-xs text-zinc-500">15:15 IST Mandatory Square-Off</span>
           </div>
-          <span className="text-xs text-zinc-500">15:15 IST Mandatory Square-Off</span>
-        </div>
 
-        {positions.length === 0 ? (
-          <div className="p-8 text-center text-zinc-500 text-sm">
-            No open intraday positions. High confluence setups will appear below for execution.
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-zinc-900/90 text-zinc-400 uppercase font-medium border-b border-zinc-800">
-                <tr>
-                  <th className="py-3 px-4">Symbol</th>
-                  <th className="py-3 px-4">Setup Context</th>
-                  <th className="py-3 px-4">Qty</th>
-                  <th className="py-3 px-4">Entry</th>
-                  <th className="py-3 px-4">Current</th>
-                  <th className="py-3 px-4">Stop Loss</th>
-                  <th className="py-3 px-4">Target 1 (50%)</th>
-                  <th className="py-3 px-4">Target 2</th>
-                  <th className="py-3 px-4">P&L</th>
-                  <th className="py-3 px-4 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-800/60 text-zinc-300">
-                {positions.map((pos) => {
-                  const pnl = pos.unrealized_pnl ?? 0;
-                  const isProfit = pnl >= 0;
-                  return (
-                    <tr key={pos._id} className="hover:bg-zinc-800/30 transition">
-                      <td className="py-3.5 px-4 font-semibold text-white">
-                        {pos.symbol}
-                      </td>
-                      <td className="py-3.5 px-4">
-                        <StockPickNoteTag
-                          symbol={pos.symbol}
-                          note={
-                            pos.note ||
-                            pos.reason ||
-                            `Intraday 15m ORB + VWAP confluence trigger at ₹${pos.entry_price}`
-                          }
-                        />
-                      </td>
-                      <td className="py-3.5 px-4 font-mono">{pos.quantity}</td>
-                      <td className="py-3.5 px-4 font-mono">₹{pos.entry_price.toFixed(2)}</td>
-                      <td className="py-3.5 px-4 font-mono">
-                        ₹{(pos.current_price ?? pos.entry_price).toFixed(2)}
-                      </td>
-                      <td className="py-3.5 px-4 font-mono text-rose-400">
-                        ₹{pos.stop_loss.toFixed(2)}
-                      </td>
-                      <td className="py-3.5 px-4 font-mono text-emerald-400">
-                        ₹{pos.target_1.toFixed(2)}
-                      </td>
-                      <td className="py-3.5 px-4 font-mono text-emerald-400">
-                        ₹{pos.target_2.toFixed(2)}
-                      </td>
-                      <td
-                        className={`py-3.5 px-4 font-mono font-semibold ${
-                          isProfit ? "text-emerald-400" : "text-rose-400"
-                        }`}
-                      >
-                        {isProfit ? "+" : ""}₹{pnl.toFixed(2)}
-                      </td>
-                      <td className="py-3.5 px-4 text-right">
-                        <button
-                          onClick={() => handleClosePosition(pos._id)}
-                          className="px-2.5 py-1 bg-zinc-800 hover:bg-rose-900/40 text-zinc-300 hover:text-rose-300 border border-zinc-700 hover:border-rose-700 rounded text-[11px] transition"
+          {positions.length === 0 ? (
+            <div className="p-8 text-center text-zinc-500 text-sm">
+              No open intraday positions. High confluence setups will appear below for execution.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-zinc-900/90 text-zinc-400 uppercase font-medium border-b border-zinc-800">
+                  <tr>
+                    <th className="py-3 px-4">Symbol</th>
+                    <th className="py-3 px-4">Setup Context</th>
+                    <th className="py-3 px-4">Qty</th>
+                    <th className="py-3 px-4">Entry</th>
+                    <th className="py-3 px-4">Current</th>
+                    <th className="py-3 px-4">Stop Loss</th>
+                    <th className="py-3 px-4">Target 1 (50%)</th>
+                    <th className="py-3 px-4">Target 2</th>
+                    <th className="py-3 px-4">P&L</th>
+                    <th className="py-3 px-4 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-800/60 text-zinc-300">
+                  {positions.map((pos) => {
+                    const pnl = pos.unrealized_pnl ?? 0;
+                    const isProfit = pnl >= 0;
+                    return (
+                      <tr key={pos._id} className="hover:bg-zinc-800/30 transition">
+                        <td className="py-3.5 px-4 font-semibold text-white">
+                          {pos.symbol}
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <StockPickNoteTag
+                            symbol={pos.symbol}
+                            note={
+                              pos.note ||
+                              pos.reason ||
+                              `Intraday 15m ORB + VWAP confluence trigger at ₹${pos.entry_price}`
+                            }
+                          />
+                        </td>
+                        <td className="py-3.5 px-4 font-mono">{pos.quantity}</td>
+                        <td className="py-3.5 px-4 font-mono">₹{pos.entry_price.toFixed(2)}</td>
+                        <td className="py-3.5 px-4 font-mono">
+                          ₹{(pos.current_price ?? pos.entry_price).toFixed(2)}
+                        </td>
+                        <td className="py-3.5 px-4 font-mono text-rose-400">
+                          ₹{pos.stop_loss.toFixed(2)}
+                        </td>
+                        <td className="py-3.5 px-4 font-mono text-emerald-400">
+                          ₹{pos.target_1.toFixed(2)}
+                        </td>
+                        <td className="py-3.5 px-4 font-mono text-emerald-400">
+                          ₹{pos.target_2.toFixed(2)}
+                        </td>
+                        <td
+                          className={`py-3.5 px-4 font-mono font-semibold ${
+                            isProfit ? "text-emerald-400" : "text-rose-400"
+                          }`}
                         >
-                          Square Off
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      {/* Live Intraday Scanner / Opportunities */}
-      <div id="recommendations" className="bg-zinc-900/60 border border-zinc-800 rounded-xl overflow-hidden scroll-mt-6">
-        <div className="px-5 py-4 border-b border-zinc-800 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <FireIcon className="w-4 h-4 text-amber-400" />
-            <h2 className="text-sm font-semibold text-zinc-200">
-              Intraday Recommendations & Scanner Feed ({signals.length} Qualified Candidates)
-            </h2>
-          </div>
-          <span className="text-xs text-zinc-500">
-            Confluence: ORB 15m + VWAP + CPR Gates
-          </span>
+                          {isProfit ? "+" : ""}₹{pnl.toFixed(2)}
+                        </td>
+                        <td className="py-3.5 px-4 text-right">
+                          <button
+                            onClick={() => handleClosePosition(pos._id)}
+                            className="px-2.5 py-1 bg-zinc-800 hover:bg-rose-900/40 text-zinc-300 hover:text-rose-300 border border-zinc-700 hover:border-rose-700 rounded text-[11px] transition"
+                          >
+                            Square Off
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
+      )}
 
-        {signals.length === 0 ? (
-          <div className="p-8 text-center text-zinc-500 text-sm">
-            Scanning Nifty 50 / liquid universe... No setup has passed all confluence gates yet.
+      {/* Live Intraday Scanner / Recommendations */}
+      {(activeTab === "all" || activeTab === "recommendations") && (
+        <div id="recommendations" className="bg-zinc-900/60 border border-zinc-800 rounded-xl overflow-hidden scroll-mt-6">
+          <div className="px-5 py-4 border-b border-zinc-800 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <FireIcon className="w-4 h-4 text-amber-400" />
+              <h2 className="text-sm font-semibold text-zinc-200">
+                Intraday Recommendations & Scanner Feed ({signals.length} Qualified Candidates)
+              </h2>
+            </div>
+            <span className="text-xs text-zinc-500">
+              Confluence: ORB 15m + VWAP + CPR Gates
+            </span>
           </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-zinc-900/90 text-zinc-400 uppercase font-medium border-b border-zinc-800">
-                <tr>
-                  <th className="py-3 px-4">Symbol</th>
-                  <th className="py-3 px-4">Score</th>
-                  <th className="py-3 px-4">Confluence Gates</th>
-                  <th className="py-3 px-4">Entry Trigger</th>
-                  <th className="py-3 px-4">Target 1 / Target 2</th>
-                  <th className="py-3 px-4">Stop Loss (1.2x ATR)</th>
-                  <th className="py-3 px-4">Setup Note</th>
-                  <th className="py-3 px-4 text-right">Execute</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-800/60 text-zinc-300">
-                {signals.map((sig, idx) => {
-                  return (
-                    <tr key={idx} className="hover:bg-zinc-800/30 transition">
-                      <td className="py-3.5 px-4 font-semibold text-white">
-                        {sig.symbol}
-                      </td>
-                      <td className="py-3.5 px-4">
-                        <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                          {sig.confluence_score ?? 85}/100
-                        </span>
-                      </td>
-                      <td className="py-3.5 px-4">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span
-                            className={`px-1.5 py-0.5 rounded text-[10px] ${
-                              sig.current_price > (sig.orb?.orb_high || 0)
-                                ? "bg-emerald-500/20 text-emerald-400"
-                                : "bg-zinc-800 text-zinc-500"
-                            }`}
-                          >
-                            ORB
+
+          {signals.length === 0 ? (
+            <div className="p-8 text-center text-zinc-500 text-sm">
+              Scanning Nifty 50 / liquid universe... No setup has passed all confluence gates yet.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-zinc-900/90 text-zinc-400 uppercase font-medium border-b border-zinc-800">
+                  <tr>
+                    <th className="py-3 px-4">Symbol</th>
+                    <th className="py-3 px-4">Score</th>
+                    <th className="py-3 px-4">Confluence Gates</th>
+                    <th className="py-3 px-4">Entry Trigger</th>
+                    <th className="py-3 px-4">Target 1 / Target 2</th>
+                    <th className="py-3 px-4">Stop Loss (1.2x ATR)</th>
+                    <th className="py-3 px-4">Setup Note</th>
+                    <th className="py-3 px-4 text-right">Execute</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-800/60 text-zinc-300">
+                  {signals.map((sig, idx) => {
+                    return (
+                      <tr key={idx} className="hover:bg-zinc-800/30 transition">
+                        <td className="py-3.5 px-4 font-semibold text-white">
+                          {sig.symbol}
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                            {Math.round((sig.confluence_score ?? 0.85) * (sig.confluence_score <= 1 ? 100 : 1))}/100
                           </span>
-                          <span
-                            className={`px-1.5 py-0.5 rounded text-[10px] ${
-                              sig.current_price > (sig.current_vwap || 0)
-                                ? "bg-emerald-500/20 text-emerald-400"
-                                : "bg-zinc-800 text-zinc-500"
-                            }`}
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span
+                              className={`px-1.5 py-0.5 rounded text-[10px] ${
+                                sig.current_price > (sig.orb?.orb_high || 0)
+                                  ? "bg-emerald-500/20 text-emerald-400"
+                                  : "bg-zinc-800 text-zinc-500"
+                              }`}
+                            >
+                              ORB
+                            </span>
+                            <span
+                              className={`px-1.5 py-0.5 rounded text-[10px] ${
+                                sig.current_price > (sig.current_vwap || 0)
+                                  ? "bg-emerald-500/20 text-emerald-400"
+                                  : "bg-zinc-800 text-zinc-500"
+                              }`}
+                            >
+                              VWAP
+                            </span>
+                            <span
+                              className={`px-1.5 py-0.5 rounded text-[10px] ${
+                                sig.current_price > (sig.cpr?.tc || 0)
+                                  ? "bg-emerald-500/20 text-emerald-400"
+                                  : "bg-zinc-800 text-zinc-500"
+                              }`}
+                            >
+                              CPR
+                            </span>
+                            <span
+                              className={`px-1.5 py-0.5 rounded text-[10px] ${
+                                (sig.volume_ratio || 0) >= 1.5
+                                  ? "bg-emerald-500/20 text-emerald-400"
+                                  : "bg-zinc-800 text-zinc-500"
+                              }`}
+                            >
+                              Vol {(sig.volume_ratio || 1).toFixed(1)}x
+                            </span>
+                          </div>
+                        </td>
+                        <td className="py-3.5 px-4 font-mono font-semibold text-white">
+                          ₹{sig.current_price.toFixed(2)}
+                        </td>
+                        <td className="py-3.5 px-4 font-mono text-emerald-400">
+                          ₹{sig.target_1.toFixed(2)} / ₹{sig.target_2.toFixed(2)}
+                        </td>
+                        <td className="py-3.5 px-4 font-mono text-rose-400">
+                          ₹{sig.stop_loss.toFixed(2)}
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <StockPickNoteTag
+                            symbol={sig.symbol}
+                            note={
+                              sig.reason ||
+                              `15m ORB High breakout with VWAP support & CPR confluence`
+                            }
+                          />
+                        </td>
+                        <td className="py-3.5 px-4 text-right">
+                          <button
+                            onClick={() => handleExecuteSignal(sig)}
+                            className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white font-medium rounded text-xs transition"
                           >
-                            VWAP
-                          </span>
-                          <span
-                            className={`px-1.5 py-0.5 rounded text-[10px] ${
-                              sig.current_price > (sig.cpr?.tc || 0)
-                                ? "bg-emerald-500/20 text-emerald-400"
-                                : "bg-zinc-800 text-zinc-500"
-                            }`}
-                          >
-                            CPR
-                          </span>
-                          <span
-                            className={`px-1.5 py-0.5 rounded text-[10px] ${
-                              (sig.volume_ratio || 0) >= 1.5
-                                ? "bg-emerald-500/20 text-emerald-400"
-                                : "bg-zinc-800 text-zinc-500"
-                            }`}
-                          >
-                            Vol {(sig.volume_ratio || 1).toFixed(1)}x
-                          </span>
-                        </div>
-                      </td>
-                      <td className="py-3.5 px-4 font-mono font-semibold text-white">
-                        ₹{sig.current_price.toFixed(2)}
-                      </td>
-                      <td className="py-3.5 px-4 font-mono text-emerald-400">
-                        ₹{sig.target_1.toFixed(2)} / ₹{sig.target_2.toFixed(2)}
-                      </td>
-                      <td className="py-3.5 px-4 font-mono text-rose-400">
-                        ₹{sig.stop_loss.toFixed(2)}
-                      </td>
-                      <td className="py-3.5 px-4">
-                        <StockPickNoteTag
-                          symbol={sig.symbol}
-                          note={
-                            sig.reason ||
-                            `15m ORB High breakout with VWAP support & CPR confluence`
-                          }
-                        />
-                      </td>
-                      <td className="py-3.5 px-4 text-right">
-                        <button
-                          onClick={() => handleExecuteSignal(sig)}
-                          className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white font-medium rounded text-xs transition"
-                        >
-                          Execute
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+                            Execute
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Config Drawer / Modal */}
       {showConfigModal && config && (
@@ -566,5 +638,13 @@ export default function IntradayPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function IntradayPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-zinc-400">Loading Intraday Cockpit...</div>}>
+      <IntradayDashboard />
+    </Suspense>
   );
 }
