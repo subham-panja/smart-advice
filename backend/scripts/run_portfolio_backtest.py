@@ -388,6 +388,7 @@ def run_portfolio_backtest(
             summary=summary_metrics,
             date_range=results.get("date_range", {}),
         )
+        results["session_id"] = session_id
         logger.info(f"Session {session_id} marked as completed")
 
     # 8. Record trades for tracker

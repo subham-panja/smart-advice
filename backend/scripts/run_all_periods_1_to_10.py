@@ -32,13 +32,16 @@ for p in PERIODS:
         elapsed = time.time() - t0
 
         # Extract core metrics
+        dr = res.get("date_range", {})
+        start_dt = dr.get("start_date", dr.get("start", ""))
+        end_dt = dr.get("end_date", dr.get("end", ""))
         data = {
             "period": p,
             "status": "SUCCESS",
             "duration_sec": round(elapsed, 1),
-            "date_range": f"{res.get('date_range', {}).get('start', '')} → {res.get('date_range', {}).get('end', '')}",
+            "date_range": f"{start_dt} → {end_dt}",
             "initial_capital": res.get("initial_capital", 3000000.0),
-            "final_value": res.get("final_value", 0.0),
+            "final_value": res.get("final_portfolio_value", res.get("final_value", 0.0)),
             "total_return_pct": res.get("total_return_pct", 0.0),
             "cagr": res.get("cagr", 0.0),
             "max_drawdown_pct": res.get("max_drawdown_pct", 0.0),
