@@ -3,6 +3,8 @@
 Test script to isolate which analyzer component is hanging
 """
 
+__test__ = False
+
 import os
 import signal
 import sys

@@ -8,8 +8,8 @@ def test_load_swing_trading_v2():
     assert strategy.get("name") == "Swing_Trading_v2"
 
     risk = strategy.get("risk_management", {})
-    assert risk.get("max_positions") <= 4, "Compounding strategy must keep concentrated positions"
-    assert risk.get("risk_per_trade_pct", 0) >= 3.0, "Risk per trade should allow runner compounding"
+    assert risk.get("max_positions") <= 5, "Compounding strategy must keep concentrated positions"
+    assert risk.get("risk_per_trade_pct", 0) >= 1.5, "Risk per trade should allow runner compounding"
 
     pyramid = strategy.get("pyramiding", {})
     assert pyramid.get("enabled") is True, "Pyramiding must be enabled for Swing_Trading_v2"

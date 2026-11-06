@@ -26,6 +26,13 @@ export interface StockRecommendation {
   recommendation_date: string;
   combined_score: number;
   recommendation_strength: string;
+  note?: string;
+  strategy_name?: string;
+  buy_price?: number;
+  sell_price?: number;
+  expected_return_percent?: number;
+  entry_atr?: number;
+  rr_ratio?: number;
 }
 
 export interface ApiResponse<T> {
@@ -76,6 +83,18 @@ export const getRecommendations = async (): Promise<ApiResponse<StockRecommendat
       error: 'An unexpected error occurred',
       recommendations: []
     };
+  }
+};
+
+export const updateRecommendation = async (symbol: string, data: Record<string, any>): Promise<ApiResponse<any>> => {
+  try {
+    const response = await api.patch(`/recommendations/${symbol}`, data);
+    return response.data;
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      return { status: 'error', error: error.response?.data?.error || 'Failed to update recommendation' };
+    }
+    return { status: 'error', error: 'An unexpected error occurred' };
   }
 };
 
@@ -238,6 +257,9 @@ export interface Position {
   updated_at: string;
   is_paper?: boolean;
   trade_type?: string;
+  note?: string;
+  reason?: string;
+  entry_atr?: number;
 }
 
 export interface CreatePositionData {
@@ -434,6 +456,9 @@ export interface DashboardStats {
     target: number;
     adds_count: number;
     strategy: string;
+    note?: string;
+    reason?: string;
+    entry_atr?: number;
   }>;
   activity_feed: Array<{
     symbol: string;

@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { getRecommendations, StockRecommendation } from "@/lib/api";
+import { getRecommendations, updateRecommendation, StockRecommendation } from "@/lib/api";
 import { ArrowPathIcon } from "@heroicons/react/24/outline";
 import { ColumnDef } from "@tanstack/react-table";
 import DataTable from "../components/DataTable";
+import StockPickNoteTag from "../components/StockPickNoteTag";
 
 export default function RecommendationsPage() {
   const [recommendations, setRecommendations] = useState<StockRecommendation[]>([]);
@@ -19,6 +20,30 @@ export default function RecommendationsPage() {
     {
       header: "Company Name",
       accessorKey: "company_name",
+    },
+    {
+      header: "Why Picked (Setup Context)",
+      id: "why_picked",
+      cell: ({ row }) => (
+        <StockPickNoteTag
+          symbol={row.original.symbol}
+          strategy={row.original.strategy_name || "Swing_Trading_v2"}
+          reason={row.original.reason}
+          note={row.original.note}
+          technicalScore={row.original.technical_score}
+          fundamentalScore={row.original.fundamental_score}
+          combinedScore={row.original.combined_score}
+          entryPrice={row.original.buy_price}
+          stopLoss={row.original.buy_price ? row.original.buy_price * 0.94 : undefined}
+          target={row.original.sell_price}
+          entryAtr={row.original.entry_atr}
+          rrRatio={row.original.rr_ratio || 4.5}
+          onSaveNote={async (newNote) => {
+            await updateRecommendation(row.original.symbol, { note: newNote });
+            handleRefresh();
+          }}
+        />
+      ),
     },
     {
       header: "Technical Score",

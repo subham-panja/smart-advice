@@ -30,6 +30,19 @@ def get_recommendations():
         return jsonify({"status": "error", "error": str(e)}), 500
 
 
+@analysis_bp.route("/recommendations/<symbol>", methods=["PATCH"])
+def update_recommendation_endpoint(symbol):
+    try:
+        data = request.get_json() or {}
+        res = analysis_handler.update_recommendation(symbol, data)
+        if not res:
+            return jsonify({"status": "error", "error": f"Recommendation for {symbol} not found"}), 404
+        return jsonify({"status": "success", "message": f"Recommendation {symbol} updated"})
+    except Exception as e:
+        current_app.logger.error(f"Recommendation update failure for {symbol}: {e}")
+        return jsonify({"status": "error", "error": str(e)}), 500
+
+
 @analysis_bp.route("/trigger-analysis", methods=["POST"])
 def trigger_analysis():
     import threading

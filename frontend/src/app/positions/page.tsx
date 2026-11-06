@@ -20,6 +20,7 @@ import {
   Position,
   CycleStats,
 } from '@/lib/api';
+import StockPickNoteTag from '../components/StockPickNoteTag';
 
 export default function PositionsPage() {
   const router = useRouter();
@@ -268,6 +269,9 @@ export default function PositionsPage() {
                   <th className="px-4 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
                     Symbol
                   </th>
+                  <th className="px-4 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                    Why Picked (Setup)
+                  </th>
                   <th className="px-4 py-3.5 text-right text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
                     Qty
                   </th>
@@ -315,6 +319,22 @@ export default function PositionsPage() {
                             </span>
                           )}
                         </div>
+                      </td>
+                      <td className="px-4 py-4">
+                        <StockPickNoteTag
+                          symbol={pos.symbol}
+                          strategy={pos.strategy_name}
+                          reason={pos.reason}
+                          note={pos.note}
+                          entryPrice={pos.entry_price}
+                          stopLoss={sl}
+                          target={target}
+                          entryAtr={pos.entry_atr}
+                          onSaveNote={async (newNote) => {
+                            await updatePosition(pos.symbol, { note: newNote });
+                            fetchData();
+                          }}
+                        />
                       </td>
                       <td className="px-4 py-4 text-right font-medium text-gray-900 dark:text-gray-100">
                         {pos.quantity}

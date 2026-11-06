@@ -52,9 +52,22 @@ def get_recommendations():
                 "detailed_analysis": rec_dict.get("detailed_analysis", {}),
                 "sector_analysis": rec_dict.get("sector_analysis", {}),
                 "market_regime": rec_dict.get("market_regime", ""),
+                "note": rec_dict.get("note", ""),
+                "strategy_name": rec_dict.get("strategy_name", "Swing_Trading_v2"),
+                "entry_atr": rec_dict.get("entry_atr", 0),
+                "rr_ratio": rec_dict.get("rr_ratio", 0),
             }
         )
     return recommendations
+
+
+def update_recommendation(symbol: str, data: dict):
+    from database import get_mongodb
+
+    db = get_mongodb()
+    col = db["recommended_shares"]
+    res = col.update_one({"symbol": symbol.upper()}, {"$set": data})
+    return res.matched_count > 0
 
 
 def run_analysis_thread(req_data, app_context):

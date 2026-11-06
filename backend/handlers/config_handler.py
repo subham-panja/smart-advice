@@ -165,6 +165,9 @@ def get_dashboard_stats():
                 "target": round(p.get("current_target", p.get("target", 0)), 2),
                 "adds_count": p.get("adds_count", 0),
                 "strategy": p.get("strategy_name", ""),
+                "note": p.get("note", ""),
+                "reason": p.get("reason", ""),
+                "entry_atr": round(p.get("entry_atr", 0), 2),
             }
         )
 

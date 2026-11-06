@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import {
   ArrowTrendingUpIcon,
   ArrowTrendingDownIcon,
@@ -12,17 +13,27 @@ import {
   FlagIcon,
   XCircleIcon,
   ArrowPathIcon,
+  SparklesIcon,
+  ArrowTopRightOnSquareIcon,
 } from '@heroicons/react/24/outline';
-import { getDashboardStats, DashboardStats } from '@/lib/api';
+import { getDashboardStats, DashboardStats, getRecommendations, StockRecommendation, updatePosition, updateRecommendation } from '@/lib/api';
+import StockPickNoteTag from './components/StockPickNoteTag';
 
 export default function Home() {
   const [stats, setStats] = useState<Partial<DashboardStats>>({});
+  const [recommendations, setRecommendations] = useState<StockRecommendation[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchData = async () => {
     setLoading(true);
-    const res = await getDashboardStats();
-    if (res.status === 'success') setStats(res);
+    const [statsRes, recsRes] = await Promise.all([
+      getDashboardStats(),
+      getRecommendations().catch(() => ({ status: 'error', recommendations: [] })),
+    ]);
+    if (statsRes.status === 'success') setStats(statsRes);
+    if (recsRes.status === 'success' && recsRes.recommendations) {
+      setRecommendations(recsRes.recommendations.slice(0, 6));
+    }
     setLoading(false);
   };
 
@@ -274,6 +285,7 @@ export default function Home() {
               <thead>
                 <tr className="bg-gray-50/50 dark:bg-gray-900/50">
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Symbol</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Why Picked (Setup)</th>
                   <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Qty</th>
                   <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Entry</th>
                   <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Current</th>
@@ -294,6 +306,22 @@ export default function Home() {
                         )}
                       </div>
                     </td>
+                    <td className="px-4 py-3">
+                      <StockPickNoteTag
+                        symbol={pos.symbol}
+                        strategy={pos.strategy}
+                        reason={pos.reason}
+                        note={pos.note}
+                        entryPrice={pos.entry_price}
+                        stopLoss={pos.stop_loss}
+                        target={pos.target}
+                        entryAtr={pos.entry_atr}
+                        onSaveNote={async (newNote) => {
+                          await updatePosition(pos.symbol, { note: newNote });
+                          fetchData();
+                        }}
+                      />
+                    </td>
                     <td className="px-4 py-3 text-right font-medium text-gray-900 dark:text-gray-100">{pos.quantity}</td>
                     <td className="px-4 py-3 text-right text-gray-600 dark:text-gray-400">₹{pos.entry_price.toFixed(2)}</td>
                     <td className="px-4 py-3 text-right text-gray-600 dark:text-gray-400">₹{pos.current_price.toFixed(2)}</td>
@@ -307,6 +335,94 @@ export default function Home() {
                     </td>
                     <td className="px-4 py-3 text-right text-gray-600 dark:text-gray-400">
                       ₹{pos.total_investment.toLocaleString('en-IN')}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Qualified Recommendations Preview on Dashboard */}
+      {recommendations.length > 0 && (
+        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+          <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-700 bg-gradient-to-r from-gray-50 to-white dark:from-gray-900 dark:to-gray-800 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <SparklesIcon className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+              <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100">
+                Latest Stock Recommendations
+                <span className="ml-2 text-sm font-normal text-gray-500 dark:text-gray-400">
+                  (Showing {recommendations.length})
+                </span>
+              </h2>
+            </div>
+            <Link
+              href="/recommendations"
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition"
+            >
+              <span>View all recommendations</span>
+              <ArrowTopRightOnSquareIcon className="h-3.5 w-3.5" />
+            </Link>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-gray-50/50 dark:bg-gray-900/50">
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Stock</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Why Picked (Setup Context)</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Confidence</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Buy Price</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Target</th>
+                  <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 dark:divide-gray-700/50">
+                {recommendations.map((rec) => (
+                  <tr key={rec.symbol} className="hover:bg-gray-50/50 dark:hover:bg-gray-700/30 transition-colors">
+                    <td className="px-4 py-3">
+                      <div>
+                        <span className="font-semibold text-gray-900 dark:text-gray-100">{rec.symbol}</span>
+                        {rec.company_name && (
+                          <div className="text-xs text-gray-500 dark:text-gray-400 truncate max-w-[160px]">{rec.company_name}</div>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <StockPickNoteTag
+                        symbol={rec.symbol}
+                        strategy={rec.strategy_name || 'Swing_Trading_v2'}
+                        reason={rec.reason}
+                        note={rec.note}
+                        technicalScore={rec.technical_score}
+                        fundamentalScore={rec.fundamental_score}
+                        combinedScore={rec.combined_score}
+                        entryPrice={rec.buy_price}
+                        stopLoss={rec.buy_price ? rec.buy_price * 0.94 : undefined}
+                        target={rec.sell_price}
+                        entryAtr={rec.entry_atr}
+                        rrRatio={rec.rr_ratio || 4.5}
+                        onSaveNote={async (newNote) => {
+                          await updateRecommendation(rec.symbol, { note: newNote });
+                          fetchData();
+                        }}
+                      />
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <span className="font-semibold text-blue-600 dark:text-blue-400">
+                        {((rec.combined_score || 0) * 100).toFixed(0)}%
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-right font-medium text-gray-900 dark:text-gray-100">
+                      {rec.buy_price ? `₹${rec.buy_price.toFixed(2)}` : 'Market'}
+                    </td>
+                    <td className="px-4 py-3 text-right font-medium text-green-600 dark:text-green-400">
+                      {rec.sell_price ? `₹${rec.sell_price.toFixed(2)}` : 'ATR Multi-Target'}
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <span className="px-2.5 py-1 text-xs font-bold rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400">
+                        {rec.recommendation_strength || 'BUY'}
+                      </span>
                     </td>
                   </tr>
                 ))}
