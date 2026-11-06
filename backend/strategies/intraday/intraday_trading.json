@@ -120,8 +120,8 @@
   "exit_rules": {
     "stop_loss_type": "PERCENT_OR_ATR",
     "atr_stop_multiplier": 1.2,
-    "max_stop_loss_pct": 0.7,
-    "target_1_multiplier": 2.5,
+    "max_stop_loss_pct": 1.0,
+    "target_1_multiplier": 3.0,
     "target_1_sell_pct": 1.0,
     "enforce_eod_square_off": true,
     "eod_square_off_time": "15:15",
