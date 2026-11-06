@@ -1,6 +1,7 @@
 from routes.analysis import analysis_bp
 from routes.backtest_routes import backtests_bp
 from routes.config_routes import config_bp
+from routes.intraday_routes import intraday_bp
 from routes.orchestrator import orchestrator_bp
 from routes.positions import positions_bp
 
@@ -11,3 +12,4 @@ def register_blueprints(app):
     app.register_blueprint(positions_bp)
     app.register_blueprint(config_bp)
     app.register_blueprint(backtests_bp)
+    app.register_blueprint(intraday_bp)

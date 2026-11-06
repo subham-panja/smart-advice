@@ -733,3 +733,223 @@ export const deleteBacktestSession = async (
   }
 };
 
+// ---------------------------------------------------------------------------
+// Intraday Trading APIs
+// ---------------------------------------------------------------------------
+
+export interface IntradayClock {
+  current_time_ist: string;
+  market_open: string;
+  trading_start: string;
+  no_new_entries: string;
+  auto_square_off: string;
+  market_close: string;
+  phase: string;
+  is_market_open: boolean;
+}
+
+export interface IntradayDayStats {
+  realized_pnl: number;
+  unrealized_pnl: number;
+  total_pnl: number;
+  open_count: number;
+  max_positions: number;
+  positions_available: number;
+  capital_deployed: number;
+  circuit_breaker_active: boolean;
+  max_daily_loss_pct: number;
+  auto_square_off_time: string;
+}
+
+export interface IntradayStatusResponse {
+  status: string;
+  clock: IntradayClock;
+  stats: IntradayDayStats;
+  error?: string;
+}
+
+export interface IntradayPosition {
+  _id: string;
+  symbol: string;
+  quantity: number;
+  initial_quantity: number;
+  entry_price: number;
+  current_price: number;
+  stop_loss: number;
+  target_1: number;
+  target_2: number;
+  pattern: string;
+  reason?: string;
+  note?: string;
+  status: 'OPEN' | 'CLOSED';
+  t1_hit: boolean;
+  total_investment: number;
+  unrealized_pnl: number;
+  realized_pnl: number;
+  pnl_pct: number;
+  entry_time: string;
+  exit_price?: number;
+  exit_reason?: string;
+  created_at: string;
+  updated_at: string;
+  closed_at?: string;
+}
+
+export interface IntradaySignal {
+  symbol: string;
+  signal: 'BUY' | 'HOLD';
+  pattern: string;
+  all_gates_passed: boolean;
+  confluence_score: number;
+  current_price: number;
+  current_vwap: number;
+  cpr: {
+    pivot: number;
+    tc: number;
+    bc: number;
+    is_narrow: boolean;
+    cpr_width_pct: number;
+  };
+  orb: {
+    orb_high: number;
+    orb_low: number;
+    orb_range: number;
+  };
+  atr_5m: number;
+  stop_loss: number;
+  target_1: number;
+  target_2: number;
+  rr_ratio: number;
+  volume_ratio: number;
+  reason: string;
+}
+
+export const getIntradayStatus = async (): Promise<IntradayStatusResponse> => {
+  try {
+    const response = await api.get('/intraday/status');
+    return response.data;
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      return {
+        status: 'error',
+        clock: {
+          current_time_ist: '--:--',
+          market_open: '09:15',
+          trading_start: '09:30',
+          no_new_entries: '14:45',
+          auto_square_off: '15:15',
+          market_close: '15:30',
+          phase: 'OFFLINE',
+          is_market_open: false,
+        },
+        stats: {
+          realized_pnl: 0,
+          unrealized_pnl: 0,
+          total_pnl: 0,
+          open_count: 0,
+          max_positions: 3,
+          positions_available: 3,
+          capital_deployed: 0,
+          circuit_breaker_active: false,
+          max_daily_loss_pct: 2,
+          auto_square_off_time: '15:15',
+        },
+        error: error.response?.data?.error || 'Failed to fetch intraday status',
+      };
+    }
+    return {
+      status: 'error',
+      clock: {} as any,
+      stats: {} as any,
+      error: 'Failed to connect to server',
+    };
+  }
+};
+
+export const getIntradayConfig = async (): Promise<{ status: string; config?: any; error?: string }> => {
+  try {
+    const response = await api.get('/intraday/config');
+    return response.data;
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      return { status: 'error', error: error.response?.data?.error || 'Failed to fetch intraday config' };
+    }
+    return { status: 'error', error: 'Failed to connect to server' };
+  }
+};
+
+export const updateIntradayConfig = async (payload: any): Promise<{ status: string; message?: string; error?: string }> => {
+  try {
+    const response = await api.patch('/intraday/config', payload);
+    return response.data;
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      return { status: 'error', error: error.response?.data?.error || 'Failed to update intraday config' };
+    }
+    return { status: 'error', error: 'Failed to connect to server' };
+  }
+};
+
+export const getIntradayPositions = async (
+  status?: string
+): Promise<{ status: string; count: number; positions: IntradayPosition[]; error?: string }> => {
+  try {
+    const params = status ? { status } : {};
+    const response = await api.get('/intraday/positions', { params });
+    return response.data;
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      return { status: 'error', count: 0, positions: [], error: error.response?.data?.error || 'Failed to fetch intraday positions' };
+    }
+    return { status: 'error', count: 0, positions: [], error: 'Failed to connect to server' };
+  }
+};
+
+export const createIntradayPosition = async (data: Partial<IntradayPosition>): Promise<{ status: string; position?: IntradayPosition; error?: string }> => {
+  try {
+    const response = await api.post('/intraday/positions', data);
+    return response.data;
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      return { status: 'error', error: error.response?.data?.error || 'Failed to create intraday position' };
+    }
+    return { status: 'error', error: 'Failed to connect to server' };
+  }
+};
+
+export const squareOffAllIntraday = async (reason?: string): Promise<{ status: string; message?: string; closed_count?: number; error?: string }> => {
+  try {
+    const response = await api.post('/intraday/square-off-all', { reason });
+    return response.data;
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      return { status: 'error', error: error.response?.data?.error || 'Failed to square off intraday positions' };
+    }
+    return { status: 'error', error: 'Failed to connect to server' };
+  }
+};
+
+export const closeIntradayPosition = async (positionId: string, reason?: string): Promise<{ status: string; position?: IntradayPosition; error?: string }> => {
+  try {
+    const response = await api.post(`/intraday/positions/${positionId}/close`, { reason });
+    return response.data;
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      return { status: 'error', error: error.response?.data?.error || 'Failed to close intraday position' };
+    }
+    return { status: 'error', error: 'Failed to connect to server' };
+  }
+};
+
+export const getIntradaySignals = async (): Promise<{ status: string; count: number; signals: IntradaySignal[]; error?: string }> => {
+  try {
+    const response = await api.get('/intraday/signals');
+    return response.data;
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      return { status: 'error', count: 0, signals: [], error: error.response?.data?.error || 'Failed to fetch intraday signals' };
+    }
+    return { status: 'error', count: 0, signals: [], error: 'Failed to connect to server' };
+  }
+};
+

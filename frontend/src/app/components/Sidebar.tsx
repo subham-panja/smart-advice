@@ -19,6 +19,7 @@ import {
   InformationCircleIcon,
   ClockIcon,
   DocumentMagnifyingGlassIcon,
+  BoltIcon,
 } from '@heroicons/react/24/outline';
 const Sidebar = () => {
   const pathname = usePathname();
@@ -56,6 +57,12 @@ const Sidebar = () => {
       href: '/positions',
       icon: ChartBarIcon,
       description: 'View and manage positions'
+    },
+    {
+      name: 'Intraday Trading',
+      href: '/intraday',
+      icon: BoltIcon,
+      description: 'ORB, VWAP & CPR live intraday engine'
     },
     {
       name: 'Activity Log',

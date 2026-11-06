@@ -290,3 +290,4 @@ Columns:
 - [ ] Run paper test during market hours (09:30–15:15 IST) simulating ORB and VWAP setups.
 - [ ] Verify automatic 15:15 IST square-off and database logging.
 - [ ] Document final operating procedures in `AGENT.md`.
+
