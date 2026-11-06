@@ -81,11 +81,13 @@ def test_generate_intraday_signals_vbt(sample_intraday_data):
     aligned = align_intraday_2d(sample_intraday_data)
     strat = StrategyLoader.get_strategy_by_name("Intraday_Trading_v1")
     indicators = compute_intraday_indicators_vbt(aligned, strat)
-    entries, exits = generate_intraday_signals_vbt(indicators, strat)
+    long_entries, exits, short_entries, short_exits = generate_intraday_signals_vbt(indicators, strat)
 
-    assert entries.shape == aligned["Close"].shape
+    assert long_entries.shape == aligned["Close"].shape
     assert exits.shape == aligned["Close"].shape
-    assert isinstance(entries, pd.DataFrame)
+    assert short_entries.shape == aligned["Close"].shape
+    assert short_exits.shape == aligned["Close"].shape
+    assert isinstance(long_entries, pd.DataFrame)
     assert isinstance(exits, pd.DataFrame)
 
     # Exits must have True flags for mandatory square-off

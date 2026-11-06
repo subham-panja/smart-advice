@@ -234,10 +234,11 @@ def compute_intraday_indicators_vbt(
     orb_low_2d = orb_low_2d.ffill().bfill()
     orb_low_2d.columns = close.columns
 
-    # 4. 1h ATR (14), Volume SMA (20), and 1h RSI (14)
+    # 4. 1h ATR (14), Volume SMA (20), 1h RSI (14), and 1h EMA (20)
     atr = vbt.ATR.run(high, low, close, window=14).atr
     vol_sma = vbt.MA.run(volume, window=20).ma
     rsi = vbt.RSI.run(close, window=14).rsi
+    ema20 = vbt.MA.run(close, window=20, ewm=True).ma
 
     if isinstance(atr.columns, pd.MultiIndex):
         atr.columns = close.columns
@@ -245,6 +246,8 @@ def compute_intraday_indicators_vbt(
         vol_sma.columns = close.columns
     if isinstance(rsi.columns, pd.MultiIndex):
         rsi.columns = close.columns
+    if isinstance(ema20.columns, pd.MultiIndex):
+        ema20.columns = close.columns
 
     return {
         "close": close,
@@ -261,6 +264,7 @@ def compute_intraday_indicators_vbt(
         "atr": atr,
         "vol_sma": vol_sma,
         "rsi": rsi,
+        "ema20": ema20,
         "bar_num_in_day": bar_num_in_day,
         "dates_series": dates_series,
     }
@@ -269,62 +273,105 @@ def compute_intraday_indicators_vbt(
 def generate_intraday_signals_vbt(
     indicators: Dict[str, Any],
     config_dict: dict,
-) -> Tuple[pd.DataFrame, pd.DataFrame]:
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
-    Generate vectorized boolean Entry and Exit matrices.
-    Enforces 15:15 IST EOD Mandatory Square-Off.
+    Generate vectorized boolean Entry and Exit matrices for Long and Short trades.
+    Enforces Market Breadth alignment, Narrow CPR filtering, and 15:15 IST EOD Square-Off.
     """
     close = indicators["close"]
     volume = indicators["volume"]
     vwap = indicators["vwap"]
     tc = indicators["cpr_tc"]
+    bc = indicators["cpr_bc"]
+    pivot = indicators["cpr_pivot"]
     orb_high = indicators["orb_high"]
+    orb_low = indicators["orb_low"]
     vol_sma = indicators["vol_sma"]
+    ema20 = indicators.get("ema20")
+    rsi = indicators.get("rsi")
     bar_num = indicators["bar_num_in_day"]
     dates_series = indicators["dates_series"]
 
-    rsi = indicators.get("rsi")
-    vol_mult = 1.2
+    vol_mult = 1.4
     for p in config_dict.get("entry_patterns", []):
         if p.get("name", "").startswith("orb"):
-            vol_mult = p.get("volume_surge_multiplier", 1.2)
+            vol_mult = p.get("volume_surge_multiplier", 1.4)
             break
 
-    # Trading window: after opening bar (bar_num >= 1) and before last bar of the day
-    # Last bar of day is when next timestamp is a new date or index ends
+    # Narrow CPR Filter: Trending days have narrow CPR
+    cpr_gate = config_dict.get("intraday_gates", {}).get("CPR_GATE", {})
+    narrow_thresh_pct = cpr_gate.get("params", {}).get("narrow_cpr_threshold_pct", 0.35)
+    cpr_width = (tc - bc).abs() / pivot.replace(0, 1.0)
+    is_narrow_cpr = cpr_width < (narrow_thresh_pct / 100.0)
+
+    # Market Breadth Gate: % of universe stocks above VWAP at each timestamp
+    pct_above_vwap = (close > vwap).mean(axis=1)
+    bull_market = (pct_above_vwap > 0.55).values[:, None]
+    bear_market = (pct_above_vwap < 0.45).values[:, None]
+
+    # Trading window: Bar 1 to 3 (approx 10:15 to 13:15 IST), zero new entries near close
     is_day_end = dates_series != dates_series.shift(-1)
     is_day_end.iloc[-1] = True
+    is_entry_window = (bar_num >= 1) & (bar_num <= 3) & (~is_day_end)
+    entry_window_2d = is_entry_window.values[:, None]
 
-    # Intraday entry window: bar 1 to 4 (approx 10:15 to 13:15 IST)
-    is_entry_window = (bar_num >= 1) & (bar_num <= 4) & (~is_day_end)
+    # Long Confluence:
+    # 1. Fresh breakout crossing above 1h ORB High
+    # 2. Bullish market breadth (> 55% of stocks above VWAP)
+    # 3. Stock above VWAP and above 1h EMA 20
+    # 4. Narrow CPR trending day
+    # 5. Volume surge (> 1.4x SMA) and RSI momentum (54 - 75)
+    fresh_orb_long = (close > orb_high) & (close.shift(1) <= orb_high)
+    gate_ema_long = (close > ema20) if ema20 is not None else True
+    gate_rsi_long = (rsi > 54) & (rsi < 75) if rsi is not None else True
 
-    # Confluence Gates: Fresh ORB breakout bar, above VWAP, above CPR TC, Volume surge, RSI momentum
-    fresh_orb_cross = (close > orb_high) & (close.shift(1) <= orb_high)
-    gate_orb = fresh_orb_cross
-    gate_vwap = close > vwap
-    gate_cpr = close > tc
-    gate_vol = volume > (vol_mult * vol_sma.replace(0, 1.0))
-    gate_rsi = (rsi > 48) if rsi is not None else True
+    long_sig = (
+        entry_window_2d
+        & bull_market
+        & fresh_orb_long
+        & (close > vwap)
+        & gate_ema_long
+        & (volume > (vol_mult * vol_sma.replace(0, 1.0)))
+        & is_narrow_cpr
+        & gate_rsi_long
+    )
 
-    # Raw Entries
-    entries_raw = is_entry_window.values[:, None] & (gate_orb & gate_vwap & gate_cpr & gate_vol & gate_rsi)
+    # Short Confluence (Intraday MIS short selling):
+    # 1. Fresh breakdown crossing below 1h ORB Low
+    # 2. Bearish market breadth (< 45% of stocks above VWAP)
+    # 3. Stock below VWAP and below 1h EMA 20
+    # 4. Narrow CPR trending day
+    # 5. Volume surge (> 1.4x SMA) and RSI weakness (25 - 46)
+    fresh_orb_short = (close < orb_low) & (close.shift(1) >= orb_low)
+    gate_ema_short = (close < ema20) if ema20 is not None else True
+    gate_rsi_short = (rsi < 46) & (rsi > 25) if rsi is not None else True
 
-    # Take maximum 1 entry per symbol per day
-    entries_df = pd.DataFrame(entries_raw, index=close.index, columns=close.columns)
-    entries_by_day = entries_df.groupby(dates_series).cumsum()
-    clean_entries = (entries_df & (entries_by_day == 1)).fillna(False)
+    short_sig = (
+        entry_window_2d
+        & bear_market
+        & fresh_orb_short
+        & (close < vwap)
+        & gate_ema_short
+        & (volume > (vol_mult * vol_sma.replace(0, 1.0)))
+        & is_narrow_cpr
+        & gate_rsi_short
+    )
+
+    # Max 1 long and 1 short entry per symbol per day
+    long_df = pd.DataFrame(long_sig, index=close.index, columns=close.columns)
+    long_clean = (long_df & (long_df.groupby(dates_series).cumsum() == 1)).fillna(False)
+
+    short_df = pd.DataFrame(short_sig, index=close.index, columns=close.columns)
+    short_clean = (short_df & (short_df.groupby(dates_series).cumsum() == 1)).fillna(False)
 
     # Exits: Mandatory EOD square-off on every day's last candle
-    # Broadcast is_day_end to 2D
     is_day_end_2d = pd.DataFrame(
         np.tile(is_day_end.values[:, None], (1, close.shape[1])),
         index=close.index,
         columns=close.columns,
     )
 
-    clean_exits = is_day_end_2d
-
-    return clean_entries, clean_exits
+    return long_clean, is_day_end_2d, short_clean, is_day_end_2d
 
 
 def run_intraday_simulation(
@@ -332,25 +379,36 @@ def run_intraday_simulation(
     entries: pd.DataFrame,
     exits: pd.DataFrame,
     config_dict: dict,
+    short_entries: Optional[pd.DataFrame] = None,
+    short_exits: Optional[pd.DataFrame] = None,
     initial_capital: float = 100000.0,
 ) -> Dict[str, Any]:
-    """Execute vectorbt portfolio simulation with realistic execution costs."""
+    """Execute vectorbt portfolio simulation with realistic execution costs and intraday margin."""
     close = aligned["Close"]
 
     # Extract backtest params
     vbt_cfg = config_dict.get("vectorbt_backtest", {})
-    fees = vbt_cfg.get("commission_pct", 0.0005)
-    slippage = vbt_cfg.get("slippage_pct", 0.0005)
+    fees = vbt_cfg.get("commission_pct", 0.0003)
+    slippage = vbt_cfg.get("slippage_pct", 0.0002)
     capital = vbt_cfg.get("initial_capital", initial_capital)
+    leverage = vbt_cfg.get("margin_leverage", 5.0)
+    max_pos = vbt_cfg.get("max_positions", 3)
 
     exit_rules = config_dict.get("exit_rules", {})
-    sl_stop = exit_rules.get("max_stop_loss_pct", 1.0) / 100.0
-    tp_stop = exit_rules.get("target_1_multiplier", 2.0) / 100.0
+    sl_stop = exit_rules.get("max_stop_loss_pct", 0.7) / 100.0
+    tp_stop = exit_rules.get("target_1_multiplier", 2.5) / 100.0
+
+    # Size per trade: allocate 1/max_pos scaled by margin leverage
+    trade_size = (1.0 / max_pos) * leverage
 
     pf = vbt.Portfolio.from_signals(
         close=close,
         entries=entries,
         exits=exits,
+        short_entries=short_entries,
+        short_exits=short_exits,
+        size=trade_size,
+        size_type="percent",
         sl_stop=sl_stop,
         tp_stop=tp_stop,
         init_cash=capital,
@@ -444,10 +502,12 @@ def run_intraday_ultimate_backtest(
     print("[*] [Phase 1/6] Pre-computing vectorized VWAP, CPR, ORB, and ATR with vectorbt...")
     aligned = align_intraday_2d(symbols_data)
     indicators = compute_intraday_indicators_vbt(aligned, strat_cfg)
-    entries, exits = generate_intraday_signals_vbt(indicators, strat_cfg)
+    long_entries, exits, short_entries, short_exits = generate_intraday_signals_vbt(indicators, strat_cfg)
 
     print("[*] [Phase 1/6] Running vectorbt portfolio simulation (15:15 IST EOD Square-Off)...")
-    base_results = run_intraday_simulation(aligned, entries, exits, strat_cfg)
+    base_results = run_intraday_simulation(
+        aligned, long_entries, exits, strat_cfg, short_entries=short_entries, short_exits=short_exits
+    )
 
     print(
         f"  → Base Return: {base_results['total_return_pct']}% | CAGR: {base_results['cagr']}% | "
@@ -466,10 +526,19 @@ def run_intraday_ultimate_backtest(
         end_i = (w_i + 1) * split_size if w_i < n_splits - 1 else n_bars
 
         sub_aligned = {k: v.iloc[start_i:end_i] for k, v in aligned.items()}
-        sub_entries = entries.iloc[start_i:end_i]
+        sub_entries = long_entries.iloc[start_i:end_i]
         sub_exits = exits.iloc[start_i:end_i]
+        sub_short_entries = short_entries.iloc[start_i:end_i]
+        sub_short_exits = short_exits.iloc[start_i:end_i]
 
-        sub_res = run_intraday_simulation(sub_aligned, sub_entries, sub_exits, strat_cfg)
+        sub_res = run_intraday_simulation(
+            sub_aligned,
+            sub_entries,
+            sub_exits,
+            strat_cfg,
+            short_entries=sub_short_entries,
+            short_exits=sub_short_exits,
+        )
         wf_windows.append(
             {
                 "window": w_i + 1,
@@ -496,15 +565,18 @@ def run_intraday_ultimate_backtest(
     # ── Phase 3: Stress Testing (Slippage Multipliers & Regime) ────────────
     print("\n[*] [Phase 3/6] Running Slippage & Execution Stress Tests...")
     stress_tests = []
+    base_slip = strat_cfg.get("vectorbt_backtest", {}).get("slippage_pct", 0.0002)
     for slip_mult, label in [
-        (1.0, "1x (Normal 0.05%)"),
-        (2.0, "2x (High Slippage 0.10%)"),
-        (3.0, "3x (Extreme 0.15%)"),
+        (1.0, f"1x (Normal {base_slip*100:.2f}%)"),
+        (2.0, f"2x (Elevated {base_slip*200:.2f}%)"),
+        (3.0, f"3x (Extreme {base_slip*300:.2f}%)"),
     ]:
         temp_cfg = dict(strat_cfg)
         temp_cfg["vectorbt_backtest"] = dict(strat_cfg.get("vectorbt_backtest", {}))
-        temp_cfg["vectorbt_backtest"]["slippage_pct"] = 0.0005 * slip_mult
-        stress_res = run_intraday_simulation(aligned, entries, exits, temp_cfg)
+        temp_cfg["vectorbt_backtest"]["slippage_pct"] = base_slip * slip_mult
+        stress_res = run_intraday_simulation(
+            aligned, long_entries, exits, temp_cfg, short_entries=short_entries, short_exits=short_exits
+        )
         stress_tests.append(
             {
                 "stress_type": "slippage",
@@ -568,6 +640,15 @@ def run_intraday_ultimate_backtest(
         try:
             from database import get_mongodb
 
+            def _to_native_mongo(obj):
+                if hasattr(obj, "item"):
+                    return obj.item()
+                if isinstance(obj, dict):
+                    return {k: _to_native_mongo(v) for k, v in obj.items()}
+                if isinstance(obj, (list, tuple)):
+                    return [_to_native_mongo(v) for v in obj]
+                return obj
+
             db = get_mongodb()
             session_data = {
                 "session_type": "INTRADAY_ULTIMATE",
@@ -615,7 +696,7 @@ def run_intraday_ultimate_backtest(
                     "confidence_score": confidence,
                 },
             }
-            ins_res = db.backtest_sessions.insert_one(session_data)
+            ins_res = db.backtest_sessions.insert_one(_to_native_mongo(session_data))
             session_id = str(ins_res.inserted_id)
             print(f"  → Backtest session saved to MongoDB: {session_id}")
         except Exception as e:
