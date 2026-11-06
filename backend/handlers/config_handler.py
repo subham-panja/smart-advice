@@ -13,7 +13,9 @@ def get_strategies():
     result = []
     for s in all_strats:
         file_name = s.pop("_file_name", "")
-        result.append({**s, "file_name": file_name})
+        category = s.pop("_category", "swing")
+        relative_path = s.pop("_relative_path", file_name)
+        result.append({**s, "file_name": file_name, "category": category, "relative_path": relative_path})
     return result
 
 

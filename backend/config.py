@@ -29,6 +29,8 @@ MONGODB_DATABASE = os.getenv("MONGODB_DATABASE", "super_advice")
 BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
 NSE_CACHE_FILE = os.path.join(BACKEND_DIR, "data", "nse_symbols.json")
 STRATEGIES_DIR = os.path.join(BACKEND_DIR, "strategies")
+SWING_STRATEGIES_DIR = os.path.join(STRATEGIES_DIR, "swing")
+INTRADAY_STRATEGIES_DIR = os.path.join(STRATEGIES_DIR, "intraday")
 
 
 # Performance & Pipeline

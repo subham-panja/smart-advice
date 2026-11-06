@@ -34,7 +34,7 @@ from utils.filter_translator import FilterTranslator  # noqa: E402
 
 
 def load_strategy_json(strategy_identifier: str) -> Dict[str, Any]:
-    """Load a strategy JSON file by relative name or path."""
+    """Load a strategy JSON file by relative name or path across all strategy subdirectories."""
     strategies_dir = BACKEND_DIR / "strategies"
 
     # 1. Check direct path
@@ -43,7 +43,7 @@ def load_strategy_json(strategy_identifier: str) -> Dict[str, Any]:
         with open(candidate_path, "r") as f:
             return json.load(f)
 
-    # 2. Check within backend/strategies/
+    # 2. Check within backend/strategies/ directly
     cand2 = strategies_dir / strategy_identifier
     if cand2.is_file():
         with open(cand2, "r") as f:
@@ -55,6 +55,16 @@ def load_strategy_json(strategy_identifier: str) -> Dict[str, Any]:
         with open(cand3, "r") as f:
             return json.load(f)
 
+    # 4. Check recursive search in swing / intraday subfolders
+    for cand in strategies_dir.glob(f"**/{strategy_identifier}"):
+        if cand.is_file():
+            with open(cand, "r") as f:
+                return json.load(f)
+    for cand in strategies_dir.glob(f"**/{strategy_identifier}.json"):
+        if cand.is_file():
+            with open(cand, "r") as f:
+                return json.load(f)
+
     raise FileNotFoundError(
         f"Strategy file not found for identifier: '{strategy_identifier}' (searched in {strategies_dir})"
     )
@@ -65,7 +75,7 @@ def list_available_strategies() -> List[str]:
     strategies_dir = BACKEND_DIR / "strategies"
     if not strategies_dir.exists():
         return []
-    return [p.name for p in strategies_dir.glob("*.json")]
+    return [p.name for p in strategies_dir.glob("**/*.json")]
 
 
 def format_filter_rule(f: Dict[str, Any]) -> str:

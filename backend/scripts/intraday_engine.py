@@ -17,14 +17,21 @@ logger = logging.getLogger(__name__)
 CONFIG_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
     "strategies",
+    "intraday",
+    "intraday_trading.json",
+)
+FALLBACK_CONFIG_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "strategies",
     "intraday_trading.json",
 )
 
 
 def load_intraday_config() -> dict:
-    if os.path.exists(CONFIG_PATH):
+    target_path = CONFIG_PATH if os.path.exists(CONFIG_PATH) else FALLBACK_CONFIG_PATH
+    if os.path.exists(target_path):
         try:
-            with open(CONFIG_PATH, "r") as f:
+            with open(target_path, "r") as f:
                 return json.load(f)
         except Exception as e:
             logger.error(f"Failed to load intraday config: {e}")
