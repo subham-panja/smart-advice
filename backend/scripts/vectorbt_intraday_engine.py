@@ -49,26 +49,19 @@ logger = logging.getLogger(__name__)
 
 HISTORICAL_1H_DIR = os.path.join(config.BACKEND_DIR, "data", "historical_1h")
 DEFAULT_LIQUID_SYMBOLS = [
-    "TRENT",
-    "BEL",
     "HAL",
-    "DIXON",
     "BSE",
-    "POLYCAB",
-    "PERSISTENT",
+    "DIXON",
     "COFORGE",
-    "TATAPOWER",
     "ADANIENT",
-    "MCX",
-    "BAJFINANCE",
-    "TITAN",
-    "BHARTIARTL",
-    "RELIANCE",
-    "TCS",
-    "INFY",
-    "HDFCBANK",
+    "BEL",
+    "RECLTD",
+    "ANGELONE",
+    "MAZDOCK",
+    "KPITTECH",
     "ICICIBANK",
-    "SBIN",
+    "INFY",
+    "TITAN",
 ]
 
 

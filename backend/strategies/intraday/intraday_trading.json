@@ -18,7 +18,7 @@
     "freq": "1h",
     "benchmark": "^NSEI",
     "initial_capital": 100000.0,
-    "max_positions": 3,
+    "max_positions": 1,
     "risk_per_trade_pct": 1.0,
     "commission_pct": 0.0003,
     "slippage_pct": 0.0002,
@@ -132,8 +132,8 @@
     }
   },
   "risk_management": {
-    "max_positions": 3,
-    "capital_allocation_pct": 30.0,
+    "max_positions": 1,
+    "capital_allocation_pct": 100.0,
     "risk_per_trade_pct": 1.0,
     "max_daily_loss_pct": 2.0,
     "max_consecutive_losses": 2,
