@@ -18,6 +18,7 @@ import {
 } from '@heroicons/react/24/outline';
 import { getDashboardStats, DashboardStats, getRecommendations, StockRecommendation, updatePosition, updateRecommendation } from '@/lib/api';
 import StockPickNoteTag from './components/StockPickNoteTag';
+import MotivationalQuotes from './components/MotivationalQuotes';
 
 export default function Home() {
   const [stats, setStats] = useState<Partial<DashboardStats>>({});
@@ -193,6 +194,9 @@ export default function Home() {
           Refresh
         </button>
       </div>
+
+      {/* Motivational Quotes Banner (Auto-refreshing & anti-procrastination) */}
+      <MotivationalQuotes />
 
       {/* Portfolio KPIs */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
