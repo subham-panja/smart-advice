@@ -55,100 +55,167 @@ Completing this checklist guarantees complete operational and algorithmic master
 
 ## 🧭 Master Roadmap & Progress Tracker
 
-- [ ] **Module 1**: NSE Market Universe, Microstructure & Data Hygiene
-- [ ] **Module 2**: Macro Regime Detection & Universe Breadth Mechanics
-- [ ] **Module 3**: Quantitative Trend Architecture & Moving Average Stacks
-- [ ] **Module 4**: Volatility Dynamics, Contraction & Percentile Gating
-- [ ] **Module 5**: Volume Microstructure, OBV & Institutional Footprints
-- [ ] **Module 6**: Momentum Oscillators & Normalized Range Filtering
-- [ ] **Module 7**: Algorithmic Entry Pattern Recognition Mechanics
-- [ ] **Module 8**: NSE Option Chain Open Interest (OI) & Derivatives Sentiment
-- [ ] **Module 9**: Fundamental Health Scoring & Balance Sheet Solvency
-- [ ] **Module 10**: Multi-Pillar Scoring Synthesis & Hard Floor Architecture
-- [ ] **Module 11**: Dynamic ATR Risk Management & Volatility-Scaled Position Sizing
-- [ ] **Module 12**: Multi-Target Profit Taking, Trailing Stops & Time Stops
-- [ ] **Module 13**: Systematic Pyramiding & Capital Compounding Rules
-- [ ] **Module 14**: Portfolio Construction, Concurrency & Circuit Breakers
-- [ ] **Module 15**: 6-Phase Ultimate Backtest & Statistical Validation Pipeline
-- [ ] **Module 16**: Live/Paper Execution State Machine, Replay Engine & Settlement
-- [ ] **Module 17**: Intraday Quantitative Engine & VWAP Microstructure
-- [ ] **Module 18**: High-Performance Vectorized Backtest & IndicatorStore Engine
-- [ ] **Module 19**: Machine Learning Models & Statistical Regime Switching
-- [ ] **Module 20**: Quantitative Biases, Overfitting Traps & Edge Preservation
-- [ ] **Module 21**: Comprehensive Multi-Scenario Numerical Walkthroughs
+- [x] **Chapter 1**: NSE Market Universe, Microstructure & Data Hygiene *(Completed)*
+- [ ] **Chapter 2**: Macro Regime Detection & Universe Breadth Mechanics
+- [ ] **Chapter 3**: Quantitative Trend Architecture & Moving Average Stacks
+- [ ] **Chapter 4**: Volatility Dynamics, Contraction & Percentile Gating
+- [ ] **Chapter 5**: Volume Microstructure, OBV & Institutional Footprints
+- [ ] **Chapter 6**: Momentum Oscillators & Normalized Range Filtering
+- [ ] **Chapter 7**: Algorithmic Entry Pattern Recognition Mechanics
+- [ ] **Chapter 8**: NSE Option Chain Open Interest (OI) & Derivatives Sentiment
+- [ ] **Chapter 9**: Fundamental Health Scoring & Balance Sheet Solvency
+- [ ] **Chapter 10**: Multi-Pillar Scoring Synthesis & Hard Floor Architecture
+- [ ] **Chapter 11**: Dynamic ATR Risk Management & Volatility-Scaled Position Sizing
+- [ ] **Chapter 12**: Multi-Target Profit Taking, Trailing Stops & Time Stops
+- [ ] **Chapter 13**: Systematic Pyramiding & Capital Compounding Rules
+- [ ] **Chapter 14**: Portfolio Construction, Concurrency & Circuit Breakers
+- [ ] **Chapter 15**: 6-Phase Ultimate Backtest & Statistical Validation Pipeline
+- [ ] **Chapter 16**: Live/Paper Execution State Machine, Replay Engine & Settlement
+- [ ] **Chapter 17**: Intraday Quantitative Engine & VWAP Microstructure
+- [ ] **Chapter 18**: High-Performance Vectorized Backtest & IndicatorStore Engine
+- [ ] **Chapter 19**: Machine Learning Models & Statistical Regime Switching
+- [ ] **Chapter 20**: Quantitative Biases, Overfitting Traps & Edge Preservation
+- [ ] **Chapter 21**: Comprehensive Multi-Scenario Numerical Walkthroughs
 
 ---
 
-## Module 1: NSE Market Universe, Microstructure & Data Hygiene
+## Chapter 1: NSE Market Universe, Microstructure & Data Hygiene [COMPLETED]
 
-The quality of any quantitative model is bounded by the quality of its input universe. Smart Advice never analyzes uncurated stock tickers.
+The quality of any quantitative model is strictly bounded by the quality of its input universe. Smart Advice never analyzes uncurated stock tickers.
 
-- [ ] **1.1 Understanding NSE Equities Microstructure**
-  - **Description**: The National Stock Exchange of India (NSE) trades with distinct continuous auction rules (09:15 to 15:30 IST), pre-open call auctions (09:00 to 09:08 IST), and closing price calculations based on the volume-weighted average price (VWAP) of the last 30 minutes (15:00 to 15:30 IST).
-  - **Algorithm**: Reject any price feed not reconciled with official NSE cash-market adjusted close data. For swing trading, all algorithmic signals are evaluated on continuous daily close bars or pre-close 15-minute intervals.
-  - **Example**: If a stock trades at intraday high ₹520 at 15:28 but the 30-minute VWAP calculates at ₹512.40, the algorithmic daily close is logged as ₹512.40. All indicators (RSI, ATR, SMA) update against this settled value.
+- [x] **1.1 Understanding NSE Equities Microstructure**
+  - **What it does**: The National Stock Exchange of India (NSE) trades continuously between 09:15 AM and 03:30 PM IST. The daily closing price is not just the final trade at 03:29 PM; it is the volume-weighted average price (VWAP) across all trades executed during the final 30 minutes (03:00 PM to 03:30 PM IST).
+  - **Why it matters**: A single retail market order in the last 10 seconds can temporarily push a stock up by 2%. Using that erratic tick creates false signals. Our engine relies strictly on the official settled 30-minute VWAP close.
+  - **Simple Calculation**:
+    `Daily Close = Total Rupee Value Traded from 03:00 to 03:30 PM / Total Shares Traded from 03:00 to 03:30 PM`
+  - **Example**: At 03:29 PM, Stock XYZ prints a spike trade at ₹520.00. However, between 03:00 PM and 03:30 PM, 100,000 shares traded for a total value of ₹5,124,000.
+    `Settled Close = ₹5,124,000 / 100,000 = ₹512.40`
+    Our algorithms (RSI, Moving Averages, ATR) record the candle at ₹512.40, completely filtering out the artificial ₹520 spike.
 
-- [ ] **1.2 Hard Liquidity & Capitalization Filter**
-  - **Description**: Illiquid equities suffer from wide bid-ask spreads, market impact cost, and inability to execute stop-losses.
-  - **Algorithm**:
-    $$\text{Average Daily Volume (20-day)} = \frac{1}{20}\sum_{t=0}^{19} \text{Volume}_t \ge 150,000 \text{ shares}$$
-    $$\text{Market Capitalization} \ge ₹1,000 \text{ Crores}$$
-    $$₹50.0 \le \text{Current Price} \le ₹8,000.0$$
-  - **Example**: Stock ABC has price ₹25.0 and daily volume 2,000,000 shares. Even though volume is high, it is rejected by the lower price boundary (< ₹50) to prevent penny-stock manipulation. Stock XYZ with price ₹450, volume 85,000 is rejected because volume < 150,000 shares.
+- [x] **1.2 Hard Liquidity & Capitalization Filter (In swing_trading_v2.json)**
+  - **What it does**: Before evaluating charts, the system throws away illiquid stocks, penny stocks, and untradeable micro-caps using 3 simple boundaries:
+    1. **Stock Price**: Must be between ₹50.00 and ₹15,000.00 (in `swing_trading_v2.json`).
+    2. **Daily Volume**: 20-day average volume must be greater than 50,000 shares (in `swing_trading_v2.json`).
+    3. **Company Size**: Market Capitalization must be greater than ₹1,500 Crores (in `swing_trading_v2.json`).
+  - **Why it matters**:
+    - Stocks under ₹50 are prone to circular operator trading and pump-and-dump manipulation.
+    - Stocks trading fewer than 50,000 shares have wide bid-ask spreads. If you buy at ₹100 and need to stop out, the nearest buyer might be at ₹96 (causing an instant unexpected 4% loss from slippage).
+  - **Simple Check**:
+    `Pass = (Price between ₹50 and ₹15,000) AND (20-day Avg Volume > 50,000) AND (Market Cap > ₹1,500 Cr)`
+  - **Example**:
+    - **Stock A**: Price = ₹18.00, Volume = 5,000,000 shares. **REJECTED** (Price is under ₹50.00, fails penny-stock filter).
+    - **Stock B**: Price = ₹640.00, Volume = 22,000 shares. **REJECTED** (Volume is under 50,000 shares, illiquid).
+    - **Stock C (TATA POWER)**: Price = ₹420.00, Volume = 8,500,000 shares, Market Cap = ₹130,000 Cr. **ACCEPTED**.
 
-- [ ] **1.3 Corporate Actions & Adjusted Price Series**
-  - **Description**: Stock splits, bonus shares, and dividends introduce artificial price gaps that corrupt technical indicators if unadjusted.
-  - **Algorithm**:
-    $$\text{Adjustment Factor } k = \frac{\text{Post-split shares}}{\text{Pre-split shares}}$$
-    $$\text{Adjusted Close}_t = \text{Raw Close}_t \times \frac{1}{k}, \quad \text{Adjusted Volume}_t = \text{Raw Volume}_t \times k$$
-  - **Example**: A 1:1 bonus issue cuts stock price from ₹1000 to ₹500. Without backward-adjustment, an algorithm calculates a spurious -50% crash, triggering invalid stop-loss and short signals. The data pipeline must apply split-adjusted series across the entire 10-year lookback.
+- [x] **1.3 Corporate Actions & Backward-Adjusted Price Series**
+  - **What it does**: Automatically adjusts historical prices for bonus shares, stock splits, and dividends.
+  - **Why it matters**: If a stock trades at ₹1,000 and issues a 1-for-1 bonus share, the price cuts in half overnight to ₹500. Without adjustments, an algorithm thinks the company crashed -50%, which ruins all moving averages and triggers panic stop-losses.
+  - **Simple Adjustment**:
+    `Adjustment Factor = New Total Shares / Old Total Shares`
+    `Historical Price = Raw Price / Adjustment Factor`
+  - **Example**: You hold 10 shares of a company trading at ₹1,000 (total value = ₹10,000). A 1:1 bonus gives you 2 shares for every 1.
+    `Adjustment Factor = 2 / 1 = 2`
+    The historical chart is adjusted backward: yesterday's ₹1,000 is displayed as ₹500. Today's opening price of ₹500 shows a smooth 0.0% change rather than a fake -50% crash.
 
-- [ ] **1.4 Lookahead Bias Elimination in Replay & Backtest**
-  - **Description**: An algorithm must never "know" tomorrow's open, high, low, or close when making a trade decision on bar $T$.
-  - **Algorithm**: Given simulation date $T$, restrict the historical matrix strictly to:
-    $$\mathcal{D}_T = \{ (\text{Open}_t, \text{High}_t, \text{Low}_t, \text{Close}_t, \text{Volume}_t) \mid t \le T \}$$
-    Any rolling indicator calculation must use only indices $\le T$.
-  - **Example**: In vectorbt pre-computation, slice the IndicatorStore at $T$ without including the bar $T+1$ candle.
-
----
-
-## Module 2: Macro Regime Detection & Market Breadth Filtering
-
-No technical strategy can consistently profit if it goes long while the entire macro market is collapsing. Smart Advice employs a two-tier macro gate before evaluating individual stocks.
-
-- [ ] **2.1 Nifty 50 Macro Regime Classifier**
-  - **Description**: The benchmark index `^NSEI` (Nifty 50) represents India's top 50 blue chips and dictates systemic market beta.
-  - **Algorithm**:
-    $$\text{Regime} = \begin{cases} \text{BULL}, & \text{if } \text{Close}_{\text{Nifty}} > \text{SMA}_{200}(\text{Nifty}) \\ \text{BEAR}, & \text{if } \text{Close}_{\text{Nifty}} \le \text{SMA}_{200}(\text{Nifty}) \end{cases}$$
-    If `pause_buying_if_bearish = True` and $\text{Regime} == \text{BEAR}$, the orchestrator halts all new buy recommendations across all strategies.
-  - **Example**: Nifty 50 trades at 21,800. The 200-day simple moving average is 22,150. Since $21,800 < 22,150$, the market regime is labeled **BEARISH**. The engine suspends new stock entries, preserving cash capital and avoiding false breakouts.
-
-- [ ] **2.2 Market Breadth Filter (Advance/Decline vs Moving Average)**
-  - **Description**: A market index can be artificially buoyed by 3 heavyweights (e.g., Reliance, HDFC Bank, TCS) while 80% of mid- and small-caps are in severe downtrends.
-  - **Algorithm**:
-    $$\text{Universe Breadth } \mathcal{B} = \frac{\sum_{i=1}^{N} \mathbb{I}(\text{Close}_{i} > \text{SMA}_{20}(\text{Close}_i))}{N} \times 100\%$$
-    $$\text{Filter Condition}: \mathcal{B} \ge 35\%$$
-    If $\mathcal{B} < 35\%$, block all new long swing entries unless the stock qualifies for the **Relative Strength Leader Exception**.
-  - **Example**: Out of 500 scanned stocks, only 140 are trading above their 20-day SMA ($\mathcal{B} = 28\%$). System enters Market Breadth Weakness mode. All standard swing breakout candidates are blocked.
-
-- [ ] **2.3 Relative Strength (RS) Leader Exception Under Weak Breadth**
-  - **Description**: Genuine market leaders often break out 2 to 4 weeks *before* the broad market turns. The system must not miss generational leaders during early bottoming phases.
-  - **Algorithm**:
-    $$\text{Distance from 52-Week High} = \frac{\text{High}_{52\text{w}} - \text{Close}}{\text{High}_{52\text{w}}} \times 100\%$$
-    $$\text{Leader Qualified} \iff (\text{Distance} \le 15.0\%) \land (\text{Trend Gate} == \text{PASS})$$
-    If qualified as an RS Leader, bypass the market breadth block.
-  - **Example**: Market breadth is weak ($\mathcal{B} = 28\%$). Stock TRENT is trading at ₹7,100 while its 52-week high is ₹7,250 (distance = 2.07%). Its Trend Gate has passed. TRENT is approved for entry as a certified Relative Strength Leader.
-
-- [ ] **2.4 Multi-Regime Adaptive Risk Multiplier**
-  - **Description**: Rather than a binary on/off switch, dynamic systems scale exposure depending on regime state.
-  - **Algorithm**:
-    $$\text{Max Positions Allowed} = \begin{cases} 6, & \text{Bull Regime} \\ 4, & \text{Sideways / Neutral Regime} \\ 0, & \text{Bear Regime} \end{cases}$$
-    $$\text{Risk Per Trade (\%)} = \begin{cases} 1.5\%, & \text{Bull Regime} \\ 1.0\%, & \text{Sideways Regime} \\ 0.0\%, & \text{Bear Regime} \end{cases}$$
-  - **Example**: Portfolio has ₹1,000,000 equity. In Bull market, risk per trade is ₹15,000 across up to 6 positions. When market slips into sideways consolidation, risk drops to ₹10,000 per trade across maximum 4 positions.
+- [x] **1.4 Lookahead Bias Elimination in Replay & Backtesting**
+  - **What it does**: Ensures that when the system tests a trading decision on Date T (e.g., 15th March 2024), it is physically blind to Date T+1 (16th March 2024).
+  - **Why it matters**: If a computer knows tomorrow's price went up 5%, it will "cheat" and show unrealistic 100% win rates.
+  - **Simple Rule**:
+    `Allowed Data on Date T = Only prices, volumes, and news up to Date T at 03:30 PM.`
+  - **Example**: In our backtest engine, when evaluating a buy signal on Friday close, Monday morning's open price cannot exist anywhere in the indicator arrays.
 
 ---
 
-## Module 3: Quantitative Trend Architecture & Moving Average Stacks
+## Chapter 2: Macro Regime Detection & Universe Breadth Mechanics
+
+No swing trading strategy can make money if it buys stocks while the broader market is collapsing in a bear market. Smart Advice checks the macro market pulse before looking at any individual stock.
+
+- [ ] **2.1 Nifty 50 Macro Regime Classifier (`market_regime_config`)**
+  - **In `swing_trading_v2.json`**:
+    `"index": "^NSEI"`, `"bull_market_rule": "sma(200)"`, `"pause_buying_if_bearish": true`
+  - **What it does**: Tracks the Nifty 50 benchmark index (`^NSEI`, representing India's top 50 companies) against its 200-day simple moving average (200 SMA).
+  - **Plain English Rule**:
+    - **BULL MARKET**: If Nifty 50 Current Close is ABOVE its 200-day moving average.
+    - **BEAR MARKET**: If Nifty 50 Current Close is BELOW its 200-day moving average.
+    - When `pause_buying_if_bearish = true` and the market is BEAR, the system **freezes all new buy signals immediately**.
+  - **Why it matters**: In a bear market, 8 out of 10 breakout trades fail and turn into quick stop-outs. Sitting in 100% cash protects your hard-earned profits.
+  - **Simple Calculation**:
+    `200-day SMA = Sum of the last 200 daily closing prices of Nifty 50 / 200`
+  - **Real Example**:
+    - Nifty 50 is trading at **24,200**.
+    - The 200-day moving average is **22,800**.
+    - Because `24,200 > 22,800`, the market regime is **BULL**. The engine permits buying strong stocks.
+    - In March 2020 (COVID crash), Nifty dropped to **9,500** while the 200 SMA was **11,200**. Since `9,500 < 11,200`, the engine declared **BEAR** and blocked all buying, preserving capital during the crash.
+
+- [ ] **2.2 Market Breadth Filter (`market_breadth_filter`)**
+  - **In `swing_trading_v2.json`**:
+    `"enabled": true`, `"sma_period": 20`, `"min_advance_pct": 35.0`
+  - **What it does**: Calculates the percentage of scanned NSE stocks that are trading above their short-term 20-day moving average.
+  - **Plain English Rule**:
+    - Even if the Nifty 50 index looks green (often pushed up by just 2 or 3 heavy stocks like Reliance and HDFC Bank), if the broader market is weak, individual swing trades will struggle.
+    - If fewer than **35% of stocks** are above their 20-day average, the market breadth is deemed unhealthy.
+  - **Simple Calculation**:
+    `Market Breadth % = (Number of Stocks Above 20 SMA / Total Scanned Stocks) * 100`
+    `Condition: Market Breadth % must be at least 35%`
+  - **Real Example**:
+    - Out of 500 scanned stocks, only **120 stocks** are trading above their 20-day moving average.
+    - `Breadth = (120 / 500) * 100 = 24.0%`
+    - Because `24.0% < 35.0%`, Market Breadth fails. All normal swing buying is paused because the broader market tide is pulling stocks down.
+
+- [ ] **2.3 The Relative Strength (RS) Leader Exception**
+  - **In `swing_trading_v2.json`**:
+    `proximity_to_52_week_high_pct = 25.0%`, RS leader exception = within 15% of 52-week high.
+  - **What it does**: The only exception that can bypass a weak market breadth block. True market leaders (stocks institutional funds are aggressively accumulating) break out **before** the broader market turns.
+  - **Plain English Rule**:
+    If a stock is within **15% of its 52-week high** and its own Trend Gate is fully bullish, it is classified as a "Relative Strength Leader" and allowed to trade even during weak market breadth.
+  - **Simple Calculation**:
+    `Distance from High % = ((52-Week High Price - Current Price) / 52-Week High Price) * 100`
+    `If Distance <= 15.0%, Leader Exception = PASS`
+  - **Real Example**:
+    - Market breadth is bad (only 24% of stocks above 20 SMA).
+    - Stock `TRENT` has a 52-week high of **₹7,200**. Today it trades at **₹7,050**.
+    - `Distance = ((7,200 - 7,050) / 7,200) * 100 = (150 / 7,200) * 100 = 2.08%`
+    - Since `2.08% <= 15.0%` and its trend is strong, `TRENT` is granted the **Leader Exception** and approved for purchase while mediocre stocks are filtered out.
+
+- [ ] **2.4 Regime-Adaptive Risk Scaling (`regime_adaptive_risk`)**
+  - **In `swing_trading_v2.json`**:
+    - Bull Market: Max 5 positions, 20% capital cap per stock, **2.2% risk per trade**.
+    - Sideways Market: Max 3 positions, 15% capital cap per stock, **1.2% risk per trade**.
+    - Bear Market: Max 0 positions, 0% capital, **0.0% risk per trade** (100% Cash Defense).
+  - **What it does**: Automatically adjusts your position sizes and risk depending on whether the market is booming, chopping sideways, or crashing.
+  - **Why it matters**: Aggressive trading in a bull market maximizes compounding; dialing down risk in sideways chop prevents death by a thousand small cuts.
+  - **Real Example (Portfolio Account Equity = ₹100,000)**:
+    - **In a Bull Market**:
+      - Risk per trade = `2.2% of ₹100,000 = ₹2,200`.
+      - Maximum capital allowed in one stock = `20% of ₹100,000 = ₹20,000`.
+      - Maximum simultaneous positions = **5 stocks** (5 * ₹20,000 = ₹100,000 fully deployed).
+    - **In a Sideways Market**:
+      - Risk per trade cuts to `1.2% of ₹100,000 = ₹1,200`.
+      - Maximum capital allowed in one stock cuts to `15% of ₹100,000 = ₹15,000`.
+      - Maximum simultaneous positions = **3 stocks** (3 * ₹15,000 = ₹45,000 deployed, keeping ₹55,000 in safe cash).
+    - **In a Bear Market**:
+      - Risk = `₹0`, Capital = `₹0`, Positions = `0`. Total account sits in safe cash until the 200 SMA is reclaimed.
+
+- [ ] **2.5 Regime-Adaptive Exit Rules (`regime_adaptive_exits`)**
+  - **In `swing_trading_v2.json`**:
+    - **Bull Market Exits**:
+      - Target 1 sells only **15%** of shares at $+5\times$ ATR profit.
+      - Trailing stop is kept loose at **$3.0\times$ ATR** to let winning stocks run for weeks.
+      - Maximum holding runway allowed is **60 trading days** (gives trends room to breathe).
+      - Compounding (Pyramiding) is **ALLOWED**.
+      - Ultimate O'Neil leader target = **+80% gain**.
+    - **Bear/Choppy Market Exits**:
+      - Target 1 sells **50%** of shares quickly at profit.
+      - Trailing stop is tightened to **$2.0\times$ 10-day Moving Average** to lock in gains quickly.
+      - Maximum holding runway is cut to **15 trading days** (get in and get out).
+      - Compounding (Pyramiding) is **DISABLED**.
+  - **Real Example**:
+    - In a **Bull Market**, you buy 100 shares of a stock at ₹500 with ATR = ₹20. Target 1 is at ₹600. When it hits ₹600, the system sells only 15 shares (keeping 85 shares to ride the big trend up to ₹800+).
+    - In a **Bear Market rally**, when it hits ₹600, the system sells 50 shares immediately and tightens the stop loss to protect against a sudden market reversal.
+
+---
+
+## Chapter 3: Quantitative Trend Architecture & Moving Average Stacks
 
 A swing trading strategy requires strong momentum in the direction of the primary and secondary trends.
 
@@ -193,7 +260,7 @@ A swing trading strategy requires strong momentum in the direction of the primar
 
 ---
 
-## Module 4: Volatility Dynamics, Contraction & Percentile Gating
+## Chapter 4: Volatility Dynamics, Contraction & Percentile Gating
 
 Volatility is cyclical: periods of contraction (low volatility) lead to explosive expansions (trends). Smart Advice buys during the final stage of contraction, not after volatility has peaked.
 
@@ -230,7 +297,7 @@ Volatility is cyclical: periods of contraction (low volatility) lead to explosiv
 
 ---
 
-## Module 5: Volume Microstructure, Institutional Footprints & Delivery Dynamics
+## Chapter 5: Volume Microstructure, Institutional Footprints & Delivery Dynamics
 
 Volume provides the microstructural proof of whether institutions (mutual funds, FIIs, DIIs) are accumulating or dumping shares.
 
@@ -272,7 +339,7 @@ Volume provides the microstructural proof of whether institutions (mutual funds,
 
 ---
 
-## Module 6: Momentum Oscillators & Normalized Range Filtering
+## Chapter 6: Momentum Oscillators & Normalized Range Filtering
 
 Oscillators must be used to confirm momentum regimes, not to blindly buy oversold dips in downtrends.
 
@@ -295,7 +362,7 @@ Oscillators must be used to confirm momentum regimes, not to blindly buy oversol
 
 ---
 
-## Module 7: Algorithmic Entry Pattern Recognition Mechanics
+## Chapter 7: Algorithmic Entry Pattern Recognition Mechanics
 
 Smart Advice executes trades **only** when at least one certified algorithmic entry pattern triggers simultaneously with passing all gates.
 
@@ -395,7 +462,7 @@ Smart Advice executes trades **only** when at least one certified algorithmic en
 
 ---
 
-## Module 8: NSE Option Chain Open Interest (OI) & Derivatives Sentiment
+## Chapter 8: NSE Option Chain Open Interest (OI) & Derivatives Sentiment
 
 In the Indian equity market, stocks belonging to the F&O (Futures & Options) segment provide transparent derivative clues about institutional positioning.
 
@@ -428,7 +495,7 @@ In the Indian equity market, stocks belonging to the F&O (Futures & Options) seg
 
 ---
 
-## Module 9: Fundamental Screening & Corporate Financial Health Scoring
+## Chapter 9: Fundamental Screening & Corporate Financial Health Scoring
 
 Technical signals without fundamental backing can trap traders in "pump and dump" cycles. Smart Advice applies fundamental guardrails.
 
@@ -466,7 +533,7 @@ Technical signals without fundamental backing can trap traders in "pump and dump
 
 ---
 
-## Module 10: Multi-Pillar Scoring Synthesis & Hard Floor Architecture
+## Chapter 10: Multi-Pillar Scoring Synthesis & Hard Floor Architecture
 
 No single indicator is reliable on its own. Smart Advice combines independent dimensions into an aggregate conviction score with strict floor vetoes.
 
@@ -496,7 +563,7 @@ No single indicator is reliable on its own. Smart Advice combines independent di
 
 ---
 
-## Module 11: Dynamic ATR Risk Management & Volatility-Scaled Position Sizing
+## Chapter 11: Dynamic ATR Risk Management & Volatility-Scaled Position Sizing
 
 Capital preservation is the ultimate mathematical determinant of long-term trading survival. Position sizing is never fixed in shares or fixed dollar amounts; it is strictly risk-derived.
 
@@ -548,7 +615,7 @@ Capital preservation is the ultimate mathematical determinant of long-term tradi
 
 ---
 
-## Module 12: Multi-Target Profit Taking, Trailing Stops & Time Stops
+## Chapter 12: Multi-Target Profit Taking, Trailing Stops & Time Stops
 
 A trade plan is incomplete without an asymmetric exit strategy that locks in profits while allowing winning positions to run.
 
@@ -594,7 +661,7 @@ A trade plan is incomplete without an asymmetric exit strategy that locks in pro
 
 ---
 
-## Module 13: Systematic Pyramiding & Capital Compounding Rules
+## Chapter 13: Systematic Pyramiding & Capital Compounding Rules
 
 True outperformance comes not from having many small winners, but from compounding winning positions as the market proves your hypothesis right.
 
@@ -631,7 +698,7 @@ True outperformance comes not from having many small winners, but from compoundi
 
 ---
 
-## Module 14: Portfolio Construction, Concurrency & Circuit Breakers
+## Chapter 14: Portfolio Construction, Concurrency & Circuit Breakers
 
 A collection of individually sound trades can still fail if portfolio-level concentration and drawdown limits are neglected.
 
@@ -665,7 +732,7 @@ A collection of individually sound trades can still fail if portfolio-level conc
 
 ---
 
-## Module 15: The 6-Phase Ultimate Backtest & Statistical Validation Pipeline
+## Chapter 15: The 6-Phase Ultimate Backtest & Statistical Validation Pipeline
 
 The ultimate differentiator between a toy model and an institutional quantitative engine is **rigorous, multi-phase statistical validation**. Smart Advice validates every strategy through a 6-phase pipeline before live deployment.
 
@@ -764,7 +831,7 @@ The ultimate differentiator between a toy model and an institutional quantitativ
 
 ---
 
-## Module 16: Live/Paper Execution State Machine, Replay Engine & Settlement
+## Chapter 16: Live/Paper Execution State Machine, Replay Engine & Settlement
 
 How the algorithmic decisions transition into order execution and state reconciliation.
 
@@ -880,7 +947,7 @@ To cement complete understanding, here is the end-to-end execution of a single r
 
 ---
 
-## Module 17: Intraday Quantitative Engine & VWAP Microstructure
+## Chapter 17: Intraday Quantitative Engine & VWAP Microstructure
 
 Intraday recommendation algorithms must account for continuous order flow dynamics, intraday session boundaries, and mandatory broker square-off rules.
 
@@ -928,7 +995,7 @@ Intraday recommendation algorithms must account for continuous order flow dynami
 
 ---
 
-## Module 18: High-Performance Vectorized Backtest & IndicatorStore Engine
+## Chapter 18: High-Performance Vectorized Backtest & IndicatorStore Engine
 
 Running 10-year backtests across 500 stocks with 55+ technical indicators can take hours if written in slow Python loops. Smart Advice uses vectorized pre-computation and O(1) in-memory stores.
 
@@ -965,7 +1032,7 @@ Running 10-year backtests across 500 stocks with 55+ technical indicators can ta
 
 ---
 
-## Module 19: Machine Learning Models & Statistical Regime Switching
+## Chapter 19: Machine Learning Models & Statistical Regime Switching
 
 Beyond static indicators, advanced quantitative systems incorporate machine learning to discover hidden non-linear states and dynamic probabilities.
 
@@ -1006,7 +1073,7 @@ Beyond static indicators, advanced quantitative systems incorporate machine lear
 
 ---
 
-## Module 20: Quantitative Biases, Overfitting Traps & Edge Preservation
+## Chapter 20: Quantitative Biases, Overfitting Traps & Edge Preservation
 
 More capital is lost to quantitative fallacies and cognitive blindspots than to coding errors.
 
@@ -1043,7 +1110,7 @@ More capital is lost to quantitative fallacies and cognitive blindspots than to 
 
 ---
 
-## Module 21: Comprehensive Multi-Scenario Numerical Walkthroughs
+## Chapter 21: Comprehensive Multi-Scenario Numerical Walkthroughs
 
 Four comprehensive numerical walkthroughs demonstrating exactly how the math operates across diverse market environments:
 

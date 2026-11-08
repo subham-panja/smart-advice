@@ -242,17 +242,17 @@
     "targets": [
       {
         "name": "Target 1",
-        "atr_multiplier": 5.0,
-        "sell_percentage": 0.20
+        "atr_multiplier": 2.5,
+        "sell_percentage": 0.30
       },
       {
         "name": "Target 2",
-        "atr_multiplier": 10.0,
+        "atr_multiplier": 6.0,
         "sell_percentage": 0.30
       }
     ],
     "atr_stop_multiplier": 2.0,
-    "trail_only_after_t1": true,
+    "trail_only_after_t1": false,
     "trail_min_gain_pct": 3.0,
     "trail_stop_atr": 2.5,
     "time_stop_bars": 40,
@@ -295,20 +295,20 @@
     "hard_stop_loss_pct": 8.0
   },
   "risk_management": {
-    "risk_per_trade_pct": 2.0,
-    "max_risk_per_trade_pct": 2.5,
-    "max_position_pct": 20.0,
-    "max_positions": 5,
+    "risk_per_trade_pct": 1.5,
+    "max_risk_per_trade_pct": 2.0,
+    "max_position_pct": 12.5,
+    "max_positions": 8,
     "regime_adaptive_risk": {
       "bull": {
-        "max_positions": 5,
-        "max_position_pct": 20.0,
-        "risk_per_trade_pct": 2.2
+        "max_positions": 8,
+        "max_position_pct": 12.5,
+        "risk_per_trade_pct": 1.5
       },
       "sideways": {
-        "max_positions": 3,
-        "max_position_pct": 15.0,
-        "risk_per_trade_pct": 1.2
+        "max_positions": 4,
+        "max_position_pct": 10.0,
+        "risk_per_trade_pct": 1.0
       },
       "bear": {
         "max_positions": 0,
@@ -326,12 +326,12 @@
       "min_risk_multiplier": 0.8
     },
     "drawdown_scaling": {
-      "enabled": false
+      "enabled": true
     },
     "drawdown_pause": {
-      "enabled": false,
-      "pause_threshold_pct": 20.0,
-      "resume_threshold_pct": 10.0,
+      "enabled": true,
+      "pause_threshold_pct": 15.0,
+      "resume_threshold_pct": 8.0,
       "pause_days_min": 5,
       "cooldown_bars": 10
     },
