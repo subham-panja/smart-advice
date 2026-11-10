@@ -32,3 +32,15 @@ def test_load_swing_trading_v3():
     breadth = strategy.get("market_breadth_filter", {})
     assert breadth.get("enabled") is True
     assert breadth.get("min_advance_pct") == 36.0
+
+
+def test_swing_trading_v3_evaluator_init():
+    """Verify StrategyEvaluator initializes all strategy indicators for Swing_Trading_v3 without missing parameter errors."""
+    from scripts.strategy_evaluator import StrategyEvaluator
+
+    strategy = StrategyLoader.get_strategy_by_name("Swing_Trading_v3")
+    evaluator = StrategyEvaluator(strategy)
+    assert "MACD_Signal_Crossover" in evaluator.instances
+    assert "Volume_Breakout" in evaluator.instances
+    assert "ADX_Trend_Strength" in evaluator.instances
+    assert "RSI_Overbought_Oversold" in evaluator.instances

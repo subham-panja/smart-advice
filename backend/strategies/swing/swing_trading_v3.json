@@ -72,7 +72,10 @@
       "is_bonus": true,
       "fast_period": 12,
       "slow_period": 26,
-      "signal_period": 9
+      "signal_period": 9,
+      "check_divergence": false,
+      "divergence_bars": 10,
+      "block_on_bearish_divergence": false
     },
     "ADX_Trend_Strength": {
       "enabled": true,
@@ -84,7 +87,8 @@
       "enabled": true,
       "is_bonus": false,
       "period": 20,
-      "threshold": 1.8
+      "threshold": 1.8,
+      "regime_override": null
     },
     "Relative_Strength_Comparison": {
       "enabled": true,

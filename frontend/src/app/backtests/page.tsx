@@ -73,6 +73,16 @@ export default function BacktestsPage() {
   const [categoryFilter, setCategoryFilter] = useState<'all' | 'swing' | 'intraday'>('all');
   const [typeFilter, setTypeFilter] = useState<'all' | 'portfolio' | 'ultimate'>('all');
   const [runningIntraday, setRunningIntraday] = useState(false);
+  const [intradayPeriod, setIntradayPeriod] = useState<string>('730d');
+
+  const INTRADAY_PERIOD_OPTIONS = [
+    { value: '30d', label: '1 Month (30d)' },
+    { value: '60d', label: '2 Months (60d)' },
+    { value: '90d', label: '3 Months / 1 Qtr (90d)' },
+    { value: '180d', label: '6 Months (180d)' },
+    { value: '365d', label: '1 Year (365d)' },
+    { value: '730d', label: '2 Years (730d)' },
+  ];
 
   const isUltimate = (s: BacktestSession) =>
     s.session_type === 'ultimate' ||
@@ -113,12 +123,13 @@ export default function BacktestsPage() {
   }, [filteredSessions, sessSortBy, sessSortDir]);
 
   const handleRunIntraday = async () => {
-    if (!confirm('Run a 2-Year 1-Hour Intraday Ultimate Backtest with vectorbt across liquid NSE equities?')) {
+    const selOption = INTRADAY_PERIOD_OPTIONS.find((o) => o.value === intradayPeriod)?.label || intradayPeriod;
+    if (!confirm(`Run a ${selOption} 1-Hour Intraday Ultimate Backtest with vectorbt across liquid NSE equities?`)) {
       return;
     }
     setRunningIntraday(true);
     try {
-      const res = await runIntradayBacktest();
+      const res = await runIntradayBacktest({ period: intradayPeriod });
       if (res.status === 'success') {
         await fetchSessions();
       } else {
@@ -224,16 +235,35 @@ export default function BacktestsPage() {
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          <button
-            onClick={handleRunIntraday}
-            disabled={runningIntraday || loading}
-            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg bg-gradient-to-r from-amber-500 to-orange-600 text-white hover:from-amber-600 hover:to-orange-700 shadow-md shadow-orange-500/20 transition-all disabled:opacity-50"
-            title="Execute 1-Hour Intraday Ultimate Backtest with vectorbt"
-          >
-            <BoltIcon className={`w-4 h-4 ${runningIntraday ? 'animate-spin' : ''}`} />
-            {runningIntraday ? 'Simulating 1H...' : 'Run 1H Intraday Backtest'}
-          </button>
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2 bg-gray-100 dark:bg-gray-800/80 p-1.5 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
+            <span className="text-xs font-medium text-gray-500 dark:text-gray-400 pl-1.5 flex items-center gap-1">
+              <ClockIcon className="w-3.5 h-3.5 text-amber-500" />
+              Period:
+            </span>
+            <select
+              aria-label="Intraday Backtest Period"
+              value={intradayPeriod}
+              onChange={(e) => setIntradayPeriod(e.target.value)}
+              disabled={runningIntraday || loading}
+              className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 text-xs text-gray-800 dark:text-gray-200 rounded-lg px-2.5 py-1.5 focus:ring-2 focus:ring-orange-500 font-medium cursor-pointer shadow-sm disabled:opacity-50"
+            >
+              {INTRADAY_PERIOD_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={handleRunIntraday}
+              disabled={runningIntraday || loading}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded-lg bg-gradient-to-r from-amber-500 to-orange-600 text-white hover:from-amber-600 hover:to-orange-700 shadow-sm shadow-orange-500/20 transition-all disabled:opacity-50"
+              title="Execute 1-Hour Intraday Ultimate Backtest with vectorbt for selected period"
+            >
+              <BoltIcon className={`w-3.5 h-3.5 ${runningIntraday ? 'animate-spin' : ''}`} />
+              {runningIntraday ? 'Simulating...' : 'Run 1H Backtest'}
+            </button>
+          </div>
           <button
             onClick={fetchSessions}
             disabled={loading}

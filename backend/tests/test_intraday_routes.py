@@ -136,6 +136,19 @@ def test_square_off_all_endpoint(client, mock_mongo):
     assert sq_data["closed_count"] == 1
 
 
+def test_close_single_position_endpoint(client, mock_mongo):
+    """Verify /intraday/positions/<id>/close closes a single position."""
+    post_res = client.post("/intraday/positions", json={"symbol": "WIPRO", "entry_price": 400.0, "quantity": 10})
+    pos_id = post_res.get_json()["position"]["_id"]
+
+    close_res = client.post(f"/intraday/positions/{pos_id}/close", json={"reason": "MANUAL_TEST_CLOSE"})
+    assert close_res.status_code == 200
+    close_data = close_res.get_json()
+    assert close_data["status"] == "success"
+    assert close_data["position"]["status"] == "CLOSED"
+    assert close_data["position"]["exit_reason"] == "MANUAL_TEST_CLOSE"
+
+
 def test_get_intraday_signals(client):
     """Verify /intraday/signals returns candidates list."""
     res = client.get("/intraday/signals")

@@ -54,6 +54,16 @@ def create_intraday_position():
         return jsonify({"status": "error", "error": str(e)}), 400
 
 
+@intraday_bp.route("/positions/<position_id>/close", methods=["POST"])
+def close_intraday_position(position_id: str):
+    try:
+        data = request.get_json(silent=True) or {}
+        reason = data.get("reason", "MANUAL_CLOSE")
+        return jsonify(intraday_handler.close_position(position_id, reason=reason))
+    except Exception as e:
+        return jsonify({"status": "error", "error": str(e)}), 400
+
+
 @intraday_bp.route("/square-off-all", methods=["POST"])
 def square_off_all_positions():
     try:
@@ -65,6 +75,7 @@ def square_off_all_positions():
 @intraday_bp.route("/signals", methods=["GET"])
 def get_intraday_signals():
     try:
-        return jsonify(intraday_handler.get_signals())
+        simulate = request.args.get("simulate", "false").lower() in ("true", "1")
+        return jsonify(intraday_handler.get_signals(allow_simulate=simulate))
     except Exception as e:
         return jsonify({"status": "error", "error": str(e)}), 500

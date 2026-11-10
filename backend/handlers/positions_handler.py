@@ -127,3 +127,12 @@ def close_position(symbol: str):
     current_price = existing.get("current_price", existing["entry_price"])
     db_close(symbol, current_price, "MANUAL_CLOSE")
     return True
+
+
+def get_activity_logs(symbol_filter=None, limit=100):
+    from database import get_mongodb
+
+    db = get_mongodb()
+    query = {"symbol": symbol_filter} if symbol_filter else {}
+    logs = list(db.activity_logs.find(query).sort("timestamp", -1).limit(limit))
+    return [{k: _serialize_value(v) for k, v in log.items()} for log in logs]

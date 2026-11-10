@@ -1,6 +1,8 @@
 # Agentic Project Profile: Smart Advice
 
-This document serves as the central context and operational guide for any AI Agent working on the **Smart Advice** project.
+> **CRITICAL DIRECTIVE FOR ALL AI AGENTS & SESSIONS:**
+> **ALWAYS USE SUBAGENTS AND BREAK DOWN EVERY TASK ACROSS MULTIPLE SPECIALIZED SUBAGENTS.**
+> Every non-trivial task must be decomposed across specialized subagents (Researcher, Implementer, Verifier, Auditor).
 
 ## Project Mission
 To provide a robust, AI-powered stock analysis platform for the Indian Equity Market (NSE), combining technical strategies, fundamental filters, and machine learning sentiment analysis into actionable trade signals. The focus is specifically on **institutional-grade swing trading** and high-precision pattern filtering.

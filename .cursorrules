@@ -1,5 +1,9 @@
 # Cursor Instructions — Smart Advice Project
 
+> **CRITICAL DIRECTIVE FOR ALL AI AGENTS & SESSIONS:**
+> **ALWAYS USE SUBAGENTS AND BREAK DOWN EVERY TASK ACROSS MULTIPLE SPECIALIZED SUBAGENTS.**
+> Always decompose tasks into Researcher, Implementer, and Verifier subagents before executing.
+
 ## MANDATORY: Before ANY Task (Non-Negotiable)
 
 You MUST complete this checklist before writing a single line of code or answering questions:

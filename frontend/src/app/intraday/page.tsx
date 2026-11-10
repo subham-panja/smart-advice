@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useCallback, Suspense } from "react";
+import React, { useEffect, useState, useCallback, useMemo, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import {
   getIntradayStatus,
@@ -10,6 +10,7 @@ import {
   createIntradayPosition,
   squareOffAllIntraday,
   closeIntradayPosition,
+  runIntradayBacktest,
   IntradayClock,
   IntradayDayStats,
   IntradayPosition,
@@ -22,32 +23,52 @@ import {
   ShieldExclamationIcon,
   FireIcon,
   ArrowTrendingUpIcon,
+  ArrowTrendingDownIcon,
   ArrowPathIcon,
   AdjustmentsHorizontalIcon,
   BriefcaseIcon,
   SparklesIcon,
+  BookOpenIcon,
+  BoltIcon,
 } from "@heroicons/react/24/outline";
+
+type TabType = "all" | "positions" | "journal" | "recommendations";
+
+const INTRADAY_PERIOD_OPTIONS = [
+  { value: "30d", label: "1 Month (30d)" },
+  { value: "60d", label: "2 Months (60d)" },
+  { value: "90d", label: "3 Months (90d)" },
+  { value: "180d", label: "6 Months (180d)" },
+  { value: "365d", label: "1 Year (365d)" },
+  { value: "730d", label: "2 Years (730d)" },
+];
 
 function IntradayDashboard() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const viewParam = searchParams.get("view");
 
-  const [activeTab, setActiveTab] = useState<"all" | "positions" | "recommendations">("all");
+  const [activeTab, setActiveTab] = useState<TabType>("all");
   const [clock, setClock] = useState<IntradayClock | null>(null);
   const [stats, setStats] = useState<IntradayDayStats | null>(null);
   const [config, setConfig] = useState<any>(null);
   const [positions, setPositions] = useState<IntradayPosition[]>([]);
+  const [closedPositions, setClosedPositions] = useState<IntradayPosition[]>([]);
   const [signals, setSignals] = useState<IntradaySignal[]>([]);
+  const [signalsMessage, setSignalsMessage] = useState<string>("");
   const [refreshing, setRefreshing] = useState(false);
   const [squareOffLoading, setSquareOffLoading] = useState(false);
   const [showConfigModal, setShowConfigModal] = useState(false);
   const [currentTime, setCurrentTime] = useState("");
+  const [selectedPeriod, setSelectedPeriod] = useState("730d");
+  const [runningBacktest, setRunningBacktest] = useState(false);
 
   // Sync tab with URL search parameter
   useEffect(() => {
     if (viewParam === "positions") {
       setActiveTab("positions");
+    } else if (viewParam === "journal") {
+      setActiveTab("journal");
     } else if (viewParam === "recommendations") {
       setActiveTab("recommendations");
     } else {
@@ -55,7 +76,7 @@ function IntradayDashboard() {
     }
   }, [viewParam]);
 
-  const handleTabChange = (tab: "all" | "positions" | "recommendations") => {
+  const handleTabChange = (tab: TabType) => {
     setActiveTab(tab);
     if (tab === "all") {
       router.push("/intraday");
@@ -84,10 +105,11 @@ function IntradayDashboard() {
   const loadData = useCallback(async () => {
     try {
       setRefreshing(true);
-      const [statusRes, configRes, posRes, sigRes] = await Promise.allSettled([
+      const [statusRes, configRes, posRes, closedRes, sigRes] = await Promise.allSettled([
         getIntradayStatus(),
         getIntradayConfig(),
         getIntradayPositions("OPEN"),
+        getIntradayPositions("CLOSED"),
         getIntradaySignals(),
       ]);
 
@@ -101,8 +123,12 @@ function IntradayDashboard() {
       if (posRes.status === "fulfilled" && posRes.value.status === "success") {
         setPositions(posRes.value.positions || []);
       }
+      if (closedRes.status === "fulfilled" && closedRes.value.status === "success") {
+        setClosedPositions(closedRes.value.positions || []);
+      }
       if (sigRes.status === "fulfilled" && sigRes.value.status === "success") {
         setSignals(sigRes.value.signals || []);
+        setSignalsMessage((sigRes.value as any).message || "");
       }
     } catch {
       // Fallback cleanly
@@ -129,6 +155,7 @@ function IntradayDashboard() {
       setSquareOffLoading(true);
       await squareOffAllIntraday("Emergency square-off clicked by user");
       await loadData();
+      setActiveTab("journal");
     } catch (err: any) {
       alert("Square off failed: " + (err?.message || err));
     } finally {
@@ -139,8 +166,9 @@ function IntradayDashboard() {
   const handleClosePosition = async (posId: string) => {
     if (!confirm("Close this intraday position?")) return;
     try {
-      await closeIntradayPosition(posId, "Manual close by user");
+      await closeIntradayPosition(posId, "Manual square-off by user");
       await loadData();
+      setActiveTab("journal");
     } catch (err: any) {
       alert("Failed to close position: " + (err?.message || err));
     }
@@ -171,13 +199,55 @@ function IntradayDashboard() {
     }
   };
 
+  const handleRunBacktest = async () => {
+    const selOption =
+      INTRADAY_PERIOD_OPTIONS.find((o) => o.value === selectedPeriod)?.label || selectedPeriod;
+    if (
+      !confirm(
+        `Run a ${selOption} 1-Hour Intraday Ultimate Backtest with vectorbt across liquid NSE equities?\n\nNote: Backtest simulations run in isolation and do NOT create live recommendations or open positions.`
+      )
+    ) {
+      return;
+    }
+    setRunningBacktest(true);
+    try {
+      const res = await runIntradayBacktest({ period: selectedPeriod });
+      if (res.status === "success") {
+        router.push(`/backtests/${res.session_id}`);
+      } else {
+        alert(res.error || "Failed to execute intraday backtest");
+      }
+    } catch (err: any) {
+      alert(err?.message || "Error running intraday backtest");
+    } finally {
+      setRunningBacktest(false);
+    }
+  };
+
+  const journalStats = useMemo(() => {
+    const totalTrades = closedPositions.length;
+    const winningTrades = closedPositions.filter((p) => (p.realized_pnl || 0) > 0);
+    const losingTrades = closedPositions.filter((p) => (p.realized_pnl || 0) < 0);
+    const winRate = totalTrades > 0 ? Math.round((winningTrades.length / totalTrades) * 100) : 0;
+    const totalRealized = closedPositions.reduce((sum, p) => sum + (p.realized_pnl || 0), 0);
+    return {
+      totalTrades,
+      winRate,
+      totalRealized,
+      wins: winningTrades.length,
+      losses: losingTrades.length,
+    };
+  }, [closedPositions]);
+
   const getPhaseBadgeColor = (phase?: string) => {
     switch (phase) {
       case "ACTIVE_TRADING":
         return "bg-emerald-500/20 text-emerald-400 border-emerald-500/30";
       case "OPENING_RANGE":
+      case "OPENING_RANGE_OBSERVE":
         return "bg-amber-500/20 text-amber-300 border-amber-500/30";
       case "SQUARE_OFF_WINDOW":
+      case "SQUARE_OFF_ONLY":
         return "bg-rose-500/20 text-rose-300 border-rose-500/30 animate-pulse";
       case "MARKET_CLOSED":
         return "bg-zinc-800 text-zinc-400 border-zinc-700";
@@ -194,7 +264,7 @@ function IntradayDashboard() {
   return (
     <div className="min-h-screen bg-[#0d1117] text-zinc-100 p-6 lg:p-8 space-y-6">
       {/* Top Banner / Navigation */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-zinc-800 pb-5">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-zinc-800 pb-5">
         <div>
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2">
@@ -210,23 +280,51 @@ function IntradayDashboard() {
             </span>
           </div>
           <p className="text-xs text-zinc-400 mt-1">
-            Rules-based 15m ORB + CPR + VWAP intraday execution with automated 15:15 IST square-off
+            Rules-based 1h/15m ORB + CPR + VWAP execution with strict 15:15 IST square-off and isolated backtesting
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-2 bg-zinc-900 border border-zinc-800 px-3 py-1.5 rounded-lg text-xs font-mono text-zinc-300">
             <ClockIcon className="w-3.5 h-3.5 text-blue-400" />
             <span>{currentTime || "IST Live"}</span>
           </div>
 
+          {/* Quick Intraday Backtest Period Selector */}
+          <div className="flex items-center gap-1.5 bg-zinc-900 border border-zinc-800 p-1 rounded-lg">
+            <select
+              aria-label="Intraday Backtest Period"
+              value={selectedPeriod}
+              onChange={(e) => setSelectedPeriod(e.target.value)}
+              disabled={runningBacktest}
+              className="bg-transparent text-xs text-zinc-300 font-medium px-2 py-1 rounded focus:outline-none cursor-pointer"
+            >
+              {INTRADAY_PERIOD_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value} className="bg-zinc-900 text-zinc-200">
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={handleRunBacktest}
+              disabled={runningBacktest}
+              className="flex items-center gap-1 px-2.5 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 rounded text-xs font-semibold border border-amber-500/40 transition disabled:opacity-50"
+              title="Run 1-Hour Intraday Ultimate Backtest with vectorbt for selected period"
+            >
+              <BoltIcon
+                className={`w-3.5 h-3.5 ${runningBacktest ? "animate-spin text-amber-400" : "text-amber-400"}`}
+              />
+              {runningBacktest ? "Simulating..." : "Run 1H Backtest"}
+            </button>
+          </div>
+
           <button
-            onClick={() => router.push('/backtests')}
+            onClick={() => router.push("/backtests")}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-950/40 hover:bg-indigo-900/50 text-indigo-300 rounded-lg text-xs font-semibold border border-indigo-700/50 transition shadow-sm"
-            title="Inspect 1H Intraday Vectorbt Ultimate Backtests & Confidence Scores"
+            title="Inspect 1H Intraday Vectorbt Backtest Sessions & Trade Journals"
           >
             <SparklesIcon className="w-3.5 h-3.5 text-indigo-400" />
-            1H Backtests
+            All Backtests
           </button>
 
           <button
@@ -272,7 +370,15 @@ function IntradayDashboard() {
               ₹{(stats?.realized_pnl || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
             </span>
           </div>
-          <p className="text-[11px] text-zinc-500 mt-1">Booked from closed trades</p>
+          <div className="mt-1 flex items-center justify-between">
+            <p className="text-[11px] text-zinc-500">Booked from closed trades</p>
+            <button
+              onClick={() => handleTabChange("journal")}
+              className="text-[11px] text-indigo-400 hover:underline font-medium"
+            >
+              View Journal ({closedPositions.length}) →
+            </button>
+          </div>
         </div>
 
         <div className="bg-zinc-900/80 border border-zinc-800 rounded-xl p-4 shadow-sm">
@@ -296,7 +402,7 @@ function IntradayDashboard() {
               {stats?.open_count ?? positions.length}
             </span>
             <span className="text-xs text-zinc-500">
-              / {config?.risk_management?.max_open_positions ?? 3} Max
+              / {config?.risk_management?.max_positions ?? 3} Max
             </span>
           </div>
           <p className="text-[11px] text-zinc-500 mt-1">
@@ -310,7 +416,7 @@ function IntradayDashboard() {
             <span className="text-xl font-bold font-mono text-amber-400">
               {clock?.phase === "ACTIVE_TRADING"
                 ? "14:45 IST (No New Entries)"
-                : clock?.phase === "SQUARE_OFF_WINDOW"
+                : clock?.phase === "SQUARE_OFF_WINDOW" || clock?.phase === "SQUARE_OFF_ONLY"
                 ? "15:15 IST (Auto Square-Off)"
                 : "09:15 IST (Market Open)"}
             </span>
@@ -320,7 +426,7 @@ function IntradayDashboard() {
       </div>
 
       {/* Navigation Filter Tabs */}
-      <div className="flex items-center gap-2 border-b border-zinc-800 pb-3">
+      <div className="flex items-center gap-2 border-b border-zinc-800 pb-3 flex-wrap">
         <button
           onClick={() => handleTabChange("all")}
           className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-medium transition ${
@@ -346,15 +452,27 @@ function IntradayDashboard() {
         </button>
 
         <button
+          onClick={() => handleTabChange("journal")}
+          className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-medium transition ${
+            activeTab === "journal"
+              ? "bg-indigo-600 text-white shadow-sm"
+              : "bg-zinc-900 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800"
+          }`}
+        >
+          <BookOpenIcon className="w-3.5 h-3.5" />
+          Trade Journal ({closedPositions.length})
+        </button>
+
+        <button
           onClick={() => handleTabChange("recommendations")}
           className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-medium transition ${
             activeTab === "recommendations"
-              ? "bg-blue-600 text-white shadow-sm"
+              ? "bg-amber-600 text-white shadow-sm"
               : "bg-zinc-900 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800"
           }`}
         >
           <FireIcon className="w-3.5 h-3.5" />
-          Recommendations & Scanner ({signals.length})
+          Live Scanner & Recs ({signals.length})
         </button>
       </div>
 
@@ -373,7 +491,7 @@ function IntradayDashboard() {
 
           {positions.length === 0 ? (
             <div className="p-8 text-center text-zinc-500 text-sm">
-              No open intraday positions. High confluence setups will appear below for execution.
+              No open intraday positions. High confluence setups will appear below for execution during market hours.
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -450,6 +568,142 @@ function IntradayDashboard() {
         </div>
       )}
 
+      {/* Intraday Trade Journal (Closed Trades) */}
+      {(activeTab === "all" || activeTab === "journal") && (
+        <div id="journal" className="bg-zinc-900/60 border border-zinc-800 rounded-xl overflow-hidden scroll-mt-6">
+          <div className="px-5 py-4 border-b border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <BookOpenIcon className="w-4 h-4 text-indigo-400" />
+              <h2 className="text-sm font-semibold text-zinc-200">
+                Intraday Trade Journal ({closedPositions.length} Closed Trades)
+              </h2>
+            </div>
+            <div className="flex items-center gap-3 text-xs flex-wrap">
+              <span className="text-zinc-400">
+                Win Rate:{" "}
+                <span className="font-semibold text-white">{journalStats.winRate}%</span>{" "}
+                ({journalStats.wins}W / {journalStats.losses}L)
+              </span>
+              <span className="text-zinc-600">•</span>
+              <span className="text-zinc-400">
+                Total Realized:{" "}
+                <span
+                  className={`font-semibold font-mono ${
+                    journalStats.totalRealized >= 0 ? "text-emerald-400" : "text-rose-400"
+                  }`}
+                >
+                  {journalStats.totalRealized >= 0 ? "+" : ""}₹
+                  {journalStats.totalRealized.toFixed(2)}
+                </span>
+              </span>
+            </div>
+          </div>
+
+          {closedPositions.length === 0 ? (
+            <div className="p-8 text-center text-zinc-500 text-sm space-y-1">
+              <div className="font-medium text-zinc-400">No closed intraday trades in journal yet.</div>
+              <p className="text-xs text-zinc-500 max-w-md mx-auto">
+                Positions squared off manually, via stop loss / profit targets, or during the 15:15 IST mandatory square-off window are recorded here in your permanent Trade Journal.
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-zinc-900/90 text-zinc-400 uppercase font-medium border-b border-zinc-800">
+                  <tr>
+                    <th className="py-3 px-4">Symbol</th>
+                    <th className="py-3 px-4">Setup Context</th>
+                    <th className="py-3 px-4">Qty</th>
+                    <th className="py-3 px-4">Entry</th>
+                    <th className="py-3 px-4">Exit</th>
+                    <th className="py-3 px-4">Exit Reason</th>
+                    <th className="py-3 px-4">Realized P&L</th>
+                    <th className="py-3 px-4">Closed Time</th>
+                    <th className="py-3 px-4 text-right">Outcome</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-800/60 text-zinc-300">
+                  {closedPositions.map((pos) => {
+                    const pnl = pos.realized_pnl ?? 0;
+                    const isProfit = pnl >= 0;
+                    const pnlPct =
+                      pos.entry_price > 0 && pos.exit_price
+                        ? ((pos.exit_price - pos.entry_price) / pos.entry_price) * 100
+                        : 0;
+                    return (
+                      <tr key={pos._id} className="hover:bg-zinc-800/30 transition">
+                        <td className="py-3.5 px-4 font-semibold text-white">
+                          <div className="flex items-center gap-1.5">
+                            <span>{cleanSymbol(pos.symbol)}</span>
+                            <span className="px-1.5 py-0.2 rounded text-[10px] bg-blue-500/15 text-blue-300 border border-blue-500/20">
+                              LONG
+                            </span>
+                          </div>
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <StockPickNoteTag
+                            symbol={cleanSymbol(pos.symbol)}
+                            note={
+                              pos.note ||
+                              pos.reason ||
+                              pos.pattern ||
+                              "Intraday 15m ORB + VWAP execution"
+                            }
+                          />
+                        </td>
+                        <td className="py-3.5 px-4 font-mono">{pos.quantity}</td>
+                        <td className="py-3.5 px-4 font-mono">₹{pos.entry_price.toFixed(2)}</td>
+                        <td className="py-3.5 px-4 font-mono">
+                          ₹{(pos.exit_price ?? pos.entry_price).toFixed(2)}
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <span className="px-2 py-0.5 rounded text-[11px] bg-zinc-800 text-zinc-300 border border-zinc-700">
+                            {pos.exit_reason || "15:15 IST Square-Off"}
+                          </span>
+                        </td>
+                        <td className="py-3.5 px-4 font-mono">
+                          <div className="flex items-center gap-1 font-semibold">
+                            {isProfit ? (
+                              <ArrowTrendingUpIcon className="w-3.5 h-3.5 text-emerald-400" />
+                            ) : (
+                              <ArrowTrendingDownIcon className="w-3.5 h-3.5 text-rose-400" />
+                            )}
+                            <span className={isProfit ? "text-emerald-400" : "text-rose-400"}>
+                              {isProfit ? "+" : ""}₹{pnl.toFixed(2)} ({isProfit ? "+" : ""}
+                              {pnlPct.toFixed(2)}%)
+                            </span>
+                          </div>
+                        </td>
+                        <td className="py-3.5 px-4 text-zinc-400 font-mono text-[11px]">
+                          {pos.closed_at
+                            ? new Date(pos.closed_at).toLocaleTimeString("en-IN", {
+                                timeZone: "Asia/Kolkata",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              }) + " IST"
+                            : "15:15 IST"}
+                        </td>
+                        <td className="py-3.5 px-4 text-right">
+                          <span
+                            className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                              isProfit
+                                ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+                                : "bg-rose-500/20 text-rose-400 border border-rose-500/30"
+                            }`}
+                          >
+                            {isProfit ? "PROFIT" : "LOSS"}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Live Intraday Scanner / Recommendations */}
       {(activeTab === "all" || activeTab === "recommendations") && (
         <div id="recommendations" className="bg-zinc-900/60 border border-zinc-800 rounded-xl overflow-hidden scroll-mt-6">
@@ -457,17 +711,23 @@ function IntradayDashboard() {
             <div className="flex items-center gap-2">
               <FireIcon className="w-4 h-4 text-amber-400" />
               <h2 className="text-sm font-semibold text-zinc-200">
-                Intraday Recommendations & Scanner Feed ({signals.length} Qualified Candidates)
+                Intraday Live Scanner Feed ({signals.length} Qualified Candidates)
               </h2>
             </div>
-            <span className="text-xs text-zinc-500">
-              Confluence: ORB 15m + VWAP + CPR Gates
+            <span className="text-xs text-zinc-400">
+              Confluence: ORB 15m + VWAP + CPR Gates (Market Hours Only)
             </span>
           </div>
 
           {signals.length === 0 ? (
-            <div className="p-8 text-center text-zinc-500 text-sm">
-              Scanning Nifty 50 / liquid universe... No setup has passed all confluence gates yet.
+            <div className="p-8 text-center space-y-2">
+              <div className="text-zinc-300 font-medium text-sm">
+                No active intraday signals right now
+              </div>
+              <p className="text-zinc-500 text-xs max-w-lg mx-auto">
+                {signalsMessage ||
+                  "Live intraday recommendations scan liquid NSE equities strictly during market hours (09:15 - 15:30 IST). Backtest simulations are completely isolated and never create live trade recommendations or active positions."}
+              </p>
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -501,8 +761,8 @@ function IntradayDashboard() {
                             <span
                               className={`px-1.5 py-0.5 rounded text-[10px] ${
                                 sig.current_price > (sig.orb?.orb_high || 0)
-                                  ? "bg-emerald-500/20 text-emerald-400"
-                                  : "bg-zinc-800 text-zinc-500"
+                                    ? "bg-emerald-500/20 text-emerald-400"
+                                    : "bg-zinc-800 text-zinc-500"
                               }`}
                             >
                               ORB
@@ -510,8 +770,8 @@ function IntradayDashboard() {
                             <span
                               className={`px-1.5 py-0.5 rounded text-[10px] ${
                                 sig.current_price > (sig.current_vwap || 0)
-                                  ? "bg-emerald-500/20 text-emerald-400"
-                                  : "bg-zinc-800 text-zinc-500"
+                                    ? "bg-emerald-500/20 text-emerald-400"
+                                    : "bg-zinc-800 text-zinc-500"
                               }`}
                             >
                               VWAP
@@ -519,8 +779,8 @@ function IntradayDashboard() {
                             <span
                               className={`px-1.5 py-0.5 rounded text-[10px] ${
                                 sig.current_price > (sig.cpr?.tc || 0)
-                                  ? "bg-emerald-500/20 text-emerald-400"
-                                  : "bg-zinc-800 text-zinc-500"
+                                    ? "bg-emerald-500/20 text-emerald-400"
+                                    : "bg-zinc-800 text-zinc-500"
                               }`}
                             >
                               CPR
@@ -528,8 +788,8 @@ function IntradayDashboard() {
                             <span
                               className={`px-1.5 py-0.5 rounded text-[10px] ${
                                 (sig.volume_ratio || 0) >= 1.5
-                                  ? "bg-emerald-500/20 text-emerald-400"
-                                  : "bg-zinc-800 text-zinc-500"
+                                    ? "bg-emerald-500/20 text-emerald-400"
+                                    : "bg-zinc-800 text-zinc-500"
                               }`}
                             >
                               Vol {(sig.volume_ratio || 1).toFixed(1)}x

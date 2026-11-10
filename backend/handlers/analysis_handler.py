@@ -70,6 +70,53 @@ def update_recommendation(symbol: str, data: dict):
     return res.matched_count > 0
 
 
+def get_stock_candles(symbol: str, days: int = 35):
+    """Return historical candles for chart display, using local parquet cache or fetcher."""
+    import os
+
+    import pandas as pd
+
+    import config
+
+    clean_sym = symbol.replace(".0", "").replace(".NS", "").strip()
+    cache_dir = config.DATA_CACHE_CONFIG.get("cache_dir", os.path.join(config.BACKEND_DIR, "data", "historical"))
+    fpath = os.path.join(cache_dir, f"{clean_sym}.parquet")
+
+    df = None
+    if os.path.exists(fpath):
+        try:
+            df = pd.read_parquet(fpath)
+        except Exception:
+            pass
+
+    if df is None or df.empty:
+        from utils.data_cache import fetch_historical_data_cached
+
+        df = fetch_historical_data_cached(clean_sym, period="3mo")
+
+    if df is None or df.empty:
+        return None
+
+    if getattr(df.index, "tz", None) is not None:
+        df.index = df.index.tz_localize(None)
+
+    tail_df = df.tail(days)
+    candles = []
+    for dt, row in tail_df.iterrows():
+        candles.append(
+            {
+                "date": dt.strftime("%Y-%m-%d") if hasattr(dt, "strftime") else str(dt)[:10],
+                "open": round(float(row.get("Open", 0)), 2),
+                "high": round(float(row.get("High", 0)), 2),
+                "low": round(float(row.get("Low", 0)), 2),
+                "close": round(float(row.get("Close", 0)), 2),
+                "volume": int(row.get("Volume", 0)),
+            }
+        )
+
+    return {"symbol": clean_sym, "candles": candles}
+
+
 def run_analysis_thread(req_data, app_context):
     try:
         with app_context:

@@ -7,7 +7,7 @@ Handles business logic for the Intraday Trading System API.
 import json
 import logging
 import os
-from datetime import timezone
+from datetime import datetime, timezone
 from typing import Optional
 
 import pandas as pd
@@ -129,6 +129,57 @@ def create_position(data: dict) -> dict:
     return {"status": "success", "message": f"Intraday position for {symbol} created", "position": pos}
 
 
+def close_position(position_id: str, reason: str = "MANUAL_CLOSE") -> dict:
+    """Close an individual intraday position."""
+    from bson import ObjectId
+
+    engine = IntradayEngine()
+    col = engine._get_collection()
+
+    # Support both MongoDB ObjectId and mock string IDs
+    try:
+        oid = ObjectId(position_id)
+        pos = col.find_one({"_id": oid})
+    except Exception:
+        oid = position_id
+        pos = col.find_one({"_id": position_id})
+
+    if not pos:
+        pos = col.find_one({"_id": position_id})
+
+    if not pos:
+        raise ValueError(f"Position {position_id} not found")
+
+    target_id = pos["_id"]
+    current = pos.get("current_price", pos.get("entry_price"))
+    qty = pos.get("quantity", 0)
+    pnl = round((current - pos["entry_price"]) * qty, 2)
+    now = datetime.now(timezone.utc)
+
+    col.update_one(
+        {"_id": target_id},
+        {
+            "$set": {
+                "status": "CLOSED",
+                "exit_price": current,
+                "exit_reason": reason or "MANUAL_CLOSE",
+                "realized_pnl": round(pos.get("realized_pnl", 0.0) + pnl, 2),
+                "closed_at": now,
+                "updated_at": now,
+            }
+        },
+    )
+
+    pos["_id"] = str(pos["_id"])
+    pos["status"] = "CLOSED"
+    pos["exit_price"] = current
+    pos["exit_reason"] = reason or "MANUAL_CLOSE"
+    pos["realized_pnl"] = round(pos.get("realized_pnl", 0.0) + pnl, 2)
+    pos["closed_at"] = now.isoformat()
+
+    return {"status": "success", "message": f"Closed intraday position for {pos.get('symbol')}", "position": pos}
+
+
 def square_off_all() -> dict:
     engine = IntradayEngine()
     closed = engine.square_off_all(reason="MANUAL_UI_SQUARE_OFF")
@@ -140,11 +191,26 @@ def square_off_all() -> dict:
     }
 
 
-def get_signals() -> dict:
+def get_signals(allow_simulate: bool = False) -> dict:
     """
     Evaluates intraday setups across primary liquid symbols.
-    Uses cached historical / today's data or synthetic intraday structure when off-hours.
+    During market hours (09:15 - 15:30 IST on weekdays), scans live symbols.
+    When market is closed and allow_simulate is False, returns empty signals list
+    to ensure backtests or off-hours never generate confusing phantom recommendations.
     """
+    now_ist = trading_now()
+    time_str = now_ist.strftime("%H:%M")
+    is_weekday = now_ist.weekday() < 5
+    is_market_open = is_weekday and ("09:15" <= time_str <= "15:30")
+
+    if not is_market_open and not allow_simulate:
+        return {
+            "status": "success",
+            "count": 0,
+            "signals": [],
+            "message": "Market is closed. Intraday recommendations only scan during live market hours (09:15 - 15:30 IST). Backtest executions do not create live trade recommendations.",
+        }
+
     scanner = IntradayScanner()
 
     # Default liquid universe
