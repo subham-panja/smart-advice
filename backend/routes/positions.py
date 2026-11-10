@@ -73,15 +73,9 @@ def close_position(symbol):
 @positions_bp.route("/activity-logs", methods=["GET"])
 def get_activity_logs():
     try:
-        from database import get_mongodb
-        from handlers.positions_handler import _serialize_value
-
-        db = get_mongodb()
         symbol_filter = request.args.get("symbol")
         limit = int(request.args.get("limit", 100))
-        query = {"symbol": symbol_filter} if symbol_filter else {}
-        logs = list(db.activity_logs.find(query).sort("timestamp", -1).limit(limit))
-        serialized = [{k: _serialize_value(v) for k, v in log.items()} for log in logs]
+        serialized = positions_handler.get_activity_logs(symbol_filter=symbol_filter, limit=limit)
         return jsonify({"status": "success", "count": len(serialized), "logs": serialized})
     except Exception as e:
         current_app.logger.error(f"Activity logs error: {e}")
