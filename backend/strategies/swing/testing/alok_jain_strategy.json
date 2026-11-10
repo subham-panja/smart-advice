@@ -1,6 +1,6 @@
 {
   "name": "Alok_Jain_Strategy",
-  "enabled": true,
+  "enabled": false,
   "description": "Alok Jain (WeekendInvesting) Rule-Based Rotational Momentum Strategy. Non-discretionary momentum model selecting top momentum stocks above 50/200 SMA with rising RSI, equal-weight allocation, and trailing trend stops.",
   "analysis_config": {
     "technical_analysis": true,

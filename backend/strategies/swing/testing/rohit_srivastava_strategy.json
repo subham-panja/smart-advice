@@ -1,6 +1,6 @@
 {
   "name": "Rohit_Srivastava_Strategy",
-  "enabled": true,
+  "enabled": false,
   "description": "Rohit Srivastava (Indiacharts / Strike.money) Elliott Wave Impulse + Bollinger Band Expansion Strategy. Isolates stocks entering Wave 3 markup confirmed by Bollinger Band volatility expansion out of squeeze, MACD expansion, and aggressive trend compounding.",
   "analysis_config": {
     "technical_analysis": true,

@@ -1,6 +1,6 @@
 {
   "name": "Bharat_Jhunjhunwala_Strategy",
-  "enabled": true,
+  "enabled": false,
   "description": "Bharat Jhunjhunwala (Opulence Capital / proRSI) Stan Weinstein Stage 2 + Mark Minervini VCP Strategy. Screens for Stage 2 structural uptrends, progressive 2-to-4 contraction pivots with volume dry-up, tight pivot breakouts, and disciplined stop-to-breakeven management.",
   "analysis_config": {
     "technical_analysis": true,

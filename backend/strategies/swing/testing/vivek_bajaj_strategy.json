@@ -1,6 +1,6 @@
 {
   "name": "Vivek_Bajaj_Strategy",
-  "enabled": true,
+  "enabled": false,
   "description": "Vivek Bajaj (StockEdge / Kredent Trading) Relative Strength + Institutional Delivery Spike Strategy. Focuses on stocks with positive 55-day RS vs Nifty 50, cash delivery volume spikes (1.5x-2x 20MA), and breakouts above 20/50 EMA.",
   "analysis_config": {
     "technical_analysis": true,

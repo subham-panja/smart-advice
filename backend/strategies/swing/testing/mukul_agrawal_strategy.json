@@ -1,6 +1,6 @@
 {
   "name": "Mukul_Agrawal_Strategy",
-  "enabled": true,
+  "enabled": false,
   "description": "Mukul Agrawal (Param Capital) Techno-Fundamental Multi-Year Base Breakout Strategy. Targets high multi-bagger upside in high-growth small/mid-caps crossing 52-week or multi-year highs on massive volume expansion with controlled drawdown risk.",
   "analysis_config": {
     "technical_analysis": true,

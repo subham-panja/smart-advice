@@ -1,6 +1,6 @@
 {
   "name": "Vivek_Singhal_Strategy",
-  "enabled": true,
+  "enabled": false,
   "description": "Vivek Singhal (TradingWithVivek) V20 Green Candle Range Reversal + Cup with Handle Strategy. Targets 20% to 35% absolute gains per swing in cash equities by buying candlestick reversals at base support following strong green candle impulse moves.",
   "analysis_config": {
     "technical_analysis": true,

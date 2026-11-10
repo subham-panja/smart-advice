@@ -1,6 +1,6 @@
 {
   "name": "Prashant_Shah_Strategy",
-  "enabled": true,
+  "enabled": false,
   "description": "Prashant Shah (Definedge Securities) Noiseless Charting (Point & Figure / Renko) Strategy. Focuses on Double-Top Buy (DTB) breakouts, Anchor Column momentum follow-through, bullish market breadth conformation, and tight 3-box reversal stops.",
   "analysis_config": {
     "technical_analysis": true,

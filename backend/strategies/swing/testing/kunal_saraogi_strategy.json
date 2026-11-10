@@ -1,6 +1,6 @@
 {
   "name": "Kunal_Saraogi_Strategy",
-  "enabled": true,
+  "enabled": false,
   "description": "Kunal Saraogi (Equityrush) Dual Momentum Matrix Strategy. Requires absolute momentum (Close > 50 SMA > 200 SMA, trading near 52W high) and relative momentum outperforming Nifty 500, with mechanical 20-EMA / ATR trailing stops.",
   "analysis_config": {
     "technical_analysis": true,

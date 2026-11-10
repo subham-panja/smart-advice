@@ -11,7 +11,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from scripts.run_portfolio_backtest import run_portfolio_backtest
 
 PERIODS = [f"{i}y" for i in range(1, 11)]
-STRATEGY = sys.argv[1] if len(sys.argv) > 1 else "Mukul_Agrawal_Strategy"
+STRATEGY = sys.argv[1] if len(sys.argv) > 1 else "Swing_Trading_v3"
 OUTPUT_FILE = "serialized_portfolio_results_1_to_10y.json"
 
 results_summary = []

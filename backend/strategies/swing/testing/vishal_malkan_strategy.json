@@ -1,6 +1,6 @@
 {
   "name": "Vishal_Malkan_Strategy",
-  "enabled": true,
+  "enabled": false,
   "description": "Vishal Malkan (Malkansview) Multi-Timeframe RSI Range Shift Strategy. Based on Andrew Cardwell's RSI Range Shift principle: trades when Weekly chart is in bull range (above 50) and Daily RSI pulls back to the 40-52 bullish support zone followed by a reversal candle.",
   "analysis_config": {
     "technical_analysis": true,

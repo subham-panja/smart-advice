@@ -1,6 +1,6 @@
 {
   "name": "Anoop_Vijaykumar_Strategy",
-  "enabled": true,
+  "enabled": false,
   "description": "Anoop Vijaykumar (Capitalmind Wealth) Volatility-Adjusted Sharpe Momentum Strategy. Allocates systematically to stocks with the highest return per unit of volatility (low turbulence, smooth upward trajectory), shifting 100% to cash during market corrections.",
   "analysis_config": {
     "technical_analysis": true,
