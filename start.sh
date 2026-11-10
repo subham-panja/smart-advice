@@ -39,6 +39,20 @@ fi
 
 echo "✅ Prerequisites check passed"
 
+# Clean up stale processes holding our ports (e.g. from previous unclean exits)
+if command_exists lsof; then
+    STALE_BE=$(lsof -ti :5001 2>/dev/null)
+    if [ -n "$STALE_BE" ]; then
+        echo "🧹 Clearing stale process on port 5001 ($STALE_BE)..."
+        echo "$STALE_BE" | xargs kill -9 2>/dev/null
+    fi
+    STALE_FE=$(lsof -ti :3000 2>/dev/null)
+    if [ -n "$STALE_FE" ]; then
+        echo "🧹 Clearing stale process on port 3000 ($STALE_FE)..."
+        echo "$STALE_FE" | xargs kill -9 2>/dev/null
+    fi
+fi
+
 # Function to kill processes on script exit
 cleanup() {
     echo "🛑 Shutting down servers..."
@@ -47,8 +61,13 @@ cleanup() {
         echo "🔴 Backend server stopped"
     fi
     if [ ! -z "$FRONTEND_PID" ]; then
+        pkill -P $FRONTEND_PID 2>/dev/null
         kill $FRONTEND_PID 2>/dev/null
         echo "🔴 Frontend server stopped"
+    fi
+    if command_exists lsof; then
+        lsof -ti :5001 2>/dev/null | xargs kill -9 2>/dev/null
+        lsof -ti :3000 2>/dev/null | xargs kill -9 2>/dev/null
     fi
     exit 0
 }
