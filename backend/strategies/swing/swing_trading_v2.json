@@ -1,6 +1,6 @@
 {
   "name": "Swing_Trading_v2",
-  "enabled": true,
+  "enabled": false,
   "description": "Aggressive momentum-breakout compounder with trend gates, multi-pattern entries, and runner holding. Targets 30-40% CAGR on NSE mid/large-cap stocks.",
   "analysis_config": {
     "technical_analysis": true,

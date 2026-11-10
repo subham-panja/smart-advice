@@ -473,7 +473,9 @@ class PortfolioBacktestSession:
         for symbol, pos in list(self.positions.items()):
             df = symbols_data.get(symbol)
             if df is None or date not in df.index:
-                if self.force_close_delisted:
+                # Only force close as DELISTED if the stock has truly ceased trading (no future data)
+                has_future_data = (df is not None) and (not df.empty) and (df.index[-1] > date)
+                if self.force_close_delisted and not has_future_data:
                     hist_up_to_date = df.loc[:date] if df is not None else None
                     last_price = (
                         hist_up_to_date["Close"].iloc[-1]

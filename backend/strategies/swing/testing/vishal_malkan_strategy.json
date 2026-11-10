@@ -1,0 +1,207 @@
+{
+  "name": "Vishal_Malkan_Strategy",
+  "enabled": true,
+  "description": "Vishal Malkan (Malkansview) Multi-Timeframe RSI Range Shift Strategy. Based on Andrew Cardwell's RSI Range Shift principle: trades when Weekly chart is in bull range (above 50) and Daily RSI pulls back to the 40-52 bullish support zone followed by a reversal candle.",
+  "analysis_config": {
+    "technical_analysis": true,
+    "fundamental_analysis": false,
+    "sentiment_analysis": false,
+    "sector_analysis": true,
+    "market_regime_detection": true,
+    "risk_management": true,
+    "options_oi": false
+  },
+  "analysis_weights": {
+    "technical": 0.85,
+    "fundamental": 0.0,
+    "sentiment": 0.0,
+    "sector": 0.15
+  },
+  "rs_config": {
+    "period": 55,
+    "threshold": 1.0
+  },
+  "market_regime_config": {
+    "index": "^NSEI",
+    "bull_market_rule": "sma(200)",
+    "pause_buying_if_bearish": true
+  },
+  "stock_filters": [
+    {
+      "type": "price",
+      "op": "between",
+      "min": 50.0,
+      "max": 15000.0
+    },
+    {
+      "type": "volume",
+      "op": ">",
+      "value": 45000
+    },
+    {
+      "type": "market_cap",
+      "op": ">",
+      "value": 1200.0
+    },
+    {
+      "type": "moving_average",
+      "kind": "SMA",
+      "period": 50,
+      "op": ">",
+      "target": "close"
+    }
+  ],
+  "recommendation_thresholds": {
+    "buy_combined": 0.45,
+    "technical_minimum": 0.35,
+    "fundamental_minimum": 0.0,
+    "min_risk_reward_ratio": 1.6,
+    "backtest_period": "5y",
+    "proximity_to_52_week_high_pct": 25.0
+  },
+  "strategy_config": {
+    "RSI_Overbought_Oversold": {
+      "enabled": true,
+      "is_bonus": false,
+      "rsi_period": 14,
+      "overbought_level": 70,
+      "oversold_level": 35
+    },
+    "MACD_Signal_Crossover": {
+      "enabled": true,
+      "is_bonus": true,
+      "fast_period": 12,
+      "slow_period": 26,
+      "signal_period": 9
+    },
+    "ADX_Trend_Strength": {
+      "enabled": true,
+      "is_bonus": true,
+      "period": 14,
+      "threshold": 16
+    },
+    "Relative_Strength_Comparison": {
+      "enabled": true,
+      "is_bonus": true,
+      "period": 55,
+      "threshold": 0.0
+    }
+  },
+  "swing_trading_gates": {
+    "TREND_GATE": {
+      "enabled": true,
+      "params": {
+        "adx_min": 15,
+        "sma_period": 50,
+        "require_price_above_sma": true,
+        "require_sma_stack": false,
+        "require_di_alignment": true
+      }
+    },
+    "VOLATILITY_GATE": {
+      "enabled": true,
+      "params": {
+        "max_percentile": 90,
+        "lookback_days": 100,
+        "min_percentile": 5
+      }
+    },
+    "VOLUME_GATE": {
+      "enabled": true,
+      "params": {
+        "min_volume_ratio": 0.8,
+        "obv_trend_lookback": 10,
+        "obv_required": false
+      }
+    },
+    "MTF_GATE": {
+      "enabled": true,
+      "params": {
+        "weekly_trend_check": true,
+        "weekly_sma_fast": 10,
+        "weekly_sma_slow": 30,
+        "rsi_alignment_min": 48
+      }
+    }
+  },
+  "entry_patterns": [
+    {
+      "name": "pullback_to_ema",
+      "enabled": true,
+      "ema_period": 21,
+      "max_distance_pct": 2.8,
+      "rsi_14_range": [40, 52],
+      "bullish_candle_required": true
+    },
+    {
+      "name": "minervini_vcp_breakout",
+      "enabled": true,
+      "consolidation_days_min": 8,
+      "consolidation_days_max": 35,
+      "breakout_volume_multiplier": 1.25,
+      "volume_dry_up_required": true
+    },
+    {
+      "name": "higher_low_structure",
+      "enabled": true,
+      "pivot_lookback": 8,
+      "min_swings": 3,
+      "require_volume_confirmation": false
+    }
+  ],
+  "exit_rules": {
+    "targets": [
+      {
+        "name": "Target 1",
+        "atr_multiplier": 2.5,
+        "sell_percentage": 0.30
+      },
+      {
+        "name": "Target 2",
+        "atr_multiplier": 5.0,
+        "sell_percentage": 0.30
+      }
+    ],
+    "atr_stop_multiplier": 1.8,
+    "trail_only_after_t1": false,
+    "trail_min_gain_pct": 3.5,
+    "trail_stop_atr": 2.4,
+    "time_stop_bars": 40,
+    "breakeven_at_target_1": true,
+    "hard_stop_loss_pct": 6.0
+  },
+  "risk_management": {
+    "risk_per_trade_pct": 1.8,
+    "max_risk_per_trade_pct": 2.2,
+    "max_position_pct": 20.0,
+    "max_positions": 5,
+    "regime_adaptive_risk": {
+      "bull": {
+        "max_positions": 5,
+        "max_position_pct": 20.0,
+        "risk_per_trade_pct": 1.8
+      },
+      "sideways": {
+        "max_positions": 3,
+        "max_position_pct": 15.0,
+        "risk_per_trade_pct": 1.0
+      },
+      "bear": {
+        "max_positions": 0,
+        "max_position_pct": 0.0,
+        "risk_per_trade_pct": 0.0
+      }
+    },
+    "stop_loss_type": "ATR",
+    "position_sizing": "risk_based"
+  },
+  "pyramiding": {
+    "enabled": false
+  },
+  "market_breadth_filter": {
+    "enabled": true,
+    "sma_period": 20,
+    "min_advance_pct": 35.0
+  }
+}
+
