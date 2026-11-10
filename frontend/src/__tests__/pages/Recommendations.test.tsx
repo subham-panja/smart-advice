@@ -44,7 +44,7 @@ describe('Recommendations Page', () => {
   it('loads and displays recommendations', async () => {
     render(<RecommendationsPage />);
     await waitFor(() => {
-      expect(screen.getByText('WABAG')).toBeInTheDocument();
+      expect(screen.getAllByText('WABAG').length).toBeGreaterThanOrEqual(1);
     });
   });
 

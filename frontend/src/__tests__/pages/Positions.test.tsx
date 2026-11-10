@@ -6,6 +6,7 @@ jest.mock('../../lib/api', () => ({
   getPositions: jest.fn(),
   updatePosition: jest.fn(),
   closePosition: jest.fn(),
+  getCycleStats: jest.fn(),
 }));
 
 const mockedApi = api as jest.Mocked<typeof api>;
@@ -36,6 +37,12 @@ beforeEach(() => {
   });
   (mockedApi.updatePosition as jest.Mock).mockResolvedValue({ status: 'success', message: 'Updated' });
   (mockedApi.closePosition as jest.Mock).mockResolvedValue({ status: 'success', message: 'Closed' });
+  (mockedApi.getCycleStats as jest.Mock).mockResolvedValue({
+    status: 'success',
+    open_positions: 1,
+    initial_capital: 100000,
+    cash_remaining: 50000,
+  });
 });
 
 afterEach(() => jest.clearAllMocks());
@@ -54,7 +61,7 @@ describe('Positions Page', () => {
   it('renders positions table with data', async () => {
     render(<PositionsPage />);
     await waitFor(() => {
-      expect(screen.getByText('WABAG')).toBeInTheDocument();
+      expect(screen.getAllByText('WABAG').length).toBeGreaterThanOrEqual(1);
     });
   });
 
@@ -75,7 +82,7 @@ describe('Positions Page', () => {
 
   it('opens edit modal when edit button clicked', async () => {
     render(<PositionsPage />);
-    await waitFor(() => expect(screen.getByText('WABAG')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getAllByText('WABAG').length).toBeGreaterThanOrEqual(1));
 
     const editBtns = screen.getAllByTitle('Edit');
     fireEvent.click(editBtns[0]);

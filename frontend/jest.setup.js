@@ -1,5 +1,16 @@
 import '@testing-library/jest-dom'
 
+// Mock global fetch
+if (!global.fetch) {
+  global.fetch = jest.fn(() =>
+    Promise.resolve({
+      ok: true,
+      json: () => Promise.resolve({ status: 'success', pending_exits: [] }),
+      text: () => Promise.resolve(''),
+    })
+  );
+}
+
 // Mock EventSource for SSE (used by Terminal component)
 global.EventSource = jest.fn(() => ({
   onmessage: null,

@@ -4,6 +4,7 @@ import * as api from '../../lib/api';
 
 jest.mock('../../lib/api', () => ({
   getPositions: jest.fn(),
+  getActivityLogs: jest.fn(),
 }));
 
 const mockedApi = api as jest.Mocked<typeof api>;
@@ -51,17 +52,26 @@ beforeEach(() => {
     count: 2,
     positions: mockPositions,
   });
+  (mockedApi.getActivityLogs as jest.Mock).mockResolvedValue({
+    status: 'success',
+    count: 0,
+    logs: [],
+  });
 });
 
 describe('Activity Log Page', () => {
-  it('renders page title', () => {
+  it('renders page title', async () => {
     render(<ActivityLogPage />);
-    expect(screen.getByText('Position Activity Log')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText('Activity Timeline')).toBeInTheDocument();
+    });
   });
 
-  it('renders refresh button', () => {
+  it('renders refresh button', async () => {
     render(<ActivityLogPage />);
-    expect(screen.getByText('Refresh')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText('Refresh')).toBeInTheDocument();
+    });
   });
 
   it('shows selector dropdown', async () => {
@@ -75,7 +85,7 @@ describe('Activity Log Page', () => {
   it('shows empty state when no position selected', async () => {
     render(<ActivityLogPage />);
     await waitFor(() => {
-      expect(screen.getByText(/Select a position from the dropdown/)).toBeInTheDocument();
+      expect(screen.getByText(/Select a stock to view its complete activity timeline/)).toBeInTheDocument();
     });
   });
 
@@ -84,7 +94,7 @@ describe('Activity Log Page', () => {
     await waitFor(() => {
       const select = screen.getByRole('combobox');
       const options = select.querySelectorAll('option');
-      expect(options.length).toBe(3); // "Choose" + 2 positions
+      expect(options.length).toBe(3); // "Choose a stock..." + 2 positions
     });
   });
 
@@ -92,7 +102,7 @@ describe('Activity Log Page', () => {
     (mockedApi.getPositions as jest.Mock).mockResolvedValue({ status: 'success', count: 0, positions: [] });
     render(<ActivityLogPage />);
     await waitFor(() => {
-      expect(screen.getByText(/No positions found/)).toBeInTheDocument();
+      expect(screen.getByText(/No stocks found/)).toBeInTheDocument();
     });
   });
 });

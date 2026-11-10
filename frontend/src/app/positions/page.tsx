@@ -40,8 +40,8 @@ export default function PositionsPage() {
       getPositions('OPEN'),
       getCycleStats(),
     ]);
-    if (posRes.status === 'success') setPositions(posRes.positions);
-    if (statsRes.status === 'success') setStats(statsRes);
+    if (posRes && posRes.status === 'success') setPositions(posRes.positions || []);
+    if (statsRes && statsRes.status === 'success') setStats(statsRes);
     setLoading(false);
   };
 
@@ -156,7 +156,7 @@ export default function PositionsPage() {
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-gray-900 dark:text-gray-100">
-            Active Positions
+            Positions
           </h1>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
             Manage and monitor your open positions
@@ -222,30 +222,31 @@ export default function PositionsPage() {
         </div>
       )}
 
-      {/* Positions Table */}
+      {/* Positions Section */}
       <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-700 bg-gradient-to-r from-gray-50 to-white dark:from-gray-900 dark:to-gray-800">
+        <div className="px-5 sm:px-6 py-4 border-b border-gray-100 dark:border-gray-700 bg-gradient-to-r from-gray-50 to-white dark:from-gray-900 dark:to-gray-800 flex items-center justify-between">
           <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100">
-            Open Positions
-            <span className="ml-2 text-sm font-normal text-gray-500 dark:text-gray-400">
-              ({positions.length})
-            </span>
+            Open Positions ({positions.length})
           </h2>
+          <span className="text-xs text-gray-500 dark:text-gray-400 hidden sm:inline">
+            Active Swing & Momentum Setups
+          </span>
         </div>
 
         {loading ? (
           <div className="p-4 space-y-3">
-            {[...Array(4)].map((_, i) => (
-              <div key={i} className="flex items-center gap-4 p-4 bg-gray-50 dark:bg-gray-900/50 rounded-lg animate-pulse">
+            {[...Array(3)].map((_, i) => (
+              <div key={i} className="flex flex-col sm:flex-row items-start sm:items-center gap-4 p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl animate-pulse">
+                <div className="flex items-center gap-3 w-full sm:w-auto">
+                  <div className="h-10 w-10 bg-gray-200 dark:bg-gray-700 rounded-xl" />
+                  <div className="space-y-1.5 flex-1 sm:flex-initial">
+                    <div className="h-5 w-24 bg-gray-200 dark:bg-gray-700 rounded" />
+                    <div className="h-3 w-16 bg-gray-200 dark:bg-gray-700 rounded" />
+                  </div>
+                </div>
+                <div className="h-5 w-24 bg-gray-200 dark:bg-gray-700 rounded sm:ml-auto" />
                 <div className="h-5 w-20 bg-gray-200 dark:bg-gray-700 rounded" />
-                <div className="h-5 w-12 bg-gray-200 dark:bg-gray-700 rounded ml-auto" />
-                <div className="h-5 w-16 bg-gray-200 dark:bg-gray-700 rounded" />
-                <div className="h-5 w-16 bg-gray-200 dark:bg-gray-700 rounded" />
-                <div className="h-5 w-16 bg-gray-200 dark:bg-gray-700 rounded" />
-                <div className="h-5 w-20 bg-gray-200 dark:bg-gray-700 rounded" />
-                <div className="h-5 w-24 bg-gray-200 dark:bg-gray-700 rounded" />
-                <div className="flex gap-2">
-                  <div className="h-8 w-8 bg-gray-200 dark:bg-gray-700 rounded-lg" />
+                <div className="flex gap-2 w-full sm:w-auto justify-end">
                   <div className="h-8 w-8 bg-gray-200 dark:bg-gray-700 rounded-lg" />
                   <div className="h-8 w-8 bg-gray-200 dark:bg-gray-700 rounded-lg" />
                 </div>
@@ -256,160 +257,333 @@ export default function PositionsPage() {
           <div className="p-16 text-center">
             <ArrowTrendingUpIcon className="h-12 w-12 mx-auto text-gray-200 dark:text-gray-700 mb-3" />
             <p className="text-gray-500 dark:text-gray-400 text-sm font-medium">
-              No open positions
+              No open positions.
             </p>
             <p className="text-gray-400 dark:text-gray-500 text-xs mt-1">
               Run a trading cycle to open new positions
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-gray-50/50 dark:bg-gray-900/50">
-                  <th className="px-4 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                    Symbol
-                  </th>
-                  <th className="px-4 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                    Why Picked (Setup)
-                  </th>
-                  <th className="px-4 py-3.5 text-right text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                    Qty
-                  </th>
-                  <th className="px-4 py-3.5 text-right text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                    Entry
-                  </th>
-                  <th className="px-4 py-3.5 text-right text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                    Stop Loss
-                  </th>
-                  <th className="px-4 py-3.5 text-right text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                    Target
-                  </th>
-                  <th className="px-4 py-3.5 text-right text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                    Investment
-                  </th>
-                  <th className="px-4 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                    Strategy
-                  </th>
-                  <th className="px-4 py-3.5 text-center text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100 dark:divide-gray-700/50">
-                {positions.map((pos) => {
-                  const sl = pos.current_stop_loss || pos.stop_loss;
-                  const target = pos.current_target || pos.target;
-                  const currentPrice = pos.current_price || pos.entry_price;
-                  const pnl = (currentPrice - pos.entry_price) * pos.quantity;
-                  const pnlPct = pos.entry_price > 0 ? ((currentPrice - pos.entry_price) / pos.entry_price) * 100 : 0;
+          <>
+            {/* Desktop Table View (>=md) */}
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-gray-50/50 dark:bg-gray-900/50">
+                    <th className="px-4 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                      Symbol
+                    </th>
+                    <th className="px-4 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                      Why Picked (Setup)
+                    </th>
+                    <th className="px-4 py-3.5 text-right text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                      Qty
+                    </th>
+                    <th className="px-4 py-3.5 text-right text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                      Entry
+                    </th>
+                    <th className="px-4 py-3.5 text-right text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                      Stop Loss
+                    </th>
+                    <th className="px-4 py-3.5 text-right text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                      Target
+                    </th>
+                    <th className="px-4 py-3.5 text-right text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                      Investment
+                    </th>
+                    <th className="px-4 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                      Strategy
+                    </th>
+                    <th className="px-4 py-3.5 text-center text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 dark:divide-gray-700/50">
+                  {positions.map((pos) => {
+                    const sl = pos.current_stop_loss || pos.stop_loss;
+                    const target = pos.current_target || pos.target;
+                    const currentPrice = pos.current_price || pos.entry_price;
+                    const pnl = (currentPrice - pos.entry_price) * pos.quantity;
+                    const pnlPct = pos.entry_price > 0 ? ((currentPrice - pos.entry_price) / pos.entry_price) * 100 : 0;
 
-                  return (
-                    <tr
-                      key={pos.symbol}
-                      className="hover:bg-gray-50/50 dark:hover:bg-gray-700/30 transition-colors"
-                    >
-                      <td className="px-4 py-4">
-                        <div className="flex items-center gap-2">
-                          <span className="font-semibold text-gray-900 dark:text-gray-100">
-                            {cleanSymbol(pos.symbol)}
-                          </span>
-                          {pos.adds_count && pos.adds_count > 0 && (
-                            <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded">
-                              +{pos.adds_count}
+                    return (
+                      <tr
+                        key={pos.symbol}
+                        className="hover:bg-gray-50/50 dark:hover:bg-gray-700/30 transition-colors"
+                      >
+                        <td className="px-4 py-4">
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold text-gray-900 dark:text-gray-100">
+                              {cleanSymbol(pos.symbol)}
                             </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-4 py-4">
-                        <StockPickNoteTag
-                          symbol={cleanSymbol(pos.symbol)}
-                          strategy={pos.strategy_name}
-                          reason={pos.reason}
-                          note={pos.note}
-                          entryPrice={pos.entry_price}
-                          stopLoss={sl}
-                          target={target}
-                          entryAtr={pos.entry_atr}
-                          onSaveNote={async (newNote) => {
-                            await updatePosition(pos.symbol, { note: newNote });
-                            fetchData();
-                          }}
-                        />
-                      </td>
-                      <td className="px-4 py-4 text-right font-medium text-gray-900 dark:text-gray-100">
-                        {pos.quantity}
-                      </td>
-                      <td className="px-4 py-4 text-right font-medium text-gray-900 dark:text-gray-100">
-                        ₹{pos.entry_price?.toFixed(2)}
-                      </td>
-                      <td className="px-4 py-4 text-right font-medium text-red-600 dark:text-red-400">
-                        ₹{sl?.toFixed(2)}
-                      </td>
-                      <td className="px-4 py-4 text-right font-medium text-green-600 dark:text-green-400">
-                        ₹{target?.toFixed(2)}
-                      </td>
-                      <td className="px-4 py-4 text-right">
-                        <div className="font-semibold text-gray-900 dark:text-gray-100">
-                          ₹{pos.total_investment?.toLocaleString('en-IN')}
-                        </div>
-                        {pnl != null && Math.abs(pnl) > 0.01 ? (
-                          <div
-                            className={`text-xs font-semibold ${
-                              pnl >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
-                            }`}
-                          >
-                            {pnl >= 0 ? '+' : ''}₹{pnl.toLocaleString('en-IN', { maximumFractionDigits: 2 })} ({pnlPct.toFixed(2)}%)
+                            {pos.adds_count && pos.adds_count > 0 && (
+                              <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded">
+                                +{pos.adds_count}
+                              </span>
+                            )}
                           </div>
-                        ) : (
-                          <div className="text-[11px] text-gray-400 dark:text-gray-500 font-mono">
-                            Break-even
+                        </td>
+                        <td className="px-4 py-4">
+                          <StockPickNoteTag
+                            symbol={cleanSymbol(pos.symbol)}
+                            strategy={pos.strategy_name}
+                            reason={pos.reason}
+                            note={pos.note}
+                            entryPrice={pos.entry_price}
+                            stopLoss={sl}
+                            target={target}
+                            entryAtr={pos.entry_atr}
+                            onSaveNote={async (newNote) => {
+                              await updatePosition(pos.symbol, { note: newNote });
+                              fetchData();
+                            }}
+                          />
+                        </td>
+                        <td className="px-4 py-4 text-right font-medium text-gray-900 dark:text-gray-100">
+                          {pos.quantity}
+                        </td>
+                        <td className="px-4 py-4 text-right font-medium text-gray-900 dark:text-gray-100">
+                          ₹{pos.entry_price?.toFixed(2)}
+                        </td>
+                        <td className="px-4 py-4 text-right font-medium text-red-600 dark:text-red-400">
+                          ₹{sl?.toFixed(2)}
+                        </td>
+                        <td className="px-4 py-4 text-right font-medium text-green-600 dark:text-green-400">
+                          ₹{target?.toFixed(2)}
+                        </td>
+                        <td className="px-4 py-4 text-right">
+                          <div className="font-semibold text-gray-900 dark:text-gray-100">
+                            ₹{pos.total_investment?.toLocaleString('en-IN')}
                           </div>
-                        )}
-                      </td>
-                      <td className="px-4 py-4 text-gray-500 dark:text-gray-400 text-xs">
-                        {pos.strategy_name}
-                      </td>
-                      <td className="px-4 py-4">
-                        <div className="flex items-center justify-center gap-1.5">
-                          <button
-                            onClick={() => viewTimeline(pos.symbol)}
-                            className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:text-blue-400 dark:hover:bg-blue-900/30 rounded-lg transition"
-                            title="View Timeline"
-                          >
-                            <EyeIcon className="h-4 w-4" />
-                          </button>
-                          <button
-                            onClick={() => openEditModal(pos)}
-                            className="p-2 text-gray-500 hover:text-amber-600 hover:bg-amber-50 dark:hover:text-amber-400 dark:hover:bg-amber-900/30 rounded-lg transition"
-                            title="Edit Entry Price"
-                          >
-                            <PencilIcon className="h-4 w-4" />
-                          </button>
-                          {pos.adds_count && pos.adds_count > 0 && (
-                            <button
-                              onClick={() => openPyramidModal(pos)}
-                              className="p-2 text-gray-500 hover:text-violet-600 hover:bg-violet-50 dark:hover:text-violet-400 dark:hover:bg-violet-900/30 rounded-lg transition"
-                              title={`Manage ${pos.adds_count} Pyramid(s)`}
+                          {pnl != null && Math.abs(pnl) > 0.01 ? (
+                            <div
+                              className={`text-xs font-semibold ${
+                                pnl >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
+                              }`}
                             >
-                              <ArrowTrendingUpIcon className="h-4 w-4" />
-                            </button>
+                              {pnl >= 0 ? '+' : ''}₹{pnl.toLocaleString('en-IN', { maximumFractionDigits: 2 })} ({pnlPct.toFixed(2)}%)
+                            </div>
+                          ) : (
+                            <div className="text-[11px] text-gray-400 dark:text-gray-500 font-mono">
+                              Break-even
+                            </div>
                           )}
-                          <button
-                            onClick={() => handleClose(pos.symbol)}
-                            className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 dark:hover:text-red-400 dark:hover:bg-red-900/30 rounded-lg transition"
-                            title="Close Position"
-                          >
-                            <TrashIcon className="h-4 w-4" />
-                          </button>
+                        </td>
+                        <td className="px-4 py-4 text-gray-500 dark:text-gray-400 text-xs">
+                          {pos.strategy_name}
+                        </td>
+                        <td className="px-4 py-4">
+                          <div className="flex items-center justify-center gap-1.5">
+                            <button
+                              onClick={() => viewTimeline(pos.symbol)}
+                              className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:text-blue-400 dark:hover:bg-blue-900/30 rounded-lg transition"
+                              title="View Timeline"
+                            >
+                              <EyeIcon className="h-4 w-4" />
+                            </button>
+                            <button
+                              onClick={() => openEditModal(pos)}
+                              className="p-2 text-gray-500 hover:text-amber-600 hover:bg-amber-50 dark:hover:text-amber-400 dark:hover:bg-amber-900/30 rounded-lg transition"
+                              title="Edit"
+                              aria-label="Edit Position"
+                            >
+                              <PencilIcon className="h-4 w-4" />
+                            </button>
+                            {pos.adds_count && pos.adds_count > 0 && (
+                              <button
+                                onClick={() => openPyramidModal(pos)}
+                                className="p-2 text-gray-500 hover:text-violet-600 hover:bg-violet-50 dark:hover:text-violet-400 dark:hover:bg-violet-900/30 rounded-lg transition"
+                                title={`Manage ${pos.adds_count} Pyramid(s)`}
+                              >
+                                <ArrowTrendingUpIcon className="h-4 w-4" />
+                              </button>
+                            )}
+                            <button
+                              onClick={() => handleClose(pos.symbol)}
+                              className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 dark:hover:text-red-400 dark:hover:bg-red-900/30 rounded-lg transition"
+                              title="Close Position"
+                            >
+                              <TrashIcon className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile Touch-Friendly Card View (<md) */}
+            <div className="block md:hidden divide-y divide-gray-100 dark:divide-gray-700/60">
+              {positions.map((pos) => {
+                const sl = pos.current_stop_loss || pos.stop_loss;
+                const target = pos.current_target || pos.target;
+                const currentPrice = pos.current_price || pos.entry_price;
+                const pnl = (currentPrice - pos.entry_price) * pos.quantity;
+                const pnlPct = pos.entry_price > 0 ? ((currentPrice - pos.entry_price) / pos.entry_price) * 100 : 0;
+                const cleanSym = cleanSymbol(pos.symbol);
+                const avatarInitials = cleanSym.slice(0, 2).toUpperCase();
+
+                return (
+                  <div
+                    key={pos.symbol}
+                    className="p-4 space-y-3.5 bg-white dark:bg-gray-800 hover:bg-gray-50/50 dark:hover:bg-gray-700/20 transition-colors"
+                  >
+                    {/* Top Row: Avatar, Symbol, Strategy & P&L Badge */}
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500/10 via-indigo-500/10 to-violet-500/10 dark:from-blue-500/20 dark:to-violet-500/20 border border-blue-200/50 dark:border-blue-700/40 flex items-center justify-center font-bold text-sm text-blue-700 dark:text-blue-300 flex-shrink-0">
+                          {avatarInitials}
                         </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-base text-gray-900 dark:text-gray-100">
+                              {cleanSym}
+                            </span>
+                            {pos.adds_count && pos.adds_count > 0 && (
+                              <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded">
+                                +{pos.adds_count}
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-xs text-gray-500 dark:text-gray-400 block">
+                            {pos.strategy_name || 'Swing Trading'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Color-coded P&L Badge */}
+                      <div
+                        className={`px-2.5 py-1 rounded-lg text-right font-mono border ${
+                          pnl >= 0
+                            ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800/60'
+                            : 'bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 border-red-200 dark:border-red-800/60'
+                        }`}
+                      >
+                        <div className="text-xs font-bold leading-tight">
+                          {pnl >= 0 ? '+' : ''}₹{Math.abs(pnl) < 0.01 ? '0.00' : pnl.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                        </div>
+                        <div className="text-[10px] font-semibold opacity-90 leading-tight">
+                          {pnlPct >= 0 ? '+' : ''}{pnlPct.toFixed(2)}%
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Setup Badge */}
+                    <div className="pt-0.5">
+                      <StockPickNoteTag
+                        symbol={cleanSym}
+                        strategy={pos.strategy_name}
+                        reason={pos.reason}
+                        note={pos.note}
+                        entryPrice={pos.entry_price}
+                        stopLoss={sl}
+                        target={target}
+                        entryAtr={pos.entry_atr}
+                        onSaveNote={async (newNote) => {
+                          await updatePosition(pos.symbol, { note: newNote });
+                          fetchData();
+                        }}
+                      />
+                    </div>
+
+                    {/* Metrics 2x2 Grid */}
+                    <div className="grid grid-cols-2 gap-2 bg-gray-50/80 dark:bg-gray-900/60 p-3 rounded-xl border border-gray-100 dark:border-gray-800 text-xs">
+                      <div>
+                        <span className="text-[10px] uppercase font-semibold text-gray-400 dark:text-gray-500 block tracking-wider">
+                          Entry Price
+                        </span>
+                        <span className="font-semibold text-gray-900 dark:text-gray-100">
+                          ₹{pos.entry_price?.toFixed(2)}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] uppercase font-semibold text-gray-400 dark:text-gray-500 block tracking-wider">
+                          Current Price
+                        </span>
+                        <span className="font-semibold text-gray-900 dark:text-gray-100">
+                          ₹{currentPrice?.toFixed(2)}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] uppercase font-semibold text-gray-400 dark:text-gray-500 block tracking-wider">
+                          Stop Loss
+                        </span>
+                        <span className="font-semibold text-red-600 dark:text-red-400">
+                          ₹{sl?.toFixed(2)}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] uppercase font-semibold text-gray-400 dark:text-gray-500 block tracking-wider">
+                          Target
+                        </span>
+                        <span className="font-semibold text-green-600 dark:text-green-400">
+                          ₹{target?.toFixed(2)}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Quantity & Total Investment */}
+                    <div className="flex items-center justify-between text-xs px-1 text-gray-600 dark:text-gray-300">
+                      <span className="font-medium">
+                        Qty: <span className="font-bold text-gray-900 dark:text-gray-100">{pos.quantity}</span> shares
+                      </span>
+                      <span className="font-medium">
+                        Total:{' '}
+                        <span className="font-bold text-gray-900 dark:text-gray-100">
+                          ₹{pos.total_investment?.toLocaleString('en-IN')}
+                        </span>
+                      </span>
+                    </div>
+
+                    {/* Quick Action Buttons (Touch-Friendly) */}
+                    <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 pt-1 border-t border-gray-100 dark:border-gray-700/60">
+                      <button
+                        onClick={() => openEditModal(pos)}
+                        className="inline-flex items-center justify-center gap-1.5 py-2 px-2.5 text-xs font-medium text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 rounded-lg hover:bg-amber-100 dark:hover:bg-amber-900/40 transition active:scale-95"
+                        title="Edit"
+                        aria-label="Edit Position"
+                      >
+                        <PencilIcon className="h-3.5 w-3.5" />
+                        <span>Edit Price</span>
+                      </button>
+
+                      {pos.adds_count && pos.adds_count > 0 ? (
+                        <button
+                          onClick={() => openPyramidModal(pos)}
+                          className="inline-flex items-center justify-center gap-1.5 py-2 px-2.5 text-xs font-medium text-violet-700 dark:text-violet-300 bg-violet-50 dark:bg-violet-950/30 border border-violet-200 dark:border-violet-800/60 rounded-lg hover:bg-violet-100 dark:hover:bg-violet-900/40 transition active:scale-95"
+                          title={`Manage ${pos.adds_count} Pyramid(s)`}
+                        >
+                          <ArrowTrendingUpIcon className="h-3.5 w-3.5" />
+                          <span>Pyramids</span>
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => viewTimeline(pos.symbol)}
+                          className="inline-flex items-center justify-center gap-1.5 py-2 px-2.5 text-xs font-medium text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800/60 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/40 transition active:scale-95"
+                          title="View Timeline"
+                        >
+                          <EyeIcon className="h-3.5 w-3.5" />
+                          <span>Timeline</span>
+                        </button>
+                      )}
+
+                      <button
+                        onClick={() => handleClose(pos.symbol)}
+                        className="inline-flex items-center justify-center gap-1.5 py-2 px-2.5 text-xs font-medium text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800/60 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/40 transition active:scale-95"
+                        title="Close Position"
+                      >
+                        <TrashIcon className="h-3.5 w-3.5" />
+                        <span>Close</span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
         )}
       </div>
 
@@ -420,10 +594,10 @@ export default function PositionsPage() {
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-gray-700">
               <div>
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-                  Update Entry Price
+                  Edit Position
                 </h3>
                 <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
-                  {editModalPos.symbol}
+                  Update Entry Price for {cleanSymbol(editModalPos.symbol)}
                 </p>
               </div>
               <button
@@ -505,7 +679,7 @@ export default function PositionsPage() {
                   Manage Pyramid Prices
                 </h3>
                 <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
-                  {pyramidModalPos.symbol} · {pyramidModalPos.quantity} total shares
+                  {cleanSymbol(pyramidModalPos.symbol)} · {pyramidModalPos.quantity} total shares
                 </p>
               </div>
               <button
