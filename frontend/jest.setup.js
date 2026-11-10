@@ -45,6 +45,7 @@ jest.mock('next/navigation', () => ({
     replace: jest.fn(),
     prefetch: jest.fn(),
   }),
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 // Suppress console warnings in tests

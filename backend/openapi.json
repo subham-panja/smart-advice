@@ -1,0 +1,2477 @@
+{
+  "swagger": "2.0",
+  "basePath": "/api",
+  "paths": {
+    "/analysis/": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Healthy",
+            "schema": {
+              "$ref": "#/definitions/HealthStatus"
+            }
+          }
+        },
+        "summary": "System health check and server timestamp",
+        "description": "Verify the status of the trading engine",
+        "operationId": "get_analysis_health_resource",
+        "tags": [
+          "analysis"
+        ]
+      }
+    },
+    "/analysis/analyze_stock/{symbol}": {
+      "parameters": [
+        {
+          "in": "path",
+          "description": "Stock ticker symbol (e.g. RELIANCE, TCS)",
+          "name": "symbol",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "get": {
+        "responses": {
+          "500": {
+            "description": "Analysis error",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "200": {
+            "description": "Analysis completed"
+          }
+        },
+        "summary": "Execute algorithmic analysis for an equity symbol",
+        "description": "Run full technical and fundamental analysis on a stock symbol",
+        "operationId": "get_stock_analysis_resource",
+        "tags": [
+          "analysis"
+        ]
+      }
+    },
+    "/analysis/health": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Healthy",
+            "schema": {
+              "$ref": "#/definitions/HealthStatus"
+            }
+          }
+        },
+        "summary": "System health check and server timestamp",
+        "description": "Verify the status of the trading engine",
+        "operationId": "get_analysis_health_resource",
+        "tags": [
+          "analysis"
+        ]
+      }
+    },
+    "/analysis/recommendations": {
+      "get": {
+        "responses": {
+          "500": {
+            "description": "Server error",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/RecommendationsResponse"
+            }
+          }
+        },
+        "summary": "List active algorithmic stock recommendations",
+        "description": "Retrieve all current system-generated recommendations with analytical scores",
+        "operationId": "get_recommendations_list_resource",
+        "tags": [
+          "analysis"
+        ]
+      }
+    },
+    "/analysis/recommendations/{symbol}": {
+      "parameters": [
+        {
+          "in": "path",
+          "description": "Stock ticker symbol to update",
+          "name": "symbol",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "patch": {
+        "responses": {
+          "500": {
+            "description": "Server error",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "200": {
+            "description": "Updated",
+            "schema": {
+              "$ref": "#/definitions/MessageResponse"
+            }
+          }
+        },
+        "summary": "Update recommendation properties",
+        "description": "Update rating, notes, or target prices of a recommendation",
+        "operationId": "patch_recommendation_detail_resource",
+        "parameters": [
+          {
+            "name": "payload",
+            "required": true,
+            "in": "body",
+            "schema": {
+              "$ref": "#/definitions/UpdateRecommendationRequest"
+            }
+          }
+        ],
+        "tags": [
+          "analysis"
+        ]
+      }
+    },
+    "/analysis/stock-candles/{symbol}": {
+      "parameters": [
+        {
+          "in": "path",
+          "description": "Stock ticker symbol (e.g. RELIANCE)",
+          "name": "symbol",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "get": {
+        "responses": {
+          "500": {
+            "description": "Server error",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "Data not found",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/CandlesResponse"
+            }
+          }
+        },
+        "summary": "Fetch historical daily candles for a stock",
+        "description": "Retrieve OHLCV candlestick records for charting",
+        "operationId": "get_stock_candles_resource",
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "type": "integer",
+            "description": "Number of historical days to fetch (default 35)",
+            "default": 35
+          }
+        ],
+        "tags": [
+          "analysis"
+        ]
+      }
+    },
+    "/analysis/stock/{symbol}": {
+      "parameters": [
+        {
+          "in": "path",
+          "description": "Stock ticker symbol (e.g. RELIANCE, TCS)",
+          "name": "symbol",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "get": {
+        "responses": {
+          "500": {
+            "description": "Analysis error",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "200": {
+            "description": "Analysis completed"
+          }
+        },
+        "summary": "Execute algorithmic analysis for an equity symbol",
+        "description": "Run full technical and fundamental analysis on a stock symbol",
+        "operationId": "get_stock_analysis_resource",
+        "tags": [
+          "analysis"
+        ]
+      }
+    },
+    "/analysis/trigger-analysis": {
+      "post": {
+        "responses": {
+          "500": {
+            "description": "Server error",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "200": {
+            "description": "Started",
+            "schema": {
+              "$ref": "#/definitions/MessageResponse"
+            }
+          }
+        },
+        "summary": "Start background technical analysis scan",
+        "description": "Run asynchronous background analysis on a watchlist group",
+        "operationId": "post_trigger_analysis_resource",
+        "parameters": [
+          {
+            "name": "payload",
+            "required": true,
+            "in": "body",
+            "schema": {
+              "$ref": "#/definitions/TriggerAnalysisRequest"
+            }
+          }
+        ],
+        "tags": [
+          "analysis"
+        ]
+      }
+    },
+    "/backtests": {
+      "get": {
+        "responses": {
+          "500": {
+            "description": "Server error",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/BacktestSessionsResponse"
+            }
+          }
+        },
+        "summary": "List all completed backtest sessions",
+        "description": "Retrieve all historical backtest sessions with summary metrics",
+        "operationId": "get_backtest_sessions_list_resource",
+        "tags": [
+          "backtests"
+        ]
+      }
+    },
+    "/backtests/": {
+      "get": {
+        "responses": {
+          "500": {
+            "description": "Server error",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/BacktestSessionsResponse"
+            }
+          }
+        },
+        "summary": "List all completed backtest sessions",
+        "description": "Retrieve all historical backtest sessions with summary metrics",
+        "operationId": "get_backtest_sessions_list_resource",
+        "tags": [
+          "backtests"
+        ]
+      }
+    },
+    "/backtests/run-intraday": {
+      "post": {
+        "responses": {
+          "500": {
+            "description": "Server error",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "200": {
+            "description": "Completed successfully"
+          }
+        },
+        "summary": "Run vectorized intraday backtest",
+        "description": "Run high-speed vectorbt 1-Hour Intraday simulation across symbols",
+        "operationId": "post_run_intraday_backtest_resource",
+        "parameters": [
+          {
+            "name": "payload",
+            "required": true,
+            "in": "body",
+            "schema": {
+              "$ref": "#/definitions/RunIntradayBacktestRequest"
+            }
+          }
+        ],
+        "tags": [
+          "backtests"
+        ]
+      }
+    },
+    "/backtests/{session_id}": {
+      "parameters": [
+        {
+          "in": "path",
+          "description": "Backtest session unique identifier",
+          "name": "session_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "delete": {
+        "responses": {
+          "500": {
+            "description": "Server error",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "200": {
+            "description": "Deleted",
+            "schema": {
+              "$ref": "#/definitions/MessageResponse"
+            }
+          }
+        },
+        "summary": "Delete backtest session",
+        "description": "Delete a backtest session and all of its associated trade logs",
+        "operationId": "delete_backtest_session_detail_resource",
+        "tags": [
+          "backtests"
+        ]
+      },
+      "get": {
+        "responses": {
+          "500": {
+            "description": "Server error",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Retrieve backtest session details",
+        "description": "Retrieve full configuration and comprehensive metrics of a session",
+        "operationId": "get_backtest_session_detail_resource",
+        "tags": [
+          "backtests"
+        ]
+      }
+    },
+    "/backtests/{session_id}/symbols": {
+      "parameters": [
+        {
+          "in": "path",
+          "description": "Backtest session unique identifier",
+          "name": "session_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "get": {
+        "responses": {
+          "500": {
+            "description": "Server error",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Retrieve symbol-level performance breakdown",
+        "description": "Performance metrics grouped per traded stock symbol",
+        "operationId": "get_backtest_symbols_resource",
+        "tags": [
+          "backtests"
+        ]
+      }
+    },
+    "/backtests/{session_id}/trades": {
+      "parameters": [
+        {
+          "in": "path",
+          "description": "Backtest session unique identifier",
+          "name": "session_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "get": {
+        "responses": {
+          "500": {
+            "description": "Server error",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/BacktestTradesResponse"
+            }
+          }
+        },
+        "summary": "Get paginated backtest trades journal",
+        "description": "Paginated trade records with filters for symbol, outcome, pattern, reason",
+        "operationId": "get_backtest_trades_resource",
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "type": "string",
+            "description": "Filter trades by stock symbol"
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "type": "string",
+            "description": "Search query string"
+          },
+          {
+            "name": "trade_type",
+            "in": "query",
+            "type": "string",
+            "description": "Filter by trade type (e.g. LONG_BUY)"
+          },
+          {
+            "name": "exit_reason",
+            "in": "query",
+            "type": "string",
+            "description": "Filter by exit reason (e.g. TARGET_REACHED, STOP_LOSS)"
+          },
+          {
+            "name": "pattern",
+            "in": "query",
+            "type": "string",
+            "description": "Filter by trigger chart pattern"
+          },
+          {
+            "name": "outcome",
+            "in": "query",
+            "type": "string",
+            "description": "Filter by outcome (WIN, LOSS)"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "type": "integer",
+            "description": "Page number (default 1)",
+            "default": 1
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "type": "integer",
+            "description": "Number of trades per page (default 50, max 200)",
+            "default": 50
+          },
+          {
+            "name": "sort_by",
+            "in": "query",
+            "type": "string",
+            "description": "Field to sort by (default entry_date)",
+            "default": "entry_date"
+          },
+          {
+            "name": "sort_dir",
+            "in": "query",
+            "type": "string",
+            "description": "Sort direction (asc, desc)",
+            "default": "desc",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          }
+        ],
+        "tags": [
+          "backtests"
+        ]
+      }
+    },
+    "/backtests/{session_id}/yearly": {
+      "parameters": [
+        {
+          "in": "path",
+          "description": "Backtest session unique identifier",
+          "name": "session_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "get": {
+        "responses": {
+          "500": {
+            "description": "Server error",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Retrieve year-by-year performance metrics",
+        "description": "Annualized returns, win rates, and drawdown breakdown",
+        "operationId": "get_backtest_yearly_resource",
+        "tags": [
+          "backtests"
+        ]
+      }
+    },
+    "/config/cycle-stats": {
+      "get": {
+        "responses": {
+          "500": {
+            "description": "Server error",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/CycleStatsResponse"
+            }
+          }
+        },
+        "summary": "Get current cycle financial statistics",
+        "description": "Get active cycle capital stats, unsettled funds, and equity values",
+        "operationId": "get_cycle_stats_resource",
+        "tags": [
+          "config"
+        ]
+      }
+    },
+    "/config/daily-earnings": {
+      "get": {
+        "responses": {
+          "500": {
+            "description": "Server error",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/DailyEarningsResponse"
+            }
+          }
+        },
+        "summary": "Retrieve daily earnings breakdown",
+        "description": "Historical daily realized P&L and earnings breakdown",
+        "operationId": "get_daily_earnings_resource",
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "type": "integer",
+            "description": "Number of recent days to include"
+          },
+          {
+            "name": "start_date",
+            "in": "query",
+            "type": "string",
+            "description": "Start date filter (YYYY-MM-DD)"
+          },
+          {
+            "name": "end_date",
+            "in": "query",
+            "type": "string",
+            "description": "End date filter (YYYY-MM-DD)"
+          },
+          {
+            "name": "session_id",
+            "in": "query",
+            "type": "string",
+            "description": "Filter by specific session ID"
+          }
+        ],
+        "tags": [
+          "config"
+        ]
+      }
+    },
+    "/config/dashboard-stats": {
+      "get": {
+        "responses": {
+          "500": {
+            "description": "Server error",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/DashboardStatsResponse"
+            }
+          }
+        },
+        "summary": "Get aggregated dashboard metrics",
+        "description": "Aggregated metrics for portfolio balance, win rates, and active positions",
+        "operationId": "get_dashboard_stats_resource",
+        "tags": [
+          "config"
+        ]
+      }
+    },
+    "/config/settings/trading": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/TradingSettingsResponse"
+            }
+          }
+        },
+        "summary": "Get active trading settings",
+        "description": "Get current global trading settings, capital allocation, and risk limits",
+        "operationId": "get_trading_settings_resource",
+        "tags": [
+          "config"
+        ]
+      }
+    },
+    "/config/strategies": {
+      "get": {
+        "responses": {
+          "500": {
+            "description": "Server error",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/StrategiesResponse"
+            }
+          }
+        },
+        "summary": "List registered JSON-configured trading strategies",
+        "description": "Retrieve all configured strategies (swing, intraday, portfolio)",
+        "operationId": "get_strategies_resource",
+        "tags": [
+          "config"
+        ]
+      }
+    },
+    "/config/trading-settings": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/TradingSettingsResponse"
+            }
+          }
+        },
+        "summary": "Get active trading settings",
+        "description": "Get current global trading settings, capital allocation, and risk limits",
+        "operationId": "get_trading_settings_resource",
+        "tags": [
+          "config"
+        ]
+      }
+    },
+    "/intraday/config": {
+      "patch": {
+        "responses": {
+          "500": {
+            "description": "Server error",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Update intraday trading engine configuration",
+        "description": "Update intraday risk limits, max positions, and target risk per trade",
+        "operationId": "patch_intraday_config_resource",
+        "parameters": [
+          {
+            "name": "payload",
+            "required": true,
+            "in": "body",
+            "schema": {
+              "$ref": "#/definitions/UpdateIntradayConfigRequest"
+            }
+          }
+        ],
+        "tags": [
+          "intraday"
+        ]
+      },
+      "get": {
+        "responses": {
+          "500": {
+            "description": "Server error",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/IntradayConfigResponse"
+            }
+          }
+        },
+        "summary": "Get current intraday configuration",
+        "description": "Current intraday engine parameters, capital limits, and square-off times",
+        "operationId": "get_intraday_config_resource",
+        "tags": [
+          "intraday"
+        ]
+      }
+    },
+    "/intraday/positions": {
+      "post": {
+        "responses": {
+          "400": {
+            "description": "Bad request",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "201": {
+            "description": "Created"
+          }
+        },
+        "summary": "Open a new intraday position",
+        "description": "Execute an intraday position order with pre-calculated stop-loss and targets",
+        "operationId": "post_intraday_positions_resource",
+        "parameters": [
+          {
+            "name": "payload",
+            "required": true,
+            "in": "body",
+            "schema": {
+              "$ref": "#/definitions/CreateIntradayPositionRequest"
+            }
+          }
+        ],
+        "tags": [
+          "intraday"
+        ]
+      },
+      "get": {
+        "responses": {
+          "500": {
+            "description": "Server error",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "List intraday positions optionally filtered by status",
+        "description": "Retrieve active or closed intraday positions",
+        "operationId": "get_intraday_positions_resource",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "type": "string",
+            "description": "Filter by status",
+            "enum": [
+              "OPEN",
+              "CLOSED"
+            ]
+          }
+        ],
+        "tags": [
+          "intraday"
+        ]
+      }
+    },
+    "/intraday/positions/{position_id}/close": {
+      "parameters": [
+        {
+          "in": "path",
+          "description": "Intraday position unique identifier",
+          "name": "position_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "post": {
+        "responses": {
+          "400": {
+            "description": "Error closing",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "200": {
+            "description": "Closed"
+          }
+        },
+        "summary": "Close an open intraday position",
+        "description": "Close an active intraday position by ID",
+        "operationId": "post_intraday_position_close_resource",
+        "parameters": [
+          {
+            "name": "payload",
+            "required": true,
+            "in": "body",
+            "schema": {
+              "$ref": "#/definitions/CloseIntradayPositionRequest"
+            }
+          }
+        ],
+        "tags": [
+          "intraday"
+        ]
+      }
+    },
+    "/intraday/signals": {
+      "get": {
+        "responses": {
+          "500": {
+            "description": "Server error",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Get live intraday scanner signals",
+        "description": "Scan intraday watchlists and return high-conviction buy/sell signals",
+        "operationId": "get_intraday_signals_resource",
+        "parameters": [
+          {
+            "name": "simulate",
+            "in": "query",
+            "type": "boolean",
+            "description": "Generate simulated signals when market is closed",
+            "default": false
+          }
+        ],
+        "tags": [
+          "intraday"
+        ]
+      }
+    },
+    "/intraday/square-off-all": {
+      "post": {
+        "responses": {
+          "500": {
+            "description": "Server error",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "200": {
+            "description": "All positions squared off"
+          }
+        },
+        "summary": "Square off all intraday positions",
+        "description": "Immediately square off and close all active intraday positions",
+        "operationId": "post_intraday_square_off_all_resource",
+        "tags": [
+          "intraday"
+        ]
+      }
+    },
+    "/intraday/status": {
+      "get": {
+        "responses": {
+          "500": {
+            "description": "Server error",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/IntradayStatusResponse"
+            }
+          }
+        },
+        "summary": "Get intraday market clock and day statistics",
+        "description": "Current market clock, session phase (e.g. ACTIVE_TRADING), and day statistics",
+        "operationId": "get_intraday_status_resource",
+        "tags": [
+          "intraday"
+        ]
+      }
+    },
+    "/orchestrator/confirm-exit": {
+      "post": {
+        "responses": {
+          "500": {
+            "description": "Server error",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Confirm or correct exit price for a position",
+        "description": "Confirm or update the actual exit execution price for a closed position",
+        "operationId": "post_confirm_exit_resource",
+        "parameters": [
+          {
+            "name": "payload",
+            "required": true,
+            "in": "body",
+            "schema": {
+              "$ref": "#/definitions/ConfirmExitRequest"
+            }
+          }
+        ],
+        "tags": [
+          "orchestrator"
+        ]
+      }
+    },
+    "/orchestrator/orchestrator-status": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/OrchestratorStatusResponse"
+            }
+          }
+        },
+        "summary": "Get current orchestrator status and message",
+        "description": "Get current execution state of the trading orchestrator",
+        "operationId": "get_orchestrator_status_resource",
+        "tags": [
+          "orchestrator"
+        ]
+      }
+    },
+    "/orchestrator/pending-exits": {
+      "get": {
+        "responses": {
+          "500": {
+            "description": "Server error",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/PendingExitsResponse"
+            }
+          }
+        },
+        "summary": "Get positions pending exit price confirmation",
+        "description": "Positions waiting for trader confirmation of execution exit price",
+        "operationId": "get_pending_exits_resource",
+        "tags": [
+          "orchestrator"
+        ]
+      }
+    },
+    "/orchestrator/run": {
+      "post": {
+        "responses": {
+          "500": {
+            "description": "Server error",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "409": {
+            "description": "Conflict (already running)",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "200": {
+            "description": "Started",
+            "schema": {
+              "$ref": "#/definitions/MessageResponse"
+            }
+          }
+        },
+        "summary": "Start trading cycle orchestration",
+        "description": "Trigger an automated market analysis and trade execution cycle",
+        "operationId": "post_run_orchestrator_resource",
+        "parameters": [
+          {
+            "name": "payload",
+            "required": true,
+            "in": "body",
+            "schema": {
+              "$ref": "#/definitions/RunOrchestratorRequest"
+            }
+          }
+        ],
+        "tags": [
+          "orchestrator"
+        ]
+      }
+    },
+    "/orchestrator/run-orchestrator": {
+      "post": {
+        "responses": {
+          "500": {
+            "description": "Server error",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "409": {
+            "description": "Conflict (already running)",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "200": {
+            "description": "Started",
+            "schema": {
+              "$ref": "#/definitions/MessageResponse"
+            }
+          }
+        },
+        "summary": "Start trading cycle orchestration",
+        "description": "Trigger an automated market analysis and trade execution cycle",
+        "operationId": "post_run_orchestrator_resource",
+        "parameters": [
+          {
+            "name": "payload",
+            "required": true,
+            "in": "body",
+            "schema": {
+              "$ref": "#/definitions/RunOrchestratorRequest"
+            }
+          }
+        ],
+        "tags": [
+          "orchestrator"
+        ]
+      }
+    },
+    "/orchestrator/status": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/OrchestratorStatusResponse"
+            }
+          }
+        },
+        "summary": "Get current orchestrator status and message",
+        "description": "Get current execution state of the trading orchestrator",
+        "operationId": "get_orchestrator_status_resource",
+        "tags": [
+          "orchestrator"
+        ]
+      }
+    },
+    "/orchestrator/stream-logs": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Stream trading cycle logs via Server-Sent Events",
+        "description": "Real-time Server-Sent Events (SSE) log stream from active trading cycles",
+        "operationId": "get_stream_logs_resource",
+        "tags": [
+          "orchestrator"
+        ]
+      }
+    },
+    "/positions": {
+      "post": {
+        "responses": {
+          "500": {
+            "description": "Server error",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "200": {
+            "description": "Created",
+            "schema": {
+              "$ref": "#/definitions/MessageResponse"
+            }
+          }
+        },
+        "summary": "Open a new swing position",
+        "description": "Manually open a new swing trading position",
+        "operationId": "post_positions_list_resource",
+        "parameters": [
+          {
+            "name": "payload",
+            "required": true,
+            "in": "body",
+            "schema": {
+              "$ref": "#/definitions/CreatePositionRequest"
+            }
+          }
+        ],
+        "tags": [
+          "positions"
+        ]
+      },
+      "get": {
+        "responses": {
+          "500": {
+            "description": "Server error",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/PositionsResponse"
+            }
+          }
+        },
+        "summary": "List swing positions optionally filtered by status",
+        "description": "Retrieve active or closed swing trading positions",
+        "operationId": "get_positions_list_resource",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "type": "string",
+            "description": "Filter by status (OPEN or CLOSED)",
+            "enum": [
+              "OPEN",
+              "CLOSED"
+            ]
+          }
+        ],
+        "tags": [
+          "positions"
+        ]
+      }
+    },
+    "/positions/": {
+      "post": {
+        "responses": {
+          "500": {
+            "description": "Server error",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "200": {
+            "description": "Created",
+            "schema": {
+              "$ref": "#/definitions/MessageResponse"
+            }
+          }
+        },
+        "summary": "Open a new swing position",
+        "description": "Manually open a new swing trading position",
+        "operationId": "post_positions_list_resource",
+        "parameters": [
+          {
+            "name": "payload",
+            "required": true,
+            "in": "body",
+            "schema": {
+              "$ref": "#/definitions/CreatePositionRequest"
+            }
+          }
+        ],
+        "tags": [
+          "positions"
+        ]
+      },
+      "get": {
+        "responses": {
+          "500": {
+            "description": "Server error",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/PositionsResponse"
+            }
+          }
+        },
+        "summary": "List swing positions optionally filtered by status",
+        "description": "Retrieve active or closed swing trading positions",
+        "operationId": "get_positions_list_resource",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "type": "string",
+            "description": "Filter by status (OPEN or CLOSED)",
+            "enum": [
+              "OPEN",
+              "CLOSED"
+            ]
+          }
+        ],
+        "tags": [
+          "positions"
+        ]
+      }
+    },
+    "/positions/activity-logs": {
+      "get": {
+        "responses": {
+          "500": {
+            "description": "Server error",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/ActivityLogsResponse"
+            }
+          }
+        },
+        "summary": "Retrieve system activity and trading execution logs",
+        "description": "Retrieve position audit trails and transition logs",
+        "operationId": "get_activity_logs_resource",
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "type": "string",
+            "description": "Filter activity logs by stock symbol"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "type": "integer",
+            "description": "Maximum number of logs to return (default 100)",
+            "default": 100
+          }
+        ],
+        "tags": [
+          "positions"
+        ]
+      }
+    },
+    "/positions/{symbol}": {
+      "parameters": [
+        {
+          "in": "path",
+          "description": "Stock ticker symbol",
+          "name": "symbol",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "delete": {
+        "responses": {
+          "500": {
+            "description": "Server error",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "200": {
+            "description": "Closed",
+            "schema": {
+              "$ref": "#/definitions/MessageResponse"
+            }
+          }
+        },
+        "summary": "Close an open swing position",
+        "description": "Close an active swing trading position",
+        "operationId": "delete_position_detail_resource",
+        "tags": [
+          "positions"
+        ]
+      },
+      "patch": {
+        "responses": {
+          "500": {
+            "description": "Server error",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "200": {
+            "description": "Updated",
+            "schema": {
+              "$ref": "#/definitions/MessageResponse"
+            }
+          }
+        },
+        "summary": "Update active position parameters",
+        "description": "Update entry price, stop-loss, target, or quantity of an open position",
+        "operationId": "patch_position_detail_resource",
+        "parameters": [
+          {
+            "name": "payload",
+            "required": true,
+            "in": "body",
+            "schema": {
+              "$ref": "#/definitions/UpdatePositionRequest"
+            }
+          }
+        ],
+        "tags": [
+          "positions"
+        ]
+      }
+    }
+  },
+  "info": {
+    "title": "Smart Advice Trading API",
+    "version": "1.0.0",
+    "description": "Institutional-grade Stock Analysis & Trading Platform API for Indian Equity Market (NSE). Provides real-time technical analysis, automated trade orchestration, swing/intraday position tracking, and vectorized backtesting."
+  },
+  "produces": [
+    "application/json"
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "tags": [
+    {
+      "name": "analysis",
+      "description": "Stock analysis, recommendations, and candle charts"
+    },
+    {
+      "name": "positions",
+      "description": "Portfolio positions and activity logs"
+    },
+    {
+      "name": "orchestrator",
+      "description": "Trading cycle orchestration and exit confirmations"
+    },
+    {
+      "name": "config",
+      "description": "Trading settings, cycle stats, and dashboard metrics"
+    },
+    {
+      "name": "backtests",
+      "description": "Vectorized backtesting sessions, trades journal, and performance"
+    },
+    {
+      "name": "intraday",
+      "description": "Intraday market status, signals, config, and positions"
+    }
+  ],
+  "definitions": {
+    "HealthStatus": {
+      "properties": {
+        "status": {
+          "type": "string",
+          "description": "Server health status",
+          "example": "ok"
+        },
+        "timestamp": {
+          "type": "string",
+          "description": "Current server time (ISO)",
+          "example": "2026-11-10T18:00:00.000000"
+        }
+      },
+      "type": "object"
+    },
+    "ErrorResponse": {
+      "properties": {
+        "status": {
+          "type": "string",
+          "example": "error"
+        },
+        "error": {
+          "type": "string",
+          "example": "Detailed error description"
+        }
+      },
+      "type": "object"
+    },
+    "RecommendationsResponse": {
+      "properties": {
+        "status": {
+          "type": "string",
+          "example": "success"
+        },
+        "count": {
+          "type": "integer",
+          "example": 12
+        },
+        "recommendations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Recommendation"
+          }
+        }
+      },
+      "type": "object"
+    },
+    "Recommendation": {
+      "properties": {
+        "symbol": {
+          "type": "string",
+          "example": "RELIANCE"
+        },
+        "company_name": {
+          "type": "string",
+          "example": "Reliance Industries Ltd."
+        },
+        "technical_score": {
+          "type": "number",
+          "example": 84.5
+        },
+        "fundamental_score": {
+          "type": "number",
+          "example": 76.0
+        },
+        "sentiment_score": {
+          "type": "number",
+          "example": 68.0
+        },
+        "combined_score": {
+          "type": "number",
+          "example": 78.2
+        },
+        "is_recommended": {
+          "type": "boolean",
+          "example": true
+        },
+        "recommendation_strength": {
+          "type": "string",
+          "example": "STRONG_BUY"
+        },
+        "reason": {
+          "type": "string",
+          "example": "EMA Golden Cross + Squeeze Momentum breakout"
+        },
+        "recommendation_date": {
+          "type": "string",
+          "example": "2026-11-10"
+        },
+        "buy_price": {
+          "type": "number",
+          "example": 2540.0
+        },
+        "sell_price": {
+          "type": "number",
+          "example": 2680.0
+        },
+        "expected_return_percent": {
+          "type": "number",
+          "example": 5.51
+        },
+        "market_regime": {
+          "type": "string",
+          "example": "BULLISH_TREND"
+        },
+        "strategy_name": {
+          "type": "string",
+          "example": "Swing_Trading_v2"
+        },
+        "entry_atr": {
+          "type": "number",
+          "example": 35.5
+        },
+        "rr_ratio": {
+          "type": "number",
+          "example": 2.1
+        },
+        "note": {
+          "type": "string",
+          "example": ""
+        },
+        "backtest_metrics": {
+          "type": "object",
+          "example": {}
+        },
+        "detailed_analysis": {
+          "type": "object",
+          "example": {}
+        },
+        "sector_analysis": {
+          "type": "object",
+          "example": {}
+        }
+      },
+      "type": "object"
+    },
+    "UpdateRecommendationRequest": {
+      "properties": {
+        "is_recommended": {
+          "type": "boolean",
+          "description": "Whether to include in active recommendations",
+          "example": true
+        },
+        "recommendation_strength": {
+          "type": "string",
+          "description": "Recommendation rating (BUY, STRONG_BUY, HOLD, SELL)",
+          "example": "STRONG_BUY"
+        },
+        "note": {
+          "type": "string",
+          "description": "User annotations",
+          "example": "Approved by trader"
+        },
+        "buy_price": {
+          "type": "number",
+          "example": 2540.0
+        },
+        "sell_price": {
+          "type": "number",
+          "example": 2680.0
+        }
+      },
+      "type": "object"
+    },
+    "MessageResponse": {
+      "properties": {
+        "status": {
+          "type": "string",
+          "example": "success"
+        },
+        "message": {
+          "type": "string",
+          "example": "Operation completed successfully."
+        }
+      },
+      "type": "object"
+    },
+    "CandlesResponse": {
+      "properties": {
+        "status": {
+          "type": "string",
+          "example": "success"
+        },
+        "symbol": {
+          "type": "string",
+          "example": "RELIANCE"
+        },
+        "candles": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Candle"
+          }
+        }
+      },
+      "type": "object"
+    },
+    "Candle": {
+      "properties": {
+        "date": {
+          "type": "string",
+          "description": "Date formatted as YYYY-MM-DD",
+          "example": "2026-11-10"
+        },
+        "open": {
+          "type": "number",
+          "description": "Opening price",
+          "example": 2540.0
+        },
+        "high": {
+          "type": "number",
+          "description": "Day high",
+          "example": 2575.5
+        },
+        "low": {
+          "type": "number",
+          "description": "Day low",
+          "example": 2530.0
+        },
+        "close": {
+          "type": "number",
+          "description": "Closing price",
+          "example": 2568.0
+        },
+        "volume": {
+          "type": "integer",
+          "description": "Trading volume",
+          "example": 1250000
+        }
+      },
+      "type": "object"
+    },
+    "TriggerAnalysisRequest": {
+      "required": [
+        "group"
+      ],
+      "properties": {
+        "group": {
+          "type": "string",
+          "description": "Watchlist or symbol group to scan (e.g. NIFTY50, ALL)",
+          "example": "NIFTY50"
+        },
+        "verbose": {
+          "type": "boolean",
+          "description": "Enable verbose logs",
+          "default": false
+        },
+        "max_stocks": {
+          "type": "integer",
+          "description": "Max stocks to analyze",
+          "example": 50
+        },
+        "all": {
+          "type": "boolean",
+          "description": "Scan entire universe ignoring filters",
+          "default": false
+        }
+      },
+      "type": "object"
+    },
+    "CreatePositionRequest": {
+      "required": [
+        "entry_price",
+        "quantity",
+        "symbol"
+      ],
+      "properties": {
+        "symbol": {
+          "type": "string",
+          "description": "Stock ticker symbol",
+          "example": "RELIANCE"
+        },
+        "quantity": {
+          "type": "integer",
+          "description": "Number of shares/units",
+          "example": 50
+        },
+        "entry_price": {
+          "type": "number",
+          "description": "Executed entry price",
+          "example": 2540.0
+        },
+        "stop_loss": {
+          "type": "number",
+          "description": "Initial stop loss price",
+          "example": 2470.0
+        },
+        "target": {
+          "type": "number",
+          "description": "Initial target price",
+          "example": 2680.0
+        },
+        "strategy_name": {
+          "type": "string",
+          "default": "Manual",
+          "example": "Manual"
+        },
+        "note": {
+          "type": "string",
+          "example": "Technical breakout entry"
+        }
+      },
+      "type": "object"
+    },
+    "PositionsResponse": {
+      "properties": {
+        "status": {
+          "type": "string",
+          "example": "success"
+        },
+        "count": {
+          "type": "integer",
+          "example": 4
+        },
+        "positions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Position"
+          }
+        }
+      },
+      "type": "object"
+    },
+    "Position": {
+      "properties": {
+        "symbol": {
+          "type": "string",
+          "example": "RELIANCE"
+        },
+        "status": {
+          "type": "string",
+          "description": "OPEN or CLOSED",
+          "example": "OPEN"
+        },
+        "quantity": {
+          "type": "integer",
+          "example": 50
+        },
+        "entry_price": {
+          "type": "number",
+          "example": 2540.0
+        },
+        "current_price": {
+          "type": "number",
+          "example": 2575.0
+        },
+        "stop_loss": {
+          "type": "number",
+          "example": 2470.0
+        },
+        "target": {
+          "type": "number",
+          "example": 2680.0
+        },
+        "current_stop_loss": {
+          "type": "number",
+          "example": 2470.0
+        },
+        "current_target": {
+          "type": "number",
+          "example": 2680.0
+        },
+        "total_investment": {
+          "type": "number",
+          "example": 127254.0
+        },
+        "unrealized_pnl": {
+          "type": "number",
+          "example": 1750.0
+        },
+        "unrealized_pnl_pct": {
+          "type": "number",
+          "example": 1.38
+        },
+        "strategy_name": {
+          "type": "string",
+          "example": "Swing_Trading_v2"
+        },
+        "entry_date": {
+          "type": "string",
+          "example": "2026-11-10T09:30:00"
+        },
+        "is_paper": {
+          "type": "boolean",
+          "example": true
+        }
+      },
+      "type": "object"
+    },
+    "UpdatePositionRequest": {
+      "properties": {
+        "entry_price": {
+          "type": "number",
+          "description": "Updated entry price",
+          "example": 2540.0
+        },
+        "quantity": {
+          "type": "integer",
+          "description": "Updated quantity",
+          "example": 50
+        },
+        "stop_loss": {
+          "type": "number",
+          "description": "Updated stop loss level",
+          "example": 2470.0
+        },
+        "target": {
+          "type": "number",
+          "description": "Updated target level",
+          "example": 2680.0
+        },
+        "current_price": {
+          "type": "number",
+          "description": "Manual current price update",
+          "example": 2575.0
+        },
+        "notes": {
+          "type": "string",
+          "example": "Trailing stop adjusted"
+        }
+      },
+      "type": "object"
+    },
+    "ActivityLogsResponse": {
+      "properties": {
+        "status": {
+          "type": "string",
+          "example": "success"
+        },
+        "count": {
+          "type": "integer",
+          "example": 25
+        },
+        "logs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ActivityLog"
+          }
+        }
+      },
+      "type": "object"
+    },
+    "ActivityLog": {
+      "properties": {
+        "symbol": {
+          "type": "string",
+          "example": "RELIANCE"
+        },
+        "action": {
+          "type": "string",
+          "example": "POSITION_OPENED"
+        },
+        "timestamp": {
+          "type": "string",
+          "example": "2026-11-10T09:30:00"
+        },
+        "details": {
+          "type": "object",
+          "example": {
+            "entry_price": 2540.0,
+            "quantity": 50
+          }
+        }
+      },
+      "type": "object"
+    },
+    "RunOrchestratorRequest": {
+      "properties": {
+        "mode": {
+          "type": "string",
+          "description": "Execution mode",
+          "default": "live",
+          "example": "live",
+          "enum": [
+            "live",
+            "replay",
+            "date",
+            "full",
+            "quick"
+          ]
+        },
+        "verbose": {
+          "type": "boolean",
+          "description": "Enable detailed terminal logs",
+          "default": false
+        },
+        "replay_days": {
+          "type": "integer",
+          "description": "Days to simulate when mode=replay",
+          "example": 5
+        },
+        "date": {
+          "type": "string",
+          "description": "Target date (YYYY-MM-DD) when mode=date",
+          "example": "2026-11-10"
+        }
+      },
+      "type": "object"
+    },
+    "OrchestratorStatusResponse": {
+      "properties": {
+        "status": {
+          "type": "string",
+          "description": "Execution state: idle, running, completed, error",
+          "example": "idle"
+        },
+        "message": {
+          "type": "string",
+          "example": "Trading cycle completed."
+        }
+      },
+      "type": "object"
+    },
+    "PendingExitsResponse": {
+      "properties": {
+        "status": {
+          "type": "string",
+          "example": "success"
+        },
+        "count": {
+          "type": "integer",
+          "example": 1
+        },
+        "pending_exits": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/PendingExit"
+          }
+        }
+      },
+      "type": "object"
+    },
+    "PendingExit": {
+      "properties": {
+        "symbol": {
+          "type": "string",
+          "example": "UNIONBANK"
+        },
+        "quantity": {
+          "type": "integer",
+          "example": 100
+        },
+        "entry_price": {
+          "type": "number",
+          "example": 175.5
+        },
+        "exit_reason": {
+          "type": "string",
+          "example": "TARGET_REACHED"
+        },
+        "detected_exit_price": {
+          "type": "number",
+          "example": 184.84
+        },
+        "created_at": {
+          "type": "string",
+          "example": "2026-11-10T15:20:00"
+        }
+      },
+      "type": "object"
+    },
+    "ConfirmExitRequest": {
+      "required": [
+        "exit_price",
+        "symbol"
+      ],
+      "properties": {
+        "symbol": {
+          "type": "string",
+          "description": "Symbol of position being confirmed",
+          "example": "UNIONBANK"
+        },
+        "exit_price": {
+          "type": "number",
+          "description": "Final confirmed execution price",
+          "example": 184.84
+        }
+      },
+      "type": "object"
+    },
+    "StrategiesResponse": {
+      "properties": {
+        "status": {
+          "type": "string",
+          "example": "success"
+        },
+        "count": {
+          "type": "integer",
+          "example": 3
+        },
+        "strategies": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/StrategyConfig"
+          }
+        }
+      },
+      "type": "object"
+    },
+    "StrategyConfig": {
+      "properties": {
+        "name": {
+          "type": "string",
+          "example": "Swing_Trading_v2"
+        },
+        "version": {
+          "type": "string",
+          "example": "2.0.0"
+        },
+        "category": {
+          "type": "string",
+          "example": "swing"
+        },
+        "enabled": {
+          "type": "boolean",
+          "example": true
+        },
+        "description": {
+          "type": "string",
+          "example": "Momentum swing trading strategy with ATR risk management"
+        },
+        "file_name": {
+          "type": "string",
+          "example": "swing_trading_v2.json"
+        }
+      },
+      "type": "object"
+    },
+    "TradingSettingsResponse": {
+      "properties": {
+        "status": {
+          "type": "string",
+          "example": "success"
+        },
+        "config": {
+          "type": "object",
+          "example": {
+            "initial_capital": 100000.0,
+            "max_positions": 5,
+            "brokerage_charges": 0.002
+          }
+        }
+      },
+      "type": "object"
+    },
+    "CycleStatsResponse": {
+      "properties": {
+        "status": {
+          "type": "string",
+          "example": "success"
+        },
+        "open_positions": {
+          "type": "integer",
+          "example": 4
+        },
+        "total_invested": {
+          "type": "number",
+          "example": 85000.0
+        },
+        "cash_remaining": {
+          "type": "number",
+          "example": 15000.0
+        },
+        "unsettled_funds": {
+          "type": "number",
+          "example": 0.0
+        },
+        "total_equity": {
+          "type": "number",
+          "example": 103500.0
+        },
+        "pnl_pct": {
+          "type": "number",
+          "example": 3.5
+        },
+        "initial_capital": {
+          "type": "number",
+          "example": 100000.0
+        }
+      },
+      "type": "object"
+    },
+    "DashboardStatsResponse": {
+      "properties": {
+        "status": {
+          "type": "string",
+          "example": "success"
+        },
+        "capital": {
+          "type": "object",
+          "example": {
+            "initial": 100000.0,
+            "current": 103500.0
+          }
+        },
+        "positions": {
+          "type": "object",
+          "example": {
+            "open": 4,
+            "closed": 18
+          }
+        },
+        "performance": {
+          "type": "object",
+          "example": {
+            "win_rate": 66.7,
+            "pnl": 3500.0
+          }
+        }
+      },
+      "type": "object"
+    },
+    "DailyEarningsResponse": {
+      "properties": {
+        "status": {
+          "type": "string",
+          "example": "success"
+        },
+        "total_realized_pnl": {
+          "type": "number",
+          "example": 4250.0
+        },
+        "earnings": {
+          "type": "object",
+          "example": []
+        }
+      },
+      "type": "object"
+    },
+    "BacktestSessionsResponse": {
+      "properties": {
+        "status": {
+          "type": "string",
+          "example": "success"
+        },
+        "count": {
+          "type": "integer",
+          "example": 5
+        },
+        "sessions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/BacktestSession"
+          }
+        }
+      },
+      "type": "object"
+    },
+    "BacktestSession": {
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "example": "bts_20261110_01"
+        },
+        "strategy_name": {
+          "type": "string",
+          "example": "Intraday_Trading_v1"
+        },
+        "session_name": {
+          "type": "string",
+          "example": "Intraday 1H Ultimate Backtest"
+        },
+        "created_at": {
+          "type": "string",
+          "example": "2026-11-10T12:00:00"
+        },
+        "total_return_pct": {
+          "type": "number",
+          "example": 24.5
+        },
+        "cagr": {
+          "type": "number",
+          "example": 18.2
+        },
+        "sharpe_ratio": {
+          "type": "number",
+          "example": 1.65
+        },
+        "max_drawdown_pct": {
+          "type": "number",
+          "example": -8.4
+        },
+        "win_rate": {
+          "type": "number",
+          "example": 64.2
+        },
+        "profit_factor": {
+          "type": "number",
+          "example": 1.92
+        },
+        "total_trades": {
+          "type": "integer",
+          "example": 142
+        },
+        "initial_capital": {
+          "type": "number",
+          "example": 100000.0
+        },
+        "final_portfolio_value": {
+          "type": "number",
+          "example": 124500.0
+        }
+      },
+      "type": "object"
+    },
+    "BacktestTradesResponse": {
+      "properties": {
+        "status": {
+          "type": "string",
+          "example": "success"
+        },
+        "page": {
+          "type": "integer",
+          "example": 1
+        },
+        "limit": {
+          "type": "integer",
+          "example": 50
+        },
+        "total": {
+          "type": "integer",
+          "example": 142
+        },
+        "total_pages": {
+          "type": "integer",
+          "example": 3
+        },
+        "trades": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        }
+      },
+      "type": "object"
+    },
+    "RunIntradayBacktestRequest": {
+      "properties": {
+        "strategy": {
+          "type": "string",
+          "default": "Intraday_Trading_v1",
+          "example": "Intraday_Trading_v1"
+        },
+        "period": {
+          "type": "string",
+          "default": "730d",
+          "example": "730d"
+        },
+        "symbols": {
+          "type": "array",
+          "example": [
+            "RELIANCE",
+            "TCS",
+            "INFY"
+          ],
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "type": "object"
+    },
+    "IntradayStatusResponse": {
+      "properties": {
+        "status": {
+          "type": "string",
+          "example": "success"
+        },
+        "clock": {
+          "type": "object",
+          "example": {
+            "current_time_ist": "10:15:00",
+            "phase": "ACTIVE_TRADING",
+            "is_market_open": true
+          }
+        },
+        "day_stats": {
+          "type": "object",
+          "example": {
+            "total_trades": 3,
+            "open_positions": 1,
+            "realized_pnl": 1200.0
+          }
+        }
+      },
+      "type": "object"
+    },
+    "UpdateIntradayConfigRequest": {
+      "properties": {
+        "capital": {
+          "type": "number",
+          "example": 100000.0
+        },
+        "max_positions": {
+          "type": "integer",
+          "example": 5
+        },
+        "risk_per_trade_pct": {
+          "type": "number",
+          "example": 1.0
+        },
+        "auto_square_off": {
+          "type": "string",
+          "example": "15:15"
+        }
+      },
+      "type": "object"
+    },
+    "IntradayConfigResponse": {
+      "properties": {
+        "status": {
+          "type": "string",
+          "example": "success"
+        },
+        "config": {
+          "type": "object",
+          "example": {
+            "capital": 100000.0,
+            "max_positions": 5,
+            "risk_per_trade_pct": 1.0,
+            "auto_square_off": "15:15"
+          }
+        }
+      },
+      "type": "object"
+    },
+    "CreateIntradayPositionRequest": {
+      "required": [
+        "entry_price",
+        "quantity",
+        "stop_loss",
+        "symbol",
+        "target_1"
+      ],
+      "properties": {
+        "symbol": {
+          "type": "string",
+          "description": "Stock symbol",
+          "example": "TATASTEEL"
+        },
+        "entry_price": {
+          "type": "number",
+          "description": "Entry execution price",
+          "example": 155.0
+        },
+        "quantity": {
+          "type": "integer",
+          "description": "Quantity of shares",
+          "example": 100
+        },
+        "stop_loss": {
+          "type": "number",
+          "description": "Stop loss level",
+          "example": 152.0
+        },
+        "target_1": {
+          "type": "number",
+          "description": "Target 1 level",
+          "example": 159.0
+        },
+        "target_2": {
+          "type": "number",
+          "description": "Target 2 level",
+          "example": 162.0
+        },
+        "pattern": {
+          "type": "string",
+          "description": "Pattern name",
+          "example": "ORB_BREAKOUT"
+        },
+        "reason": {
+          "type": "string",
+          "description": "Entry rationale",
+          "example": "15m breakout above day high"
+        },
+        "note": {
+          "type": "string",
+          "description": "Notes",
+          "example": "Volume surge confirmed"
+        }
+      },
+      "type": "object"
+    },
+    "CloseIntradayPositionRequest": {
+      "properties": {
+        "reason": {
+          "type": "string",
+          "description": "Reason for closing position",
+          "default": "MANUAL_CLOSE",
+          "example": "MANUAL_CLOSE"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "responses": {
+    "ParseError": {
+      "description": "When a mask can't be parsed"
+    },
+    "MaskError": {
+      "description": "When any error occurs on mask"
+    }
+  }
+}

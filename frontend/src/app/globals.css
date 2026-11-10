@@ -2,11 +2,23 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+:root {
+  --card: #ffffff;
+  --border: #e2e8f0;
+}
+
+.dark {
+  --card: #0f172a;
+  --border: #1e293b;
+}
+
 @theme {
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
   --color-gray-750: #1e293b;
   --color-gray-850: #0f172a;
+  --color-card: var(--card);
+  --color-border: var(--border);
 }
 
 /* Ensure smooth transitions for theme changes */

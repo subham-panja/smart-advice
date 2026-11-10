@@ -33,17 +33,26 @@ export default function RecommendationsPage() {
       cell: ({ row }) => (
         <StockPickNoteTag
           symbol={cleanSymbol(row.original.symbol)}
-          strategy={row.original.strategy_name || "Swing_Trading_v2"}
+          strategy={row.original.strategy_name || "Swing_Trading_v3"}
           reason={row.original.reason}
           note={row.original.note}
           technicalScore={row.original.technical_score}
           fundamentalScore={row.original.fundamental_score}
+          sentimentScore={row.original.sentiment_score}
           combinedScore={row.original.combined_score}
+          compositeScore={row.original.composite_score}
           entryPrice={row.original.buy_price}
-          stopLoss={row.original.buy_price ? row.original.buy_price * 0.94 : undefined}
+          stopLoss={row.original.stop_loss || (row.original.buy_price ? row.original.buy_price * 0.94 : undefined)}
           target={row.original.sell_price}
           entryAtr={row.original.entry_atr}
-          rrRatio={row.original.rr_ratio || 4.5}
+          rrRatio={row.original.rr_ratio || 3.0}
+          suggestedQuantity={row.original.suggested_quantity}
+          allocationPct={row.original.allocation_pct}
+          recommendationStrength={row.original.recommendation_strength}
+          patternDetected={row.original.pattern_detected}
+          setupChecklist={row.original.setup_checklist}
+          technicalPillars={row.original.technical_pillars}
+          recommendation={row.original}
           onSaveNote={async (newNote) => {
             await updateRecommendation(row.original.symbol, { note: newNote });
             handleRefresh();

@@ -400,17 +400,26 @@ export default function Home() {
                     <td className="px-4 py-3">
                       <StockPickNoteTag
                         symbol={cleanSymbol(rec.symbol)}
-                        strategy={rec.strategy_name || 'Swing_Trading_v2'}
+                        strategy={rec.strategy_name || 'Swing_Trading_v3'}
                         reason={rec.reason}
                         note={rec.note}
                         technicalScore={rec.technical_score}
                         fundamentalScore={rec.fundamental_score}
+                        sentimentScore={rec.sentiment_score}
                         combinedScore={rec.combined_score}
+                        compositeScore={rec.composite_score}
                         entryPrice={rec.buy_price}
-                        stopLoss={rec.buy_price ? rec.buy_price * 0.94 : undefined}
+                        stopLoss={rec.stop_loss || (rec.buy_price ? rec.buy_price * 0.94 : undefined)}
                         target={rec.sell_price}
                         entryAtr={rec.entry_atr}
-                        rrRatio={rec.rr_ratio || 4.5}
+                        rrRatio={rec.rr_ratio || 3.0}
+                        suggestedQuantity={rec.suggested_quantity}
+                        allocationPct={rec.allocation_pct}
+                        recommendationStrength={rec.recommendation_strength}
+                        patternDetected={rec.pattern_detected}
+                        setupChecklist={rec.setup_checklist}
+                        technicalPillars={rec.technical_pillars}
+                        recommendation={rec}
                         onSaveNote={async (newNote) => {
                           await updateRecommendation(rec.symbol, { note: newNote });
                           fetchData();

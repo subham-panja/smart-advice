@@ -34,7 +34,7 @@ export default function RootLayout({
       >
         <ThemeProvider>
           <SidebarProvider>
-            <div className="min-h-screen flex">
+            <div className="min-h-screen flex w-full relative overflow-x-hidden">
               <Sidebar />
               <MainContent>
                 {children}

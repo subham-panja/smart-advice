@@ -4,6 +4,7 @@ from flask_cors import CORS
 import config
 from database import init_app
 from routes import register_blueprints
+from swagger import swagger_bp
 from utils.logger import setup_logging
 
 
@@ -26,6 +27,7 @@ def create_app():
     )
 
     register_blueprints(app)
+    app.register_blueprint(swagger_bp)
     return app
 
 

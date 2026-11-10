@@ -1,12 +1,23 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import Navbar from '../../app/components/Navbar';
 import { ThemeProvider } from '../../app/contexts/ThemeContext';
+import { SidebarProvider, useSidebar } from '../../app/contexts/SidebarContext';
 
 const renderWithThemeProvider = (component: React.ReactElement) => {
   return render(
     <ThemeProvider>
       {component}
     </ThemeProvider>
+  );
+};
+
+const NavbarWithSidebar = () => {
+  const { isMobileOpen } = useSidebar();
+  return (
+    <div>
+      <span data-testid="sidebar-mobile-state">{isMobileOpen ? 'open' : 'closed'}</span>
+      <Navbar />
+    </div>
   );
 };
 
@@ -53,5 +64,23 @@ describe('Navbar', () => {
     const chevronIcon = stockAnalysisButton?.querySelector('svg');
     expect(chevronIcon).toBeInTheDocument();
   });
-});
 
+  it('renders mobile hamburger button and toggles mobile sidebar', () => {
+    render(
+      <ThemeProvider>
+        <SidebarProvider>
+          <NavbarWithSidebar />
+        </SidebarProvider>
+      </ThemeProvider>
+    );
+
+    const mobileState = screen.getByTestId('sidebar-mobile-state');
+    expect(mobileState).toHaveTextContent('closed');
+
+    const hamburgerBtn = screen.getByLabelText('Open mobile navigation menu');
+    expect(hamburgerBtn).toBeInTheDocument();
+
+    fireEvent.click(hamburgerBtn);
+    expect(mobileState).toHaveTextContent('open');
+  });
+});

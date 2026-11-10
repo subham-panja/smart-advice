@@ -2,6 +2,7 @@
 
 import { ReactNode } from 'react';
 import { useSidebar } from '../contexts/SidebarContext';
+import Navbar from './Navbar';
 
 interface MainContentProps {
   children: ReactNode;
@@ -11,13 +12,16 @@ const MainContent = ({ children }: MainContentProps) => {
   const { isCollapsed } = useSidebar();
 
   return (
-    <main 
-      className={`flex-1 transition-all duration-300 p-4 md:p-8 ${
-        isCollapsed ? 'ml-16' : 'ml-64'
-      } min-h-screen`}
+    <div
+      className={`flex-1 flex flex-col min-h-screen transition-all duration-300 min-w-0 w-full ${
+        isCollapsed ? 'ml-0 md:ml-16' : 'ml-0 md:ml-64'
+      }`}
     >
-      {children}
-    </main>
+      <Navbar />
+      <main className="flex-1 p-3 sm:p-5 lg:p-8 min-w-0 w-full overflow-x-hidden">
+        {children}
+      </main>
+    </div>
   );
 };
 

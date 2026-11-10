@@ -1,6 +1,6 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import Sidebar from '../../app/components/Sidebar';
-import { SidebarProvider } from '../../app/contexts/SidebarContext';
+import { SidebarProvider, useSidebar } from '../../app/contexts/SidebarContext';
 import { ThemeProvider } from '../../app/contexts/ThemeContext';
 
 const renderWithProviders = () => {
@@ -10,6 +10,19 @@ const renderWithProviders = () => {
         <Sidebar />
       </SidebarProvider>
     </ThemeProvider>
+  );
+};
+
+const TestResponsiveSidebar = () => {
+  const { toggleMobileSidebar, isMobileOpen } = useSidebar();
+  return (
+    <div>
+      <button onClick={toggleMobileSidebar} data-testid="open-mobile-btn">
+        Open Mobile
+      </button>
+      <span data-testid="mobile-state">{isMobileOpen ? 'open' : 'closed'}</span>
+      <Sidebar />
+    </div>
   );
 };
 
@@ -52,5 +65,39 @@ describe('Sidebar', () => {
   it('renders version text', () => {
     renderWithProviders();
     expect(screen.getByText('Stock Advisor v1.0')).toBeInTheDocument();
+  });
+
+  it('toggles mobile sidebar drawer and closes via close button', () => {
+    render(
+      <ThemeProvider>
+        <SidebarProvider>
+          <TestResponsiveSidebar />
+        </SidebarProvider>
+      </ThemeProvider>
+    );
+
+    const openBtn = screen.getByTestId('open-mobile-btn');
+    const stateSpan = screen.getByTestId('mobile-state');
+    expect(stateSpan).toHaveTextContent('closed');
+
+    fireEvent.click(openBtn);
+    expect(stateSpan).toHaveTextContent('open');
+
+    // Click mobile close button
+    const closeBtn = screen.getByLabelText('Close navigation drawer');
+    expect(closeBtn).toBeInTheDocument();
+    fireEvent.click(closeBtn);
+
+    expect(stateSpan).toHaveTextContent('closed');
+  });
+
+  it('collapses and expands on desktop toggle button click', () => {
+    renderWithProviders();
+    const collapseBtn = screen.getByLabelText(/Collapse sidebar/i);
+    expect(collapseBtn).toBeInTheDocument();
+
+    fireEvent.click(collapseBtn);
+    const expandBtn = screen.getByLabelText(/Expand sidebar/i);
+    expect(expandBtn).toBeInTheDocument();
   });
 });

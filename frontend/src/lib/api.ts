@@ -25,14 +25,22 @@ export interface StockRecommendation {
   backtest_cagr?: number;
   recommendation_date: string;
   combined_score: number;
+  composite_score?: number;
   recommendation_strength: string;
   note?: string;
   strategy_name?: string;
   buy_price?: number;
   sell_price?: number;
-  expected_return_percent?: number;
+  stop_loss?: number;
+  suggested_quantity?: number;
+  allocation_pct?: number;
   entry_atr?: number;
   rr_ratio?: number;
+  pattern_detected?: string;
+  setup_checklist?: Record<string, any>;
+  technical_pillars?: Record<string, any>;
+  is_recommended?: boolean;
+  expected_return_percent?: number;
 }
 
 export interface ApiResponse<T> {
