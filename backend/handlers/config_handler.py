@@ -207,3 +207,77 @@ def get_dashboard_stats():
         "positions": position_cards,
         "activity_feed": activity_feed,
     }
+
+
+def get_daily_earnings(session_id: str = None, days: int = None, start_date: str = None, end_date: str = None):
+    """Retrieve day-by-day PnL earnings report for the dashboard with optional date filtering."""
+    from bson import ObjectId
+
+    from database import get_mongodb
+
+    db = get_mongodb()
+    query = {}
+    if session_id:
+        try:
+            query["session_id"] = ObjectId(session_id)
+        except Exception:
+            pass
+    else:
+        # Default to the most recent backtest session
+        latest_sess = db.backtest_sessions.find_one(sort=[("created_at", -1)])
+        if latest_sess:
+            query["session_id"] = latest_sess["_id"]
+
+    date_filter = {}
+    if start_date:
+        date_filter["$gte"] = start_date
+    if end_date:
+        date_filter["$lte"] = end_date
+    if date_filter:
+        query["date"] = date_filter
+
+    cursor = db.portfolio_backtest_daily_snapshots.find(query).sort("date", 1)
+    if days and not (start_date or end_date):
+        total_count = db.portfolio_backtest_daily_snapshots.count_documents(query)
+        skip = max(0, total_count - days)
+        cursor = cursor.skip(skip)
+
+    snaps = list(cursor)
+    daily_records = []
+    prev_val = None
+
+    for s in snaps:
+        curr_val = s.get("portfolio_value", 0.0)
+        daily_pnl = (curr_val - prev_val) if prev_val is not None else 0.0
+        pnl_pct = ((curr_val - prev_val) / prev_val * 100.0) if prev_val and prev_val > 0 else 0.0
+        daily_records.append(
+            {
+                "date": s.get("date"),
+                "portfolio_value": round(curr_val, 2),
+                "daily_pnl": round(daily_pnl, 2),
+                "daily_pnl_pct": round(pnl_pct, 2),
+                "cash_balance": round(s.get("cash_balance", 0.0), 2),
+                "open_positions": s.get("open_positions_count", 0),
+                "drawdown_pct": round(s.get("drawdown_from_peak_pct", 0.0), 2),
+            }
+        )
+        prev_val = curr_val
+
+    # Summary statistics across the selected range
+    total_net_pnl = sum(r["daily_pnl"] for r in daily_records)
+    up_days = sum(1 for r in daily_records if r["daily_pnl"] > 0)
+    down_days = sum(1 for r in daily_records if r["daily_pnl"] < 0)
+    win_rate = (up_days / (up_days + down_days) * 100) if (up_days + down_days) > 0 else 0
+
+    return {
+        "daily_records": daily_records,
+        "summary": {
+            "total_days": len(daily_records),
+            "total_net_pnl": round(total_net_pnl, 2),
+            "up_days": up_days,
+            "down_days": down_days,
+            "win_rate": round(win_rate, 1),
+            "best_day_pnl": round(max((r["daily_pnl"] for r in daily_records), default=0.0), 2),
+            "worst_day_pnl": round(min((r["daily_pnl"] for r in daily_records), default=0.0), 2),
+        },
+    }

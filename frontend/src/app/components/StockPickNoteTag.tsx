@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useState } from 'react';
+import StockMiniChart from './StockMiniChart';
+import { cleanSymbol } from '@/lib/utils';
 import {
   DocumentTextIcon,
   XMarkIcon,
@@ -227,11 +229,11 @@ export default function StockPickNoteTag({
             <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-800 bg-gradient-to-r from-gray-50 via-white to-gray-50 dark:from-gray-900 dark:via-gray-850 dark:to-gray-900 flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold text-lg">
-                  {symbol.slice(0, 2)}
+                  {cleanSymbol(symbol).slice(0, 2)}
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">{symbol}</h3>
+                    <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">{cleanSymbol(symbol)}</h3>
                     <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 font-mono">
                       {strategy}
                     </span>
@@ -274,6 +276,15 @@ export default function StockPickNoteTag({
                   {context.thesis}
                 </div>
               </div>
+
+              {/* Chart Breakdown of Setup & Trajectory */}
+              <StockMiniChart
+                symbol={cleanSymbol(symbol)}
+                entryPrice={entryPrice}
+                stopLoss={stopLoss}
+                target={target}
+                patternName={context.patternName}
+              />
 
               {/* Validation Gates & Technical Checklist */}
               <div>

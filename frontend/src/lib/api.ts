@@ -480,9 +480,79 @@ export const getDashboardStats = async (): Promise<{ status: string; error?: str
   }
 };
 
-// ---------------------------------------------------------------------------
-// Backtest Sessions & Trade Journal APIs
-// ---------------------------------------------------------------------------
+export interface DailyEarningRecord {
+  date: string;
+  portfolio_value: number;
+  daily_pnl: number;
+  daily_pnl_pct: number;
+  cash_balance: number;
+  open_positions: number;
+  drawdown_pct: number;
+}
+
+export interface DailyEarningsResponse {
+  status: string;
+  error?: string;
+  daily_records: DailyEarningRecord[];
+  summary: {
+    total_days: number;
+    total_net_pnl: number;
+    up_days: number;
+    down_days: number;
+    win_rate: number;
+    best_day_pnl: number;
+    worst_day_pnl: number;
+  };
+}
+
+export const getDailyEarnings = async (params?: {
+  days?: number;
+  start_date?: string;
+  end_date?: string;
+  session_id?: string;
+}): Promise<DailyEarningsResponse> => {
+  try {
+    const response = await api.get('/daily-earnings', { params });
+    return response.data;
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      return {
+        status: 'error',
+        error: error.response?.data?.error || 'Failed to fetch daily earnings',
+        daily_records: [],
+        summary: { total_days: 0, total_net_pnl: 0, up_days: 0, down_days: 0, win_rate: 0, best_day_pnl: 0, worst_day_pnl: 0 },
+      };
+    }
+    return {
+      status: 'error',
+      error: 'Failed to connect to server',
+      daily_records: [],
+      summary: { total_days: 0, total_net_pnl: 0, up_days: 0, down_days: 0, win_rate: 0, best_day_pnl: 0, worst_day_pnl: 0 },
+    };
+  }
+};
+
+export interface StockCandle {
+  date: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+export const getStockCandles = async (symbol: string, days: number = 35): Promise<{ status: string; candles: StockCandle[]; symbol?: string; error?: string }> => {
+  try {
+    const cleanSym = symbol.replace(/\.0+$/, '').trim();
+    const response = await api.get(`/stock-candles/${cleanSym}`, { params: { days } });
+    return response.data;
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      return { status: 'error', error: error.response?.data?.error || 'Failed to fetch stock candles', candles: [] };
+    }
+    return { status: 'error', error: 'Failed to connect to server', candles: [] };
+  }
+};
 
 export interface BacktestSessionSummary {
   cagr?: number;

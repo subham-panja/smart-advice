@@ -91,7 +91,7 @@ FIVEPAISA_CONFIG = {
 # TRADING & EXECUTION OPTIONS (app-level, not strategy-specific)
 TRADING_OPTIONS = {
     "is_paper_trading": True,
-    "initial_capital": 3000000.0,
+    "initial_capital": 10000.0,
     "brokerage_charges": 0.0020,
     "allow_multiple_positions_same_stock": False,
     "time_stop_days": 15,
@@ -103,7 +103,7 @@ TRADING_OPTIONS = {
 # PORTFOLIO BACKTEST CONFIGURATION (app-level defaults)
 PORTFOLIO_BACKTEST_CONFIG = {
     "enabled": True,
-    "initial_capital": 3000000.0,
+    "initial_capital": 10000.0,
     "brokerage_charges": 0.0003,  # 0.03% discount broker (was 0.20%)
     "slippage_pct": 0.0015,  # 0.15% realistic mid-cap slippage (was 0.05%)
     "gap_risk_seed": 42,  # Reproducible gap risk modeling

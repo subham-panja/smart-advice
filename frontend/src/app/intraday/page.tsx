@@ -16,6 +16,7 @@ import {
   IntradaySignal,
 } from "@/lib/api";
 import StockPickNoteTag from "../components/StockPickNoteTag";
+import { cleanSymbol, formatDecimal } from "@/lib/utils";
 import {
   ClockIcon,
   ShieldExclamationIcon,
@@ -398,11 +399,11 @@ function IntradayDashboard() {
                     return (
                       <tr key={pos._id} className="hover:bg-zinc-800/30 transition">
                         <td className="py-3.5 px-4 font-semibold text-white">
-                          {pos.symbol}
+                          {cleanSymbol(pos.symbol)}
                         </td>
                         <td className="py-3.5 px-4">
                           <StockPickNoteTag
-                            symbol={pos.symbol}
+                            symbol={cleanSymbol(pos.symbol)}
                             note={
                               pos.note ||
                               pos.reason ||
@@ -488,7 +489,7 @@ function IntradayDashboard() {
                     return (
                       <tr key={idx} className="hover:bg-zinc-800/30 transition">
                         <td className="py-3.5 px-4 font-semibold text-white">
-                          {sig.symbol}
+                          {cleanSymbol(sig.symbol)}
                         </td>
                         <td className="py-3.5 px-4">
                           <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
@@ -536,17 +537,17 @@ function IntradayDashboard() {
                           </div>
                         </td>
                         <td className="py-3.5 px-4 font-mono font-semibold text-white">
-                          ₹{sig.current_price.toFixed(2)}
+                          ₹{formatDecimal(sig.current_price, 2)}
                         </td>
                         <td className="py-3.5 px-4 font-mono text-emerald-400">
-                          ₹{sig.target_1.toFixed(2)} / ₹{sig.target_2.toFixed(2)}
+                          ₹{formatDecimal(sig.target_1, 2)} / ₹{formatDecimal(sig.target_2, 2)}
                         </td>
                         <td className="py-3.5 px-4 font-mono text-rose-400">
-                          ₹{sig.stop_loss.toFixed(2)}
+                          ₹{formatDecimal(sig.stop_loss, 2)}
                         </td>
                         <td className="py-3.5 px-4">
                           <StockPickNoteTag
-                            symbol={sig.symbol}
+                            symbol={cleanSymbol(sig.symbol)}
                             note={
                               sig.reason ||
                               `15m ORB High breakout with VWAP support & CPR confluence`

@@ -6,6 +6,7 @@ import { ArrowPathIcon } from "@heroicons/react/24/outline";
 import { ColumnDef } from "@tanstack/react-table";
 import DataTable from "../components/DataTable";
 import StockPickNoteTag from "../components/StockPickNoteTag";
+import { cleanSymbol, formatDecimal } from "@/lib/utils";
 
 export default function RecommendationsPage() {
   const [recommendations, setRecommendations] = useState<StockRecommendation[]>([]);
@@ -16,6 +17,11 @@ export default function RecommendationsPage() {
     {
       header: "Symbol",
       accessorKey: "symbol",
+      cell: ({ row }) => (
+        <span className="font-semibold text-gray-900 dark:text-gray-100">
+          {cleanSymbol(row.original.symbol)}
+        </span>
+      ),
     },
     {
       header: "Company Name",
@@ -26,7 +32,7 @@ export default function RecommendationsPage() {
       id: "why_picked",
       cell: ({ row }) => (
         <StockPickNoteTag
-          symbol={row.original.symbol}
+          symbol={cleanSymbol(row.original.symbol)}
           strategy={row.original.strategy_name || "Swing_Trading_v2"}
           reason={row.original.reason}
           note={row.original.note}
@@ -48,32 +54,68 @@ export default function RecommendationsPage() {
     {
       header: "Technical Score",
       accessorKey: "technical_score",
+      cell: ({ row }) => (
+        <span className="font-mono text-xs font-semibold text-gray-700 dark:text-gray-300">
+          {formatDecimal(row.original.technical_score, 2, false)}
+        </span>
+      ),
     },
     {
       header: "Fundamental Score",
       accessorKey: "fundamental_score",
+      cell: ({ row }) => (
+        <span className="font-mono text-xs text-gray-500 dark:text-gray-400">
+          {formatDecimal(row.original.fundamental_score, 2, true)}
+        </span>
+      ),
     },
     {
       header: "Sentiment Score",
       accessorKey: "sentiment_score",
+      cell: ({ row }) => (
+        <span className="font-mono text-xs text-gray-500 dark:text-gray-400">
+          {formatDecimal(row.original.sentiment_score, 2, true)}
+        </span>
+      ),
     },
     {
       header: "Combined Score",
       accessorKey: "combined_score",
+      cell: ({ row }) => (
+        <span className="font-mono text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-2 py-0.5 rounded">
+          {formatDecimal(row.original.combined_score, 2, false)}
+        </span>
+      ),
     },
     {
       header: "Recommendation",
       accessorKey: "recommendation_strength",
+      cell: ({ row }) => (
+        <span className="px-2.5 py-1 text-xs font-bold rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400">
+          {row.original.recommendation_strength || "BUY"}
+        </span>
+      ),
     },
     {
       header: "Backtest CAGR",
       accessorKey: "backtest_cagr",
-      cell: ({ row }) => row.original.backtest_cagr ?? "-",
+      cell: ({ row }) =>
+        row.original.backtest_cagr && Number(row.original.backtest_cagr) !== 0 ? (
+          <span className="font-mono text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+            +{formatDecimal(row.original.backtest_cagr, 2, true)}%
+          </span>
+        ) : (
+          <span className="text-gray-400">-</span>
+        ),
     },
     {
       header: "Date",
       accessorKey: "recommendation_date",
-      cell: ({ row }) => new Date(row.original.recommendation_date).toLocaleDateString(),
+      cell: ({ row }) => (
+        <span className="text-xs text-gray-500 dark:text-gray-400">
+          {row.original.recommendation_date ? new Date(row.original.recommendation_date).toLocaleDateString("en-IN", { month: "short", day: "numeric", year: "numeric" }) : "-"}
+        </span>
+      ),
     },
   ], []);
 

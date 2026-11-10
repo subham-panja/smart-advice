@@ -217,83 +217,187 @@ No swing trading strategy can make money if it buys stocks while the broader mar
 
 ## Chapter 3: Quantitative Trend Architecture & Moving Average Stacks
 
-A swing trading strategy requires strong momentum in the direction of the primary and secondary trends.
+A swing trading strategy requires strong momentum in the direction of the primary and secondary trends. Never buy a stock that is swimming against the tide of institutional selling.
 
-- [ ] **3.1 The 3-SMA Trend Stack Gating**
-  - **Description**: Institutional accumulation creates smooth, ascending moving average fans without crossovers into chop.
-  - **Algorithm**:
-    $$\text{SMA}_k(t) = \frac{1}{k}\sum_{i=0}^{k-1} \text{Close}_{t-i}$$
-    $$\text{Trend Stack Condition}: \text{Close}_t > \text{SMA}_{50}(t) > \text{SMA}_{150}(t) > \text{SMA}_{200}(t)$$
-  - **Example**: Stock BEL has $\text{Close} = ₹310$, $\text{SMA}_{50} = ₹295$, $\text{SMA}_{150} = ₹270$, $\text{SMA}_{200} = ₹250$. Since $310 > 295 > 270 > 250$, the institutional trend stack condition is satisfied.
+- [ ] **3.1 Price Above 50-Day Moving Average (`require_price_above_sma`)**
+  - **In `swing_trading_v2.json`**:
+    `"sma_period": 50`, `"require_price_above_sma": true`, `"require_sma_stack": false`
+  - **What it does**: Confirms that the stock is in a medium-term institutional uptrend. The 50-day SMA represents the average price big institutions (mutual funds and FIIs) paid over the last 10 weeks.
+  - **Plain English Rule**:
+    Current Stock Close Price MUST be HIGHER than its 50-day Simple Moving Average.
+  - **Why `require_sma_stack` is FALSE in v2 (Enabled vs Disabled Explanation)**:
+    In strategy v1, the engine demanded a strict 3-tier stack (`50 SMA > 150 SMA > 200 SMA`). In v2, this was deliberately relaxed to `false` because fast mid-cap momentum stocks often stage massive 40% breakouts right as the 50 SMA turns up, well before the slower 200 SMA catches up. Requiring the full stack caused the system to enter weeks too late!
+  - **Simple Calculation**:
+    `50-day SMA = Sum of last 50 daily closes / 50`
+    `Condition: Current Price > 50-day SMA`
+  - **Real Example**:
+    - Stock `BEL` (Bharat Electronics): Today's Close = **₹310.00**.
+    - The 50-day SMA is **₹292.00**.
+    - Because `₹310.00 > ₹292.00`, the stock passes the institutional baseline trend check.
 
-- [ ] **3.2 Moving Average Slope Quantification**
-  - **Description**: A moving average that is sloping downward or flat signifies consolidation or distribution, even if price briefly crosses above it.
-  - **Algorithm**:
-    $$\text{Slope}(\text{SMA}_{50}) = \frac{\text{SMA}_{50}(t) - \text{SMA}_{50}(t-10)}{10}$$
-    $$\text{Requirement}: \text{Slope}(\text{SMA}_{50}) > 0$$
-  - **Example**: If $\text{SMA}_{50}$ was ₹290 ten bars ago and is ₹295 today, slope $= +0.50$ (positive, valid). If price is ₹300 but $\text{SMA}_{50}$ drifted from ₹305 to ₹302, slope is negative; the trend test fails.
+- [ ] **3.2 The Trend Gate: ADX Strength & DI Directional Alignment (`TREND_GATE`)**
+  - **In `swing_trading_v2.json`**:
+    `"adx_min": 18`, `"require_di_alignment": true`
+  - **What it does**: Evaluates Welles Wilder's Average Directional Index (ADX) to make sure the stock is actually trending with authority, and checks the Directional Indicators (+DI and -DI) to verify buyers are in total control.
+  - **Plain English Rules**:
+    1. **Trend Strength (ADX)**: ADX must be **at least 18** (in v2, lowered from 20 to 18 to catch early trend explosive ignitions). If ADX is below 18, the stock is dead or moving in boring sideways chop.
+    2. **Directional Dominance (+DI vs -DI)**: The Green Buyer Line (+DI) must be strictly GREATER than the Red Seller Line (-DI).
+  - **Simple Rule**:
+    `Trend Gate = PASS if (ADX >= 18) AND (+DI > -DI) AND (Price > 50 SMA)`
+  - **Real Example**:
+    - Stock `HAL` (Hindustan Aeronautics):
+      - Green Buyer Indicator (`+DI`) = **28.4**
+      - Red Seller Indicator (`-DI`) = **13.2**
+      - Trend Power Index (`ADX`) = **24.5**
+      - Price = **₹4,450**, 50 SMA = **₹4,200**
+    - Verification:
+      - Is `+DI > -DI`? Yes (`28.4 > 13.2`, buyers dominate).
+      - Is `ADX >= 18`? Yes (`24.5 >= 18`, high trend fuel).
+      - Is `Price > 50 SMA`? Yes (`₹4,450 > ₹4,200`).
+    - **Trend Gate = PASS**.
 
-- [ ] **3.3 Directional Movement Index (DMI) & ADX Quantification**
-  - **Description**: Welles Wilder's Average Directional Index (ADX) measures trend strength regardless of direction, while $+DI$ and $-DI$ measure directional dominance.
-  - **Algorithm**:
-    $$+DM_t = \max(\text{High}_t - \text{High}_{t-1}, 0) \quad \text{if } \text{High}_t - \text{High}_{t-1} > \text{Low}_{t-1} - \text{Low}_t \text{ else } 0$$
-    $$-DM_t = \max(\text{Low}_{t-1} - \text{Low}_t, 0) \quad \text{if } \text{Low}_{t-1} - \text{Low}_t > \text{High}_t - \text{High}_{t-1} \text{ else } 0$$
-    $$\text{True Range (TR)} = \max(\text{High}_t - \text{Low}_t, |\text{High}_t - \text{Close}_{t-1}|, |\text{Low}_t - \text{Close}_{t-1}|)$$
-    $$+DI_{14} = 100 \times \frac{\text{EMA}_{14}(+DM)}{\text{EMA}_{14}(TR)}, \quad -DI_{14} = 100 \times \frac{\text{EMA}_{14}(-DM)}{\text{EMA}_{14}(TR)}$$
-    $$DX = 100 \times \frac{|+DI_{14} - -DI_{14}|}{+DI_{14} + -DI_{14}}, \quad ADX_{14} = \text{EMA}_{14}(DX)$$
-    $$\text{Trend Gate Passed} \iff (ADX_{14} \ge 20) \land (+DI_{14} > -DI_{14})$$
-  - **Example**: Stock HAL shows $+DI_{14} = 28.4$, $-DI_{14} = 13.1$, and $ADX_{14} = 24.6$. Because $+DI > -DI$ and $ADX \ge 20$, the trend strength and bullish alignment checks pass.
+- [ ] **3.3 Anti-Extension Boundary: The "Rubber Band" Rule**
+  - **In `swing_trading_v2.json`**:
+    `max_distance_from_21ema_pct = 7.0%` (for breakouts), `max_distance_pct = 3.0%` (for pullbacks).
+  - **What it does**: Prevents buying a stock that is stretched too far like an over-pulled rubber band. When a stock shoots up 15–20% in 3 days without resting, it inevitably snaps back to its moving average, triggering your stop-loss.
+  - **Plain English Rule**:
+    Do not buy if the current price is more than **7% above its 21-day Exponential Moving Average (21 EMA)**. Wait for a pullback or base consolidation first.
+  - **Simple Calculation**:
+    `Extension % = ((Current Price - 21 EMA Price) / 21 EMA Price) * 100`
+    `Rule: Extension % must be <= 7.0%`
+  - **Real Example**:
+    - Stock `DIXON` trades at **₹12,800**. Its 21-day EMA is at **₹11,500**.
+    - `Extension = ((12,800 - 11,500) / 11,500) * 100 = (1,300 / 11,500) * 100 = 11.3%`
+    - Because `11.3% > 7.0%`, the stock is dangerously extended. The algorithm rejects the trade today.
+    - Three days later, DIXON pulls back to **₹11,750** while the 21 EMA rises to **₹11,600** (`Extension = 1.29% <= 3.0%`). Now it triggers a safe `pullback_to_ema` entry!
 
-- [ ] **3.4 Price Distance Boundary (Anti-Extension Filter)**
-  - **Description**: Entering a stock that is extended 15% above its 20-day or 50-day moving average invites mean-reversion pullbacks that trigger stop losses.
-  - **Algorithm**:
-    $$\text{DistPct}(\text{SMA}_{20}) = \frac{|\text{Close}_t - \text{SMA}_{20}(t)|}{\text{SMA}_{20}(t)} \times 100\%$$
-    $$\text{Gating Condition}: \text{DistPct}(\text{SMA}_{20}) \le 5.0\%$$
-  - **Example**: Stock Dixon is ₹12,000 while its 20-day SMA is ₹11,000. $\text{DistPct} = (12000 - 11000) / 11000 = 9.09\%$. The stock is statistically overextended. The system blocks the entry until a pullback or base contraction occurs.
+- [ ] **3.4 Proximity to 52-Week High Rule (`proximity_to_52_week_high_pct`)**
+  - **In `swing_trading_v2.json`**:
+    `"proximity_to_52_week_high_pct": 25.0`
+  - **What it does**: Keeps your capital focused exclusively on winning market leaders that are within striking distance of their all-time or 52-week highs.
+  - **Why it matters**:
+    - Stocks trading 40–50% below their 52-week highs have millions of trapped retail bagholders who bought at the peak. Every time the stock rises, those bagholders sell to break even, creating heavy overhead supply.
+    - Stocks within 25% of their 52-week high have almost zero overhead supply. Once they break through, there is blue sky above.
+  - **Simple Calculation**:
+    `Distance from 52-Week High % = ((52-Week High - Current Price) / 52-Week High) * 100`
+    `Condition: Distance must be <= 25.0%`
+  - **Real Example**:
+    - **Stock A (INFY)**: 52-week high is **₹1,950**. Current price is **₹1,420**.
+      `Distance = ((1,950 - 1,420) / 1,950) * 100 = (530 / 1,950) * 100 = 27.18%`
+      Because `27.18% > 25.0%`, INFY is **REJECTED** due to heavy overhead resistance.
+    - **Stock B (L&T)**: 52-week high is **₹3,800**. Current price is **₹3,620**.
+      `Distance = ((3,800 - 3,620) / 3,800) * 100 = (180 / 3,800) * 100 = 4.74%`
+      Because `4.74% <= 25.0%`, L&T **PASSES** with flying colors.
 
-- [ ] **3.5 52-Week High Proximity Filter**
-  - **Description**: Stocks making 52-week highs have zero overhead resistance (trapped bagholders waiting to sell at breakeven). Stocks > 25% below their 52-week high are structurally burdened by supply.
-  - **Algorithm**:
-    $$\text{Proximity} = \frac{\max_{t \in [T-252, T]}(\text{High}_t) - \text{Close}_T}{\max_{t \in [T-252, T]}(\text{High}_t)} \times 100\%$$
-    $$\text{Requirement}: \text{Proximity} \le 25.0\%$$
-  - **Example**: Stock INFY has 52-week high ₹1950 and current price ₹1400. Proximity $= (1950 - 1400)/1950 = 28.2\% > 25\%$. Filter fails. Stock LT has 52-week high ₹3800 and current price ₹3650. Proximity $= 3.94\% \le 25\%$. Filter passes.
+- [ ] **3.5 Relative Strength (RS) Comparison vs Nifty 50 (`Relative_Strength_Comparison`)**
+  - **In `swing_trading_v2.json`**:
+    `"enabled": true`, `"period": 55`, `"threshold": 0.0`
+  - **What it does**: Compares the stock's 55-day percentage performance against the Nifty 50 index.
+  - **Plain English Rule**:
+    Over the past 55 trading days (~11 weeks), the stock MUST be outperforming the benchmark index. We only want stocks that gain more than Nifty on green days and fall less than Nifty on red days.
+  - **Simple Calculation**:
+    `Stock Return 55d % = ((Current Stock Price - Price 55 days ago) / Price 55 days ago) * 100`
+    `Nifty Return 55d % = ((Current Nifty Close - Nifty 55 days ago) / Nifty 55 days ago) * 100`
+    `Relative Strength = Stock Return % - Nifty Return %`
+    `Condition: Relative Strength > 0.0`
+  - **Real Example**:
+    - Over the last 55 days, Nifty 50 went from 23,000 to 24,150 (`+5.0%`).
+    - Stock `BHARTIARTL` went from ₹1,200 to ₹1,440 (`+20.0%`).
+    - `Relative Strength = +20.0% - 5.0% = +15.0% > 0.0`
+    - The stock is beating the index by 15.0%, earning a strong momentum bonus in the scoring engine.
 
 ---
 
 ## Chapter 4: Volatility Dynamics, Contraction & Percentile Gating
 
-Volatility is cyclical: periods of contraction (low volatility) lead to explosive expansions (trends). Smart Advice buys during the final stage of contraction, not after volatility has peaked.
+Volatility is cyclical: periods of quiet compression (low volatility) lead to explosive breakout expansions (trends). Smart Advice buys at the end of a volatility contraction, never after volatility has peaked.
 
-- [ ] **4.1 Average True Range (ATR) Mathematical Formulation**
-  - **Description**: Measures price range volatility in absolute currency units without directional bias.
-  - **Algorithm**:
-    $$TR_t = \max(\text{High}_t - \text{Low}_t, |\text{High}_t - \text{Close}_{t-1}|, |\text{Low}_t - \text{Close}_{t-1}|)$$
-    $$ATR_{14}(t) = \frac{ATR_{14}(t-1) \times 13 + TR_t}{14}$$
-  - **Example**: Stock Tata Motors has today's High = ₹980, Low = ₹962, yesterday's Close = ₹965. $TR = \max(980 - 962, |980 - 965|, |962 - 965|) = \max(18, 15, 3) = 18$. The rolling ATR updates with this 18 True Range input.
+- [ ] **4.1 Average True Range (ATR): The True Daily Price Swing**
+  - **In `swing_trading_v2.json`**:
+    `"stop_loss_type": "ATR"`, `"atr_stop_multiplier": 2.0`, `"trail_stop_atr": 2.5`
+  - **What it does**: ATR measures how many Rupees a stock typically moves in a normal day, accounting for overnight opening gaps. It is the absolute heartbeat of our stop-losses, position sizing, and profit targets.
+  - **Plain English Calculation**:
+    For today's candle, True Range (TR) is the largest of 3 numbers:
+    1. `Today's High - Today's Low` (normal daily span)
+    2. `Absolute value of (Today's High - Yesterday's Close)` (gap-up span)
+    3. `Absolute value of (Today's Low - Yesterday's Close)` (gap-down span)
+    The **14-day ATR** is simply the 14-day smoothed moving average of these daily True Ranges.
+  - **Real Example with Rupee Values**:
+    - Stock `TATA MOTORS`:
+      - Yesterday's Close = **₹965.00**
+      - Today's High = **₹980.00**
+      - Today's Low = **₹962.00**
+    - Calculating Today's True Range:
+      - 1. High - Low = `₹980 - ₹962 = ₹18.00`
+      - 2. High - Yesterday's Close = `|₹980 - ₹965| = ₹15.00`
+      - 3. Low - Yesterday's Close = `|₹962 - ₹965| = ₹3.00`
+      - The largest span is **₹18.00**.
+    - If the 14-day smoothed ATR is **₹20.00**, this means Tata Motors normally fluctuates by about ₹20.00 each day. A ₹5 drop is just noise, but a ₹45 drop is an abnormal event.
 
-- [ ] **4.2 ATR Historical Percentile Ranking (The Volatility Gate)**
-  - **Description**: Prevents buying when daily swings are abnormally chaotic (wide ATR) or when the stock has become completely dormant (dead ATR).
-  - **Algorithm**: Over a lookback window $L = 100$ days:
-    $$\mathcal{H}_{\text{ATR}} = \{ ATR_{14}(t-i) \mid i \in [0, 99] \}$$
-    $$\text{Percentile}(ATR_t) = \frac{\sum_{x \in \mathcal{H}_{\text{ATR}}} \mathbb{I}(x < ATR_t)}{100} \times 100\%$$
-    $$\text{Volatility Gate Passed} \iff 5\% \le \text{Percentile}(ATR_t) \le 90\%$$
-  - **Example**: If today's ATR is ₹45 and across the last 100 days only 4 days had a higher ATR ($\text{Percentile} = 96\%$), the stock is in a manic expansion phase. Volatility Gate = **FAIL**. If $\text{Percentile} = 42\%$, Volatility Gate = **PASS**.
+- [ ] **4.2 The Volatility Gate: 100-Day ATR Percentile (`VOLATILITY_GATE`)**
+  - **In `swing_trading_v2.json`**:
+    `"enabled": true`, `"lookback_days": 100`, `"min_percentile": 2`, `"max_percentile": 95`
+  - **What it does**: Takes the current ATR and ranks it against all ATR values over the last 100 trading days (~5 months).
+  - **Plain English Rules**:
+    1. **Too High (Manic Exhaustion > 95th Percentile)**: If ATR is in the top 5% of its 100-day history, daily swings are wildly chaotic. Buying here often means buying into exhaustion right before a violent reversal.
+    2. **Too Low (Dormant Liquidity < 2nd Percentile)**: If ATR is in the bottom 2%, the stock has virtually zero heartbeat and dead volume.
+    3. **The Sweet Spot (2% to 95%)**: Volatility is active, tradeable, and within controllable risk parameters.
+  - **💡 Why v2 widened from [5%, 90%] to [2%, 95%] (Enabled vs Disabled Explanation)**:
+    In strategy v1, the gate rejected stocks under 5% and over 90%. In v2, this was relaxed to `min: 2%` and `max: 95%`. This allows v2 to enter earlier on ultra-tight institutional bases (at the 3%–4% percentile) and ride powerful runaway momentum leaders (up to the 94% percentile) without getting prematurely filtered out.
+  - **Simple Calculation**:
+    `ATR Percentile = (Number of days in last 100 days where ATR was less than Today's ATR / 100) * 100`
+    `Rule: Percentile must be between 2% and 95%`
+  - **Real Example**:
+    - Stock `BAJAJ FINANCE`: Today's ATR = **₹110.00**.
+    - Across the last 100 days, exactly **42 days** had an ATR smaller than ₹110.00.
+    - `ATR Percentile = (42 / 100) * 100 = 42%`.
+    - Because `42%` falls comfortably between `2%` and `95%`, the **Volatility Gate = PASS**.
 
-- [ ] **4.3 Bollinger Band Width (BBW) Squeeze Gating**
-  - **Description**: Bollinger Bands measure standard deviations around a 20-period moving average. When the bands contract tightly, volatility compression has occurred.
-  - **Algorithm**:
-    $$\mu_{20} = \text{SMA}_{20}(\text{Close}), \quad \sigma_{20} = \sqrt{\frac{1}{20}\sum_{i=0}^{19}(\text{Close}_{t-i} - \mu_{20})^2}$$
-    $$\text{Upper Band} = \mu_{20} + 2\sigma_{20}, \quad \text{Lower Band} = \mu_{20} - 2\sigma_{20}$$
-    $$\text{Bandwidth} = \frac{\text{Upper Band} - \text{Lower Band}}{\mu_{20}}$$
-    $$\text{Squeeze Detected} \iff \text{Bandwidth} \le 0.10 \quad (\text{or } \le \text{Threshold specified in strategy config})$$
-  - **Example**: Stock TCS trades at ₹4,000. Upper Band = ₹4,080, Lower Band = ₹3,920. Bandwidth $= (4080 - 3920)/4000 = 160 / 4000 = 0.04$ (4%). This indicates extreme compression. An expansion move is imminent.
+- [ ] **4.3 Volatility-Scaled Risk Sizing (`volatility_scaling`)**
+  - **In `swing_trading_v2.json`**:
+    `"enabled": true`, `"atr_lookback_days": 100`, `"low_volatility_percentile": 25`, `"high_volatility_percentile": 75`, `"min_risk_multiplier": 0.8`
+  - **What it does**: Automatically scales down your capital risk per trade when a stock is swinging wildly, and grants full size when volatility is calm.
+  - **Plain English Rule**:
+    - **Calm Volatility (ATR Percentile <= 25%)**: Risk the full **1.5%** of account equity (`Multiplier = 1.0`).
+    - **Wild Volatility (ATR Percentile >= 75%)**: Scale down risk to **1.2%** of account equity (`Multiplier = 0.8`).
+    - **Moderate Volatility (Between 25% and 75%)**: Smoothly scale between 1.2% and 1.5%.
+  - **Real Example (Portfolio Account Equity = ₹100,000)**:
+    - Base Risk per trade = `1.5% of ₹100,000 = ₹1,500`.
+    - **Stock A (Calm Consolidation, ATR Percentile = 20%)**:
+      - Scale Multiplier = `1.0`.
+      - Allowed Rupee Risk = `₹1,500 * 1.0 = ₹1,500`.
+    - **Stock B (High Volatility Swing, ATR Percentile = 85%)**:
+      - Scale Multiplier = `0.8`.
+      - Allowed Rupee Risk = `₹1,500 * 0.8 = ₹1,200`.
+      - The system automatically reduces risk by ₹300, shielding you from larger-than-normal adverse swings.
 
-- [ ] **4.4 NR7 Volatility Contraction Algorithm**
-  - **Description**: Mark Raschke's Narrowest Range in 7 Days (NR7). Day $T$ has the smallest absolute trading range $(High - Low)$ compared to the preceding 6 sessions.
-  - **Algorithm**:
-    $$\text{Range}_t = \text{High}_t - \text{Low}_t$$
-    $$\text{Is\_NR7} \iff \text{Range}_T < \min_{i \in [1, 6]} (\text{Range}_{T-i})$$
-  - **Example**: Daily ranges over the last 7 sessions: Day 1: ₹14, Day 2: ₹12, Day 3: ₹15, Day 4: ₹11, Day 5: ₹13, Day 6: ₹10, Day 7 (Today): ₹7.5. Today's range ₹7.5 is strictly the smallest. `nr7_volatility_squeeze` activates.
+- [ ] **4.4 Bollinger Band Squeeze: Why It Is DISABLED as an Indicator in v2**
+  - **In `swing_trading_v2.json`**:
+    `"Bollinger_Band_Squeeze": { "enabled": false, "is_bonus": false }`
+  - **Why it is DISABLED**:
+    Bollinger Bands measure 2 standard deviations around the 20-day average. In v1, an indicator-level squeeze bonus rewarded stocks when bands contracted tightly. In v2, this was **turned off** because standalone Bollinger squeezes trigger numerous false alarms during prolonged, sideways bear consolidations. Instead, v2 relies on structural price patterns (`volatility_contraction` and `minervini_vcp_breakout`), which verify that volume has also dried up before signaling an entry.
+
+- [ ] **4.5 The NR7 Volatility Squeeze: Why It Is DISABLED in v2**
+  - **In `swing_trading_v2.json`**:
+    `"name": "nr7_volatility_squeeze", "enabled": false`
+  - **What NR7 is**: Narrowest Range in 7 Days (a single day where High - Low is smaller than the prior 6 days).
+  - **Why it is DISABLED in v2**:
+    Single-day NR7 bars produce too much intraday noise on daily swing charts, resulting in low-quality chop entries. In `swing_trading_v2.json`, we require a multi-day base contraction of at least 8 to 45 days (Minervini VCP) rather than jumping on a 1-day narrow candle.
+
+- [ ] **4.6 Volatility Contraction Pattern (`volatility_contraction`)**
+  - **In `swing_trading_v2.json`**:
+    `"enabled": true`, `"min_contractions": 2`, `"volume_dry_up_required": true`, `"max_atr_pct_of_price": 3.5`
+  - **What it does**: Identifies a stock whose daily swings are progressively shrinking over consecutive days while volume dries up to a trickle. This indicates sellers have completely vanished from the market.
+  - **Plain English Rules**:
+    1. **Consecutive Contractions**: ATR must shrink for at least 2 consecutive periods.
+    2. **Volume Dry-Up**: Volume must drop below **80% of its 20-day average** (confirms no institutional selling).
+    3. **ATR Cap**: ATR must be **less than 3.5% of the stock price** (ensures tight, low-risk stop-losses).
+  - **Real Example**:
+    - Stock `POLYCAB` trades at **₹6,000**.
+    - Day 1 ATR = ₹210, Day 2 ATR = ₹185, Day 3 ATR = **₹160** (2 consecutive drops).
+    - ATR % of price = `(₹160 / ₹6,000) * 100 = 2.67% <= 3.5%` (Tight risk).
+    - 20-day average volume is 400,000 shares; today's volume is only **220,000 shares** (`55% of average <= 80%`).
+    - **`volatility_contraction` = ACTIVE (1)**. A powerful breakout setup is primed.
 
 ---
 

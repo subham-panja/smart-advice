@@ -19,6 +19,8 @@ import {
 import { getDashboardStats, DashboardStats, getRecommendations, StockRecommendation, updatePosition, updateRecommendation } from '@/lib/api';
 import StockPickNoteTag from './components/StockPickNoteTag';
 import MotivationalQuotes from './components/MotivationalQuotes';
+import DailyEarningsChart from './components/DailyEarningsChart';
+import { cleanSymbol, formatDecimal } from '@/lib/utils';
 
 export default function Home() {
   const [stats, setStats] = useState<Partial<DashboardStats>>({});
@@ -228,6 +230,9 @@ export default function Home() {
         />
       </div>
 
+      {/* Day-by-Day Earnings Report with Date Range Selector & Select All */}
+      <DailyEarningsChart />
+
       {/* Performance & Today's Activity */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Performance Metrics */}
@@ -302,7 +307,7 @@ export default function Home() {
                   <tr key={pos.symbol} className="hover:bg-gray-50/50 dark:hover:bg-gray-700/30 transition-colors">
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
-                        <span className="font-semibold text-gray-900 dark:text-gray-100">{pos.symbol}</span>
+                        <span className="font-semibold text-gray-900 dark:text-gray-100">{cleanSymbol(pos.symbol)}</span>
                         {pos.adds_count > 0 && (
                           <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded">
                             +{pos.adds_count}
@@ -312,7 +317,7 @@ export default function Home() {
                     </td>
                     <td className="px-4 py-3">
                       <StockPickNoteTag
-                        symbol={pos.symbol}
+                        symbol={cleanSymbol(pos.symbol)}
                         strategy={pos.strategy}
                         reason={pos.reason}
                         note={pos.note}
@@ -386,7 +391,7 @@ export default function Home() {
                   <tr key={rec.symbol} className="hover:bg-gray-50/50 dark:hover:bg-gray-700/30 transition-colors">
                     <td className="px-4 py-3">
                       <div>
-                        <span className="font-semibold text-gray-900 dark:text-gray-100">{rec.symbol}</span>
+                        <span className="font-semibold text-gray-900 dark:text-gray-100">{cleanSymbol(rec.symbol)}</span>
                         {rec.company_name && (
                           <div className="text-xs text-gray-500 dark:text-gray-400 truncate max-w-[160px]">{rec.company_name}</div>
                         )}
@@ -394,7 +399,7 @@ export default function Home() {
                     </td>
                     <td className="px-4 py-3">
                       <StockPickNoteTag
-                        symbol={rec.symbol}
+                        symbol={cleanSymbol(rec.symbol)}
                         strategy={rec.strategy_name || 'Swing_Trading_v2'}
                         reason={rec.reason}
                         note={rec.note}

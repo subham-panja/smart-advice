@@ -21,6 +21,7 @@ import {
   CycleStats,
 } from '@/lib/api';
 import StockPickNoteTag from '../components/StockPickNoteTag';
+import { cleanSymbol, formatDecimal } from '@/lib/utils';
 
 export default function PositionsPage() {
   const router = useRouter();
@@ -311,7 +312,7 @@ export default function PositionsPage() {
                       <td className="px-4 py-4">
                         <div className="flex items-center gap-2">
                           <span className="font-semibold text-gray-900 dark:text-gray-100">
-                            {pos.symbol}
+                            {cleanSymbol(pos.symbol)}
                           </span>
                           {pos.adds_count && pos.adds_count > 0 && (
                             <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded">
@@ -322,7 +323,7 @@ export default function PositionsPage() {
                       </td>
                       <td className="px-4 py-4">
                         <StockPickNoteTag
-                          symbol={pos.symbol}
+                          symbol={cleanSymbol(pos.symbol)}
                           strategy={pos.strategy_name}
                           reason={pos.reason}
                           note={pos.note}
@@ -349,16 +350,20 @@ export default function PositionsPage() {
                         ₹{target?.toFixed(2)}
                       </td>
                       <td className="px-4 py-4 text-right">
-                        <div className="font-medium text-gray-900 dark:text-gray-100">
+                        <div className="font-semibold text-gray-900 dark:text-gray-100">
                           ₹{pos.total_investment?.toLocaleString('en-IN')}
                         </div>
-                        {pnl !== 0 && (
+                        {pnl != null && Math.abs(pnl) > 0.01 ? (
                           <div
-                            className={`text-xs font-medium ${
+                            className={`text-xs font-semibold ${
                               pnl >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
                             }`}
                           >
-                            {pnl >= 0 ? '+' : ''}₹{pnl.toLocaleString('en-IN', { maximumFractionDigits: 0 })} ({pnlPct.toFixed(1)}%)
+                            {pnl >= 0 ? '+' : ''}₹{pnl.toLocaleString('en-IN', { maximumFractionDigits: 2 })} ({pnlPct.toFixed(2)}%)
+                          </div>
+                        ) : (
+                          <div className="text-[11px] text-gray-400 dark:text-gray-500 font-mono">
+                            Break-even
                           </div>
                         )}
                       </td>

@@ -1,4 +1,4 @@
-from flask import Blueprint, current_app, jsonify
+from flask import Blueprint, current_app, jsonify, request
 
 from handlers import config_handler
 
@@ -37,4 +37,20 @@ def dashboard_stats():
         return jsonify({"status": "success", **stats})
     except Exception as e:
         current_app.logger.error(f"Dashboard stats error: {e}")
+        return jsonify({"status": "error", "error": str(e)}), 500
+
+
+@config_bp.route("/daily-earnings", methods=["GET"])
+def daily_earnings():
+    try:
+        days = request.args.get("days", type=int)
+        start_date = request.args.get("start_date")
+        end_date = request.args.get("end_date")
+        session_id = request.args.get("session_id")
+        data = config_handler.get_daily_earnings(
+            session_id=session_id, days=days, start_date=start_date, end_date=end_date
+        )
+        return jsonify({"status": "success", **data})
+    except Exception as e:
+        current_app.logger.error(f"Daily earnings error: {e}")
         return jsonify({"status": "error", "error": str(e)}), 500
