@@ -456,7 +456,7 @@ def main():
         session_id = persister.create_backtest_session(
             strategy_name=args.strategy,
             strategy_config={"months": args.months},
-            capital_config={"initial_capital": 100000},
+            capital_config={"initial_capital": config.PORTFOLIO_BACKTEST_CONFIG.get("initial_capital", 10000.0)},
             symbols=list(historical.get("_symbols_data", {}).keys()),
             session_type="ultimate",
         )

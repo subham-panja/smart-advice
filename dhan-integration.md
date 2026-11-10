@@ -109,46 +109,57 @@ Dhan requires a numeric `security_id` (e.g. `1333` for `RELIANCE`) rather than s
 * We download Dhan's daily scrip master CSV (`https://images.dhan.co/api-data/api-scrip-master.csv`) and index `SEM_TRADING_SYMBOL` -> `SEM_SMST_SECURITY_ID`.
 * Cache the master mapping locally under `backend/data/dhan_scrip_master.json`.
 
-### B. Order Placement Implementation
+### B. Order Placement & Forever (GTT OCO) Orders
+
+Dhan supports native **Forever Orders** (Good-Till-Triggered) with **OCO (One-Cancels-the-Other)** brackets. This is the optimal architecture for swing trading:
+
+1. **Entry Leg (Single Trigger GTT)**:
+   * Waits indefinitely until price reaches our technical entry breakout pivot (`trigger_price = buy_price`).
+   * No capital is blocked until the breakout actually triggers.
+2. **Post-Fill Exit Leg (OCO Forever Order)**:
+   * Automatically sets **Target Limit (Leg 1)** and **Stop Loss Trigger (Leg 2)** at exchange level.
+   * If Target 1 triggers, Stop Loss is canceled automatically (and vice-versa).
+   * Runs natively on Dhan's servers, eliminating server uptime dependencies for stop protection.
+
 ```python
-from dhanhq import dhanhq
-from brokers.base_broker import BaseBroker
-import config
-
-class DhanBrokerClient(BaseBroker):
-    def __init__(self):
-        self.client_id = config.DHAN_CONFIG.get("client_id")
-        self.access_token = config.DHAN_CONFIG.get("access_token")
-        self.dhan = None
-        self._security_id_map = {}
-
-    def connect(self) -> bool:
-        try:
-            self.dhan = dhanhq(self.client_id, self.access_token)
-            fund_limits = self.dhan.get_fund_limits()
-            return fund_limits.get("status") == "success"
-        except Exception as e:
-            logger.error(f"Dhan connection failed: {e}")
-            return False
-
-    def place_order(self, symbol, transaction_type, quantity, order_type="MARKET", price=0.0, product_type="CNC", tag="SWING"):
-        sec_id = self._get_security_id(symbol)
-        dhan_txn = self.dhan.BUY if transaction_type.upper() == "BUY" else self.dhan.SELL
-        dhan_ord = self.dhan.MARKET if order_type.upper() == "MARKET" else self.dhan.LIMIT
-        dhan_prod = self.dhan.CNC if product_type == "CNC" else self.dhan.INTRA
-
-        res = self.dhan.place_order(
-            security_id=sec_id,
-            exchange_segment=self.dhan.NSE_EQ,
-            transaction_type=dhan_txn,
-            quantity=quantity,
-            order_type=dhan_ord,
-            product_type=dhan_prod,
-            price=price,
-            correlation_id=tag
-        )
-        return res
+def place_forever_bracket(self, symbol, quantity, buy_price, stop_loss, target):
+    """Place a native Dhan GTT OCO order for target and stop-loss management."""
+    sec_id = self._get_security_id(symbol)
+    return self.dhan.place_forever(
+        security_id=sec_id,
+        exchange_segment=self.dhan.NSE,
+        transaction_type=dhan.SELL,
+        order_type=dhan.LIMIT,
+        product_type=dhan.CNC,
+        quantity=quantity,
+        price=target,
+        trigger_price=target * 0.998,
+        order_flag="OCO",
+        price1=stop_loss * 0.995,
+        trigger_price1=stop_loss,
+        quantity1=quantity,
+    )
 ```
+
+---
+
+## 4.1 Real-Time Pricing vs. Previous-Day EOD Gap (Solution)
+
+### The Core Problem:
+Currently, the screening cycle uses EOD daily bars. If a stock opens gap-up +4% or rallies early morning, a static limit order anchored to yesterday's close fails or misses execution entirely.
+
+### The 3-Step Real-Time Solution:
+1. **Pre-Execution Real-Time LTP Check (`dhan.get_ltp`)**:
+   * Before sending an order to Dhan or paper engine, call `dhan.get_ltp([(exchange_segment, sec_id)])`.
+   * Compare Live LTP against the Recommendation `buy_price`:
+     * If `live_ltp <= buy_price * 1.015` (within 1.5% slippage tolerance): Execute order at `live_ltp`.
+     * If `live_ltp > buy_price * 1.025` (stock already ran up 2.5%+): **Abort entry**, mark status as `CHASE_AVOIDED` (never chase extended stocks).
+     * If `live_ltp < buy_price` (stock consolidating below breakout pivot): Deploy a **Dhan Forever Entry Order** (`trigger_price = buy_price`), letting Dhan trigger the buy the exact minute price breaks out.
+2. **Live Account Balance Sync (`dhan.get_fund_limits`)**:
+   * Pulls real-time `availMargin` directly from Dhan instead of hardcoded config.
+   * Calculates position sizing dynamically: `Quantity = min(Risk_Amount / (Entry - SL), Avail_Margin * 0.125 / Entry)`.
+3. **Live WebSocket Ticker (`marketfeed.DhanFeed`)**:
+   * Subscribes open positions to Dhan's low-latency WebSocket feed to maintain real-time PnL on frontend without polling delays.
 
 ---
 

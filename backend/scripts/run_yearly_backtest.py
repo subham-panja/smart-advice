@@ -103,22 +103,26 @@ def run_yearly_series(strategy_name: str = "Swing_Trading_v2", max_years: int = 
         res = engine.run(symbols_data, sim_start_date=sim_start)
         duration = (datetime.now() - t0).total_seconds()
 
-        m = res.get("metrics", {})
-        init_cap = res.get("initial_capital", 50000000.0)
-        final_val = res.get("final_value", init_cap)
-        tot_return = ((final_val - init_cap) / init_cap) * 100.0
+        init_cap = res.get("initial_capital", config.PORTFOLIO_BACKTEST_CONFIG.get("initial_capital", 10000.0))
+        final_val = res.get("final_portfolio_value", res.get("final_value", init_cap))
+        tot_return = res.get("total_return_pct", ((final_val - init_cap) / init_cap) * 100.0)
+        cagr = res.get("cagr", 0.0)
+        max_dd = res.get("max_drawdown_pct", 0.0)
+        sharpe = res.get("sharpe_ratio", 0.0)
+        win_rate = res.get("win_rate", 0.0)
+        total_trades = res.get("total_trades", 0)
 
         row = {
             "Years": f"{y}y",
             "Period": f"{sim_start.strftime('%Y-%m-%d')} → {latest_date.strftime('%Y-%m-%d')}",
-            "Initial": f"₹{init_cap/1e7:.2f} Cr",
-            "Final Value": f"₹{final_val/1e7:.2f} Cr",
+            "Initial": f"₹{init_cap:,.0f}",
+            "Final Value": f"₹{final_val:,.0f}",
             "Total Return": f"{tot_return:+.1f}%",
-            "CAGR": f"{m.get('cagr', 0.0):.2f}%",
-            "Max Drawdown": f"{m.get('max_drawdown', 0.0):.2f}%",
-            "Sharpe": f"{m.get('sharpe_ratio', 0.0):.2f}",
-            "Win Rate": f"{m.get('win_rate', 0.0):.1f}%",
-            "Trades": m.get("total_trades", 0),
+            "CAGR": f"{cagr:.2f}%",
+            "Max Drawdown": f"{max_dd:.2f}%",
+            "Sharpe": f"{sharpe:.2f}",
+            "Win Rate": f"{win_rate:.1f}%",
+            "Trades": total_trades,
             "Time": f"{duration:.1f}s",
         }
         results_table.append(row)
@@ -131,7 +135,10 @@ def run_yearly_series(strategy_name: str = "Swing_Trading_v2", max_years: int = 
     print("CONSOLIDATED YEAR-BY-YEAR PERFORMANCE SUMMARY")
     print("=" * 95)
     df_res = pd.DataFrame(results_table)
-    print(df_res.to_markdown(index=False))
+    try:
+        print(df_res.to_markdown(index=False))
+    except Exception:
+        print(df_res.to_string(index=False))
 
 
 if __name__ == "__main__":
